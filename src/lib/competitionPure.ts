@@ -97,3 +97,64 @@ export function tieAggregate(legs: Leg[]) {
   }
   return { a: A, ga, gb };
 }
+
+export type StandingRow = { clubId: number; name: string; group: string | null; p: number; w: number; d: number; l: number; gf: number; ga: number; gd: number; pts: number; deducted: number; playoff?: boolean };
+type MRow = { homeClubId: number; awayClubId: number; homeScore: number | null; awayScore: number | null };
+
+/**
+ * الترتيب وفق المادة (24) من لائحة تنظيم المسابقات — الاتحاد الليبي لكرة القدم:
+ * ذهاب وإياب — فريقان: نتيجة مباراتيهما (فارق الأهداف ثم الأهداف خارج الملعب) ← فارق الأهداف العام ← الأهداف ← مباراة فاصلة.
+ * ذهاب وإياب — أكثر من فريقين: النقاط بينهم ← فارق الأهداف بينهم ← أهدافهم ← أهدافهم خارج ملعبهم ← إعادة تطبيق ذلك على من بقي متساويًا ← فارق الأهداف العام ← الأهداف ← مباراة فاصلة.
+ * مرحلة واحدة — فريقان: الفائز في مباراتهما ← فارق الأهداف العام ← الأهداف ← مباراة فاصلة.
+ * مرحلة واحدة — أكثر من فريقين: النقاط بينهم ← فارق الأهداف بينهم ← أهدافهم ← إعادة التطبيق ← فارق الأهداف العام ← الأهداف ← مباراة فاصلة.
+ */
+export function lffRank(rows: StandingRow[], ms: MRow[], win: number, draw: number, legs: number): StandingRow[] {
+  const sorted = [...rows].sort((a, b) => b.pts - a.pts);
+  const out: StandingRow[] = [];
+  for (let i = 0; i < sorted.length; ) {
+    let j = i;
+    while (j < sorted.length && sorted[j].pts === sorted[i].pts) j++;
+    out.push(...resolveTie(sorted.slice(i, j), ms, win, draw, legs));
+    i = j;
+  }
+  return out;
+}
+
+function miniStats(teams: StandingRow[], ms: MRow[], win: number, draw: number) {
+  const ids = new Set(teams.map((t) => t.clubId));
+  const st = new Map(teams.map((t) => [t.clubId, { pts: 0, gd: 0, gf: 0, away: 0 }]));
+  for (const m of ms) {
+    if (!ids.has(m.homeClubId) || !ids.has(m.awayClubId) || m.homeScore == null || m.awayScore == null) continue;
+    const h = st.get(m.homeClubId)!, a = st.get(m.awayClubId)!;
+    h.gf += m.homeScore; a.gf += m.awayScore; h.gd += m.homeScore - m.awayScore; a.gd += m.awayScore - m.homeScore; a.away += m.awayScore;
+    if (m.homeScore > m.awayScore) h.pts += win; else if (m.homeScore < m.awayScore) a.pts += win; else { h.pts += draw; a.pts += draw; }
+  }
+  return st;
+}
+
+function resolveTie(teams: StandingRow[], ms: MRow[], win: number, draw: number, legs: number, sub = false): StandingRow[] {
+  if (teams.length < 2) return teams;
+  const st = miniStats(teams, ms, win, draw);
+  const two = teams.length === 2 && !sub, double = legs >= 2; // عند إعادة التطبيق تُستخدم معايير «أكثر من فريقين»
+  const key = (t: StandingRow): number[] => {
+    const x = st.get(t.clubId)!;
+    if (two) return double ? [x.gd, x.away] : [x.pts];
+    return double ? [x.pts, x.gd, x.gf, x.away] : [x.pts, x.gd, x.gf];
+  };
+  const cmp = (a: number[], b: number[]) => { for (let k = 0; k < a.length; k++) if (a[k] !== b[k]) return b[k] - a[k]; return 0; };
+  const ordered = [...teams].sort((a, b) => cmp(key(a), key(b)));
+  // تقسيم إلى مجموعات متساوية في المعايير
+  const blocks: StandingRow[][] = [];
+  for (const t of ordered) {
+    const last = blocks[blocks.length - 1];
+    if (last && cmp(key(last[0]), key(t)) === 0) last.push(t); else blocks.push([t]);
+  }
+  if (blocks.length === 1) {
+    // لم تُفصل المواجهات المباشرة: فارق الأهداف العام ← الأهداف ← مباراة فاصلة
+    const byAll = [...teams].sort((a, b) => b.gd - a.gd || b.gf - a.gf || a.name.localeCompare(b.name, "ar"));
+    return byAll.map((t) => ({ ...t, playoff: byAll.some((o) => o !== t && o.gd === t.gd && o.gf === t.gf) || t.playoff }));
+  }
+  // إعادة تطبيق المعايير على من بقي متساويًا فقط
+  return blocks.flatMap((b) => (b.length > 1 ? resolveTie(b, ms, win, draw, legs, true) : b));
+}
+

@@ -104,6 +104,7 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
     });
   }
   if (u.can("reports.view")) items.push({ label: "التقارير", href: "/reports" });
+  items.push({ label: "📚 اللوائح", href: "/regulations" });
   if (u.canAny("admin.users", "admin.permissions", "admin.clubs", "admin.audit", "admin.settings", "admin.outbox")) {
     items.push({
       label: "الإدارة",

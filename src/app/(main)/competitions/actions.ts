@@ -3,7 +3,7 @@ import { and, eq, ne, or } from "drizzle-orm";
 import { db } from "@/db";
 import { competitions, competitionTeams, matches, matchEvents, assignments, matchRequests, competitionSquads, registrations, clubs, competitionStages, stageTeams } from "@/db/schema";
 import { addCharge } from "@/lib/finance";
-import { foreignOnPitchCheck } from "@/lib/competition";
+import { foreignOnPitchCheck, subsLimitCheck } from "@/lib/competition";
 import { requireUser } from "@/lib/auth";
 import { audit, notifyClub, notifyOfficial } from "@/lib/audit";
 import { approveMatch, standings } from "@/lib/competition";
@@ -21,10 +21,12 @@ export async function saveCompetition(f: FormData) {
     const data = {
       seasonId: int(f, "seasonId")!, name: req(f, "name", "اسم المسابقة"), type: (str(f, "type") ?? "LEAGUE") as "LEAGUE",
       categoryId: int(f, "categoryId"), legs: int(f, "legs") ?? 2, pointsWin: int(f, "pointsWin") ?? 3, pointsDraw: int(f, "pointsDraw") ?? 1,
-      squadMax: int(f, "squadMax") ?? 20, startersCount: int(f, "startersCount") ?? 11, maxForeign: int(f, "maxForeign"),
+      squadMax: int(f, "squadMax") ?? 18, startersCount: int(f, "startersCount") ?? 11, maxForeign: int(f, "maxForeign"),
       maxForeignOnPitch: int(f, "maxForeignOnPitch"), squadListMax: int(f, "squadListMax"), yellowRules: str(f, "yellowRules"), entryFee: num(f, "entryFee"),
       yellowThreshold: int(f, "yellowThreshold") ?? 3, redBanMatches: int(f, "redBanMatches") ?? 1, startDate: str(f, "startDate"), notes: str(f, "notes"),
-      tiebreak: str(f, "tiebreak") === "H2H" ? "H2H" : "GD",
+      tiebreak: ["H2H", "GD"].includes(str(f, "tiebreak") ?? "") ? str(f, "tiebreak")! : "LFF",
+      maxSubs: int(f, "maxSubs") ?? 3, maxSubsExtra: int(f, "maxSubsExtra") ?? 1, maxLowerCategory: int(f, "maxLowerCategory"),
+      noForeignGK: f.has("noForeignGK") ? f.get("noForeignGK") === "1" : true, forfeitGoals: int(f, "forfeitGoals") ?? 2,
     };
     if (id) await db.update(competitions).set(data).where(eq(competitions.id, id));
     else {
@@ -268,6 +270,7 @@ export async function saveMatch(f: FormData) {
   await attempt(id ? `/matches/${id}` : `/competitions/${compId}?tab=fixtures`, async () => {
     const home = int(f, "homeClubId")!, away = int(f, "awayClubId")!;
     if (home === away) throw new UserError("لا يمكن أن يلعب الفريق ضد نفسه");
+    let late48 = "";
     const data = {
       competitionId: compId, round: int(f, "round") ?? 1, groupName: str(f, "groupName"), homeClubId: home, awayClubId: away,
       ...(f.has("stageId") ? { stageId: int(f, "stageId"), tieNo: int(f, "tieNo"), leg: int(f, "leg") } : {}),
@@ -277,6 +280,8 @@ export async function saveMatch(f: FormData) {
     if (id) {
       const [old] = await db.select().from(matches).where(eq(matches.id, id));
       await db.update(matches).set(data).where(eq(matches.id, id));
+      if (old.kickoff?.getTime() !== data.kickoff?.getTime() && data.kickoff && data.kickoff.getTime() - Date.now() < 48 * 3600e3 && data.kickoff.getTime() > Date.now())
+        late48 = " — ⚠ تنبيه: التعديل قبل أقل من 48 ساعة من الموعد (م48 تشترط إخطار الناديين قبل 48 ساعة إلا للضرورة القصوى)";
       if (old.kickoff?.getTime() !== data.kickoff?.getTime() || old.status !== data.status) {
         for (const c of [home, away]) await notifyClub(c, "تحديث موعد/حالة مباراة", `الجولة ${data.round}`, `/club/matches/${id}`);
         const as = await db.select().from(assignments).where(eq(assignments.matchId, id));
@@ -288,7 +293,7 @@ export async function saveMatch(f: FormData) {
       await db.insert(matches).values({ ...data, stageId });
     }
     await audit(u, id ? "تعديل مباراة" : "إضافة مباراة", "Match", id, data);
-    return "تم حفظ المباراة";
+    return "تم حفظ المباراة" + late48;
   });
 }
 
@@ -343,6 +348,7 @@ export async function addEvent(f: FormData) {
     const clubId = int(f, "clubId")!;
     if (clubId !== m.homeClubId && clubId !== m.awayClubId) throw new UserError("النادي غير صحيح");
     const type = str(f, "type") as "GOAL" | "SUB_IN", playerId = int(f, "playerId");
+    if (type === "SUB_IN") await subsLimitCheck(matchId, clubId, int(f, "minute"));
     if (type === "SUB_IN" && playerId) await foreignOnPitchCheck(matchId, clubId, playerId);
     await db.insert(matchEvents).values({ matchId, clubId, playerId, type, minute: int(f, "minute"), note: str(f, "note") });
     await audit(u, "إضافة حدث مباراة", "Match", matchId);

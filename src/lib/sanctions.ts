@@ -1,8 +1,8 @@
 import "server-only";
 import { and, asc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db, type Tx } from "@/db";
-import { sanctions, suspensions, matches, counters, charges, settings, players, staff, clubs, sanctionTypeEnum, competitionStages } from "@/db/schema";
-import { addCharge, cancelChargeByRef } from "./finance";
+import { sanctions, suspensions, matches, counters, charges, settings, players, staff, clubs, sanctionTypeEnum, competitionStages, competitions } from "@/db/schema";
+import { addCharge, cancelChargeByRef, refereeFeesForMatch } from "./finance";
 import { notifyClub } from "./audit";
 import { SANCTION_TYPE, SANCTION_FOR } from "./labels";
 import { UserError, today } from "./util";
@@ -66,8 +66,19 @@ async function applyEffects(tx: Tx, id: number, by: string) {
   }
   if (s.type === "FORFEIT" && s.matchId) {
     const [m] = await tx.select().from(matches).where(eq(matches.id, s.matchId));
+    const [c] = await tx.select().from(competitions).where(eq(competitions.id, m.competitionId));
     const homeLoses = m.homeClubId === s.clubId;
-    await tx.update(matches).set({ homeScore: homeLoses ? 0 : 3, awayScore: homeLoses ? 3 : 0, status: "FORFEIT", reportStatus: "APPROVED", approvedAt: new Date(), approvedBy: `${by} (قرار ${s.number})` }).where(eq(matches.id, s.matchId));
+    // م42/43/68: يُعتبر المتسبب خاسرًا (صفر - 2) ما لم يكن خاسرًا بفارق أكبر
+    const g = c?.forfeitGoals ?? 2;
+    const margin = m.homeScore != null && m.awayScore != null ? (homeLoses ? m.awayScore - m.homeScore : m.homeScore - m.awayScore) : -1;
+    const keep = margin >= g;
+    await tx.update(matches).set({
+      homeScore: keep ? m.homeScore : homeLoses ? 0 : g, awayScore: keep ? m.awayScore : homeLoses ? g : 0,
+      status: "FORFEIT", reportStatus: "APPROVED", approvedAt: new Date(), approvedBy: `${by} (قرار ${s.number})`,
+    }).where(eq(matches.id, s.matchId));
+    // م97: النادي المتسبب يتحمل مكافآت طاقم التحكيم ومراقب المباراة
+    const fees = await refereeFeesForMatch(tx, s.matchId, by);
+    if (fees.total > 0) await addCharge(tx, { clubId: s.clubId, category: "REFEREE_FEE", description: `مكافآت طاقم التحكيم والمراقب — ${fees.title} (قرار ${s.number}، م97)`, amount: fees.total, refType: "sanction_fees", refId: s.id, createdBy: by });
   }
   await tx.update(sanctions).set({ suspensionId, chargeId }).where(eq(sanctions.id, id));
 }
@@ -102,6 +113,7 @@ export async function revokeSanction(tx: Tx, id: number, by: string) {
   if (!s) throw new UserError("غير موجود");
   if (s.suspensionId) await tx.update(suspensions).set({ isLifted: true, liftedAt: new Date(), liftedBy: by }).where(eq(suspensions.id, s.suspensionId));
   await cancelChargeByRef(tx, "sanction", id);
+  await cancelChargeByRef(tx, "sanction_fees", id);
   if (s.type === "FORFEIT" && s.matchId) {
     // تعود المباراة لتعتمد لجنة المسابقات نتيجتها من جديد
     await tx.update(matches).set({ homeScore: null, awayScore: null, status: "SCHEDULED", reportStatus: "NONE", approvedAt: null, approvedBy: null }).where(eq(matches.id, s.matchId));

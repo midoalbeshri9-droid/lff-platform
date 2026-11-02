@@ -86,21 +86,22 @@ export async function refereeFeesForMatch(q: Q, matchId: number, by: string) {
   const rows = await q.select({ a: assignments, grade: officials.grade, name: officials.fullName }).from(assignments)
     .innerJoin(officials, eq(officials.id, assignments.officialId))
     .where(and(eq(assignments.matchId, matchId), eq(assignments.status, "APPROVED")));
-  if (!rows.length) return 0;
+  if (!rows.length) return { n: 0, total: 0 };
   const rates = await q.select().from(refereeRates);
   const [m] = await q.select().from(matches).where(eq(matches.id, matchId));
   const cl = await q.select({ id: clubs.id, name: clubs.name }).from(clubs).where(inArray(clubs.id, [m.homeClubId, m.awayClubId]));
   const title = `${cl.find((c) => c.id === m.homeClubId)?.name} × ${cl.find((c) => c.id === m.awayClubId)?.name}`;
-  let n = 0;
+  let n = 0, total = 0;
   for (const r of rows) {
     const role = r.a.role === "REF_OBSERVER" ? "COMMISSIONER" : r.a.role;
     const rate = rates.find((x) => x.role === role && x.grade === r.grade) ?? rates.find((x) => x.role === role && x.grade == null);
     const amount = r.a.fee ?? rate?.amount;
     if (!amount || Number(amount) <= 0) continue;
+    total += Number(amount);
     const id = await addCharge(q, { direction: "OUT", officialId: r.a.officialId, category: "REFEREE_FEE", description: `${title} — الجولة ${m.round}`, amount, refType: "match", refId: matchId, createdBy: by });
     if (id) n++;
   }
-  return n;
+  return { n, total, title };
 }
 
 export function assertPositive(v: number, msg = "المبلغ يجب أن يكون أكبر من صفر") {

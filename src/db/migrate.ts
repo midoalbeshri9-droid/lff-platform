@@ -61,7 +61,15 @@ export async function migrate() {
     if (format === "KNOCKOUT") await db.update(s.matches).set({ tieNo: sql`${s.matches.id}`, leg: 1 }).where(sql`${s.matches.stageId} = ${st.id} and ${s.matches.tieNo} is null`);
   }
 
-  // 7) إعدادات البريد الافتراضية (فارغة حتى يضبطها المدير)
+  // 7) تطبيق لائحة تنظيم المسابقات (2018) على المسابقات القائمة — مرة واحدة
+  const [applied] = await db.select().from(s.settings).where(eq(s.settings.key, "lff_comp_reg_2018"));
+  if (!applied) {
+    await db.update(s.competitions).set({ tiebreak: "LFF" }).where(sql`${s.competitions.tiebreak} = 'GD'`);
+    await db.update(s.competitions).set({ squadMax: 18 }).where(sql`${s.competitions.squadMax} = 20`);
+    await db.insert(s.settings).values({ key: "lff_comp_reg_2018", value: new Date().toISOString() }).onConflictDoNothing();
+  }
+
+  // 8) إعدادات البريد الافتراضية (فارغة حتى يضبطها المدير)
   await db.insert(s.settings).values({ key: "smtp_port", value: "465" }).onConflictDoNothing();
   console.log("✓ اكتمل ترحيل البيانات");
 }

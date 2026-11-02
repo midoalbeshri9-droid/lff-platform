@@ -3,7 +3,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db, type Tx } from "@/db";
 import { competitions, matches, matchEvents, suspensions, clubs, registrations, stageTeams } from "@/db/schema";
 import { UserError } from "./util";
-import { roundRobin } from "./competitionPure";
+import { roundRobin, lffRank, type StandingRow } from "./competitionPure";
 import { ensureStages, generateStageFixtures } from "./stages";
 import { pointsDeducted } from "./sanctions";
 import { refereeFeesForMatch } from "./finance";
@@ -16,7 +16,7 @@ export async function generateFixtures(competitionId: number) {
   return generateStageFixtures(st.id);
 }
 
-export type StandingRow = { clubId: number; name: string; group: string | null; p: number; w: number; d: number; l: number; gf: number; ga: number; gd: number; pts: number; deducted: number };
+export type { StandingRow };
 
 type MRow = typeof matches.$inferSelect;
 
@@ -54,6 +54,11 @@ export async function standings(competitionId: number, stageId?: number): Promis
   tally(t, ms, c.pointsWin, c.pointsDraw);
   const ded = await pointsDeducted(competitionId, st.id, tableStages[0]?.id === st.id);
   const rows = [...t.values()].map((r) => ({ ...r, gd: r.gf - r.ga, deducted: ded.get(r.clubId) ?? 0, pts: r.pts - (ded.get(r.clubId) ?? 0) }));
+
+  if (c.tiebreak === "LFF") {
+    const groups = [...new Set(rows.map((r) => r.group ?? ""))].sort((a, b) => a.localeCompare(b, "ar"));
+    return groups.flatMap((g) => lffRank(rows.filter((r) => (r.group ?? "") === g), ms, c.pointsWin, c.pointsDraw, st.legs));
+  }
 
   // المواجهات المباشرة بين الفرق المتساوية في النقاط داخل المجموعة نفسها
   const h2h = new Map<number, { pts: number; gd: number; gf: number }>();
@@ -188,4 +193,20 @@ export async function foreignOnPitchCheck(matchId: number, clubId: number, incom
   }
   const foreignNow = [...on].filter((pid) => isF(pid)).length;
   if (foreignNow + 1 > c.maxForeignOnPitch) throw new UserError(`لا يمكن دخول لاعب أجنبي: داخل الملعب ${foreignNow} أجانب والحد ${c.maxForeignOnPitch} — سجّل خروج أجنبي أولًا`);
+}
+
+/** م65: عدد التبديلات المسموحة (مع تبديل إضافي في الوقت الإضافي لخروج المغلوب) */
+export async function subsLimitCheck(matchId: number, clubId: number, minute: number | null) {
+  const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
+  const [c] = await db.select().from(competitions).where(eq(competitions.id, m.competitionId));
+  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(matchEvents)
+    .where(and(eq(matchEvents.matchId, matchId), eq(matchEvents.clubId, clubId), eq(matchEvents.type, "SUB_IN")));
+  let ko = false;
+  if (m.stageId) {
+    const { competitionStages } = await import("@/db/schema");
+    const [st] = await db.select({ f: competitionStages.format }).from(competitionStages).where(eq(competitionStages.id, m.stageId));
+    ko = st?.f === "KNOCKOUT";
+  }
+  const limit = c.maxSubs + (ko && (minute ?? 0) > 90 ? c.maxSubsExtra : 0);
+  if (n + 1 > limit) throw new UserError(`تجاوز عدد التبديلات المسموح (${limit}) — م65 من لائحة المسابقات`);
 }

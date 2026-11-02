@@ -52,11 +52,12 @@ export default async function Competitions({ searchParams }: { searchParams: SP 
             <Field label="تاريخ البداية"><input type="date" name="startDate" /></Field>
             <Field label="نقاط الفوز"><input type="number" name="pointsWin" defaultValue={3} /></Field>
             <Field label="نقاط التعادل"><input type="number" name="pointsDraw" defaultValue={1} /></Field>
-            <Field label="الأجانب في قائمة المباراة"><input type="number" name="maxForeign" placeholder="بلا حد" /></Field>
+            <Field label="الأجانب في قائمة المباراة" hint="م70: الممتاز 3، الأولى 2، الثانية وما دونها والفئات 1"><input type="number" name="maxForeign" placeholder="بلا حد" /></Field>
             <Field label="الأجانب داخل الملعب معًا"><input type="number" name="maxForeignOnPitch" placeholder="بلا حد" /></Field>
             <Field label="قائمة الموسم (عدد)" hint="فارغ = غير مطلوبة"><input type="number" name="squadListMax" /></Field>
             <Field label="رسوم الاشتراك (د.ل)"><input type="number" step="0.01" name="entryFee" /></Field>
-            <Field label="عدد لاعبي القائمة"><input type="number" name="squadMax" defaultValue={20} /></Field>
+            <Field label="عدد لاعبي القائمة" hint="م65: 11 أساسيًا + 7 بدلاء"><input type="number" name="squadMax" defaultValue={18} /></Field>
+            <Field label="التبديلات المسموحة" hint="م65: الكبار والشباب 3، الآمال 5"><input type="number" name="maxSubs" defaultValue={3} /></Field>
             <Field label="عدد الأساسيين"><input type="number" name="startersCount" defaultValue={11} /></Field>
             <Field label="تراكم الإنذارات = إيقاف"><input type="number" name="yellowThreshold" defaultValue={3} /></Field>
             <Field label="مباريات الإيقاف للطرد المباشر"><input type="number" name="redBanMatches" defaultValue={1} /></Field>

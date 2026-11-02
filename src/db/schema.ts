@@ -303,7 +303,7 @@ export const competitions = pgTable("competitions", {
   legs: integer("legs").notNull().default(2),
   pointsWin: integer("points_win").notNull().default(3),
   pointsDraw: integer("points_draw").notNull().default(1),
-  squadMax: integer("squad_max").notNull().default(20),
+  squadMax: integer("squad_max").notNull().default(18), // م65: 11 أساسيًا + 7 بدلاء
   startersCount: integer("starters_count").notNull().default(11),
   maxForeign: integer("max_foreign"), // الأجانب في قائمة المباراة
   maxForeignOnPitch: integer("max_foreign_on_pitch"), // الأجانب داخل الملعب في نفس الوقت
@@ -312,7 +312,12 @@ export const competitions = pgTable("competitions", {
   yellowRules: text("yellow_rules"), // مستويات: "3:1,5:2,7:3"
   entryFee: numeric("entry_fee", { precision: 12, scale: 2 }),
   redBanMatches: integer("red_ban_matches").notNull().default(1),
-  tiebreak: text("tiebreak").notNull().default("GD"), // GD = فارق الأهداف أولًا، H2H = المواجهات المباشرة أولًا
+  tiebreak: text("tiebreak").notNull().default("LFF"), // LFF = المادة 24 من لائحة المسابقات، GD = فارق الأهداف أولًا، H2H = المواجهات المباشرة أولًا
+  maxSubs: integer("max_subs").notNull().default(3), // م65: التبديلات المسموحة
+  maxSubsExtra: integer("max_subs_extra").notNull().default(1), // م65: تبديل إضافي في الوقت الإضافي
+  maxLowerCategory: integer("max_lower_category").default(3), // م69: لاعبو الفئة الأدنى في القائمة
+  noForeignGK: boolean("no_foreign_gk").notNull().default(true), // م71: لا يحرس المرمى لاعب أجنبي
+  forfeitGoals: integer("forfeit_goals").notNull().default(2), // م42/43/68: النتيجة الاعتبارية (صفر - 2)
   status: compStatusEnum("status").notNull().default("DRAFT"),
   startDate: d("start_date"),
   notes: text("notes"),
@@ -803,3 +808,17 @@ export const commReportsRel = relations(commissionerReports, ({ one }) => ({
 export type Role = (typeof roleEnum.enumValues)[number];
 export type RegStatus = (typeof regStatusEnum.enumValues)[number];
 export type RegType = (typeof regTypeEnum.enumValues)[number];
+
+// مكتبة اللوائح (لائحة تنظيم المسابقات، لائحة الانضباط، أوضاع اللاعبين ...) — متاحة لكل المستخدمين
+export const regulations = pgTable("regulations", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  kind: text("kind").notNull().default("OTHER"), // COMPETITIONS | DISCIPLINE | STATUS | REFEREES | FINANCE | OTHER
+  fileKey: text("file_key").notNull(),
+  fileName: text("file_name"),
+  approvedOn: d("approved_on"),
+  notes: text("notes"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdBy: text("created_by"),
+  createdAt: ts("created_at").notNull().defaultNow(),
+});

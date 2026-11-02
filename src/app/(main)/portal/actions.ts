@@ -5,7 +5,7 @@ import { assignments, matches, matchEvents, matchSquads, evaluations, commission
 import { requireOfficialUser } from "@/lib/auth";
 import { audit, notifyRoles } from "@/lib/audit";
 import { attempt, str, req, int, UserError } from "@/lib/util";
-import { foreignOnPitchCheck } from "@/lib/competition";
+import { foreignOnPitchCheck, subsLimitCheck } from "@/lib/competition";
 
 /** يتحقق أن المستخدم معيّن (تعيينًا معتمدًا) في هذه المباراة بهذا الدور */
 async function myRole(officialId: number, matchId: number, roles: string[]) {
@@ -37,6 +37,7 @@ export async function refAddEvent(f: FormData) {
       if (!s) throw new UserError("اللاعب ليس في قائمة المباراة");
     }
     const type = str(f, "type") as "GOAL" | "SUB_IN";
+    if (type === "SUB_IN") await subsLimitCheck(matchId, clubId, int(f, "minute"));
     if (type === "SUB_IN" && playerId) await foreignOnPitchCheck(matchId, clubId, playerId);
     await db.insert(matchEvents).values({ matchId, clubId, playerId, type, minute: int(f, "minute"), note: str(f, "note") });
     return "تمت إضافة الحدث";

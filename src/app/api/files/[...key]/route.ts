@@ -13,6 +13,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ key: st
 
   let allowed = false;
   if (key.startsWith("cards/")) allowed = true; // خلفيات البطاقات
+  else if (key.startsWith("regulations/")) allowed = true; // اللوائح المعتمدة متاحة لكل المستخدمين
   else if (!u.isClub && !u.isOfficial) allowed = u.canAny("reg.view", "comp.view", "cards.print", "ref.view");
   else if (u.isClub) {
     if (key.startsWith(`docs/${u.clubId}/`)) {

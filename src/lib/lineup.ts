@@ -1,7 +1,7 @@
 import "server-only";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { matches, matchSquads, competitions } from "@/db/schema";
+import { matches, matchSquads, competitions, ageCategories } from "@/db/schema";
 import { clubEligibility } from "./eligibility";
 import { int, UserError } from "./util";
 
@@ -30,6 +30,28 @@ export async function saveLineup(matchId: number, clubId: number, f: FormData) {
   if (c.maxForeignOnPitch != null) {
     const fs = rows.filter((r) => r.e.isForeign && r.starter).length;
     if (fs > c.maxForeignOnPitch) throw new UserError(`عدد الأجانب الأساسيين داخل الملعب (${fs}) يتجاوز الحد المسموح (${c.maxForeignOnPitch})`);
+  }
+  // م71: لا يجوز للاعب الأجنبي اللعب في مركز حارس المرمى
+  if (c.noForeignGK) {
+    const gk = rows.find((r) => r.e.isForeign && r.e.position === "GOALKEEPER");
+    if (gk) throw new UserError(`${gk.e.fullName}: لا يجوز للاعب الأجنبي اللعب حارسًا للمرمى (م71 من لائحة المسابقات)`);
+  }
+  // م69: لاعبو الفئة السنية الأدنى (3 كحد أقصى)
+  if (c.maxLowerCategory != null) {
+    const [cat] = c.categoryId ? await db.select().from(ageCategories).where(eq(ageCategories.id, c.categoryId)) : [];
+    const compMax = cat?.maxAge ?? null;
+    const lower = rows.filter((r) => r.e.catMax != null && (compMax == null || r.e.catMax < compMax));
+    if (lower.length > c.maxLowerCategory) throw new UserError(`عدد لاعبي الفئة الأدنى في القائمة (${lower.length}) يتجاوز ${c.maxLowerCategory} (م69 من لائحة المسابقات)`);
+  }
+  // م77: لا يشارك اللاعب في أكثر من مباراة رسمية في اليوم نفسه
+  if (m.kickoff && rows.length) {
+    const day = m.kickoff.toISOString().slice(0, 10);
+    const other = await db.select({ pid: matchSquads.playerId, mid: matches.id }).from(matchSquads).innerJoin(matches, eq(matches.id, matchSquads.matchId))
+      .where(and(inArray(matchSquads.playerId, rows.map((r) => r.e.playerId)), ne(matches.id, matchId), sql`date(${matches.kickoff}) = ${day}`, ne(matches.status, "CANCELLED")));
+    if (other.length) {
+      const e = rows.find((r) => r.e.playerId === other[0].pid)!.e;
+      throw new UserError(`${e.fullName}: مدرج في قائمة مباراة أخرى في اليوم نفسه (م77 من لائحة المسابقات)`);
+    }
   }
   const nums = rows.map((r) => int(f, `num_${r.e.playerId}`) ?? r.e.shirtNumber).filter((n) => n != null);
   if (new Set(nums).size !== nums.length) throw new UserError("أرقام قمصان مكررة في القائمة");

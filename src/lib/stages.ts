@@ -118,6 +118,12 @@ export async function generateStageFixtures(stageId: number) {
   if (await stageHasMatches(stageId)) throw new UserError("جدول هذه المرحلة مُنشأ مسبقًا — احذفه أولًا لإعادة الجدولة");
   const teams = await db.select().from(stageTeams).where(eq(stageTeams.stageId, stageId));
   if (teams.length < 2) throw new UserError("أضف فريقين على الأقل لهذه المرحلة قبل الجدولة");
+  if (s.seq === 1 && s.format !== "KNOCKOUT") {
+    // م19: لا تُنظم مسابقة بأقل من 5 فرق (4 للفئات السنية)
+    const [c] = await db.select().from(competitions).where(eq(competitions.id, s.competitionId));
+    const min = c.categoryId ? 4 : 5;
+    if (teams.length < min) throw new UserError(`لا يجوز تنظيم المسابقة بأقل من ${min} فرق (م19 من لائحة المسابقات) — عدد الفرق ${teams.length}`);
+  }
   const venue = await venues();
   const rows: (typeof matches.$inferInsert)[] = [];
   if (s.format === "GROUPS") {

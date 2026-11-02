@@ -11,6 +11,8 @@ export type EligibilityRow = {
   shirtNumber: number | null;
   isForeign: boolean;
   categoryName: string | null;
+  catMax: number | null;
+  position: string;
   ok: boolean;
   reasons: string[];
 };
@@ -67,6 +69,8 @@ export async function clubEligibility(clubId: number, competitionId: number, on:
         shirtNumber: r.shirtNumber,
         isForeign: p.isForeign,
         categoryName: catName,
+        catMax,
+        position: p.position,
         ok: reasons.length === 0,
         reasons,
       };

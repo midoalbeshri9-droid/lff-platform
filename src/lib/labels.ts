@@ -73,7 +73,7 @@ export const POSITION: Record<string, string> = {
 export const GENDER: Record<string, string> = { MALE: "ذكر", FEMALE: "أنثى" };
 
 export const COMP_TYPE: Record<string, string> = { LEAGUE: "دوري", GROUPS: "مجموعات", CUP: "كأس (خروج المغلوب)", GROUPS_KNOCKOUT: "مجموعات ثم خروج المغلوب" };
-export const TIEBREAK: Record<string, string> = { GD: "فارق الأهداف ثم الأهداف ثم المواجهات المباشرة", H2H: "المواجهات المباشرة ثم فارق الأهداف" };
+export const TIEBREAK: Record<string, string> = { LFF: "لائحة الاتحاد الليبي (م24): المواجهات المباشرة ثم الأهداف خارج الملعب", GD: "فارق الأهداف ثم الأهداف ثم المواجهات المباشرة", H2H: "المواجهات المباشرة ثم فارق الأهداف" };
 export const COMP_STATUS: Record<string, [string, string]> = {
   DRAFT: ["قيد الإعداد", "b-gray"],
   ACTIVE: ["جارية", "b-green"],

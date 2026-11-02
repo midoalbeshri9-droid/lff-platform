@@ -160,7 +160,7 @@ async function StageTable({ id, stage }: { id: number; stage: Stage }) {
           {g && <h3>المجموعة {g}</h3>}
           <table className="t"><thead><tr><th>#</th><th>الفريق</th><th className="num">لعب</th><th className="num">فاز</th><th className="num">تعادل</th><th className="num">خسر</th><th className="num">له</th><th className="num">عليه</th><th className="num">الفارق</th><th className="num">النقاط</th><th className="num">مخصوم</th></tr></thead>
             <tbody>{rows.filter((r) => (r.group ?? "") === g).map((r, i) => (
-              <tr key={r.clubId} className={i < q ? "ok-row" : ""}><td>{i + 1}</td><td><strong>{r.name}</strong></td><td className="num">{r.p}</td><td className="num">{r.w}</td><td className="num">{r.d}</td><td className="num">{r.l}</td>
+              <tr key={r.clubId} className={i < q ? "ok-row" : ""}><td>{i + 1}</td><td><strong>{r.name}</strong>{r.playoff && <span className="b b-amber" style={{ marginInlineStart: 6 }} title="تساوٍ تام وفق م24 — تُجرى مباراة فاصلة">مباراة فاصلة</span>}</td><td className="num">{r.p}</td><td className="num">{r.w}</td><td className="num">{r.d}</td><td className="num">{r.l}</td>
                 <td className="num">{r.gf}</td><td className="num">{r.ga}</td><td className="num">{r.gd > 0 ? "+" : ""}{r.gd}</td><td className="num"><strong>{r.pts}</strong></td><td className="num">{r.deducted ? <span className="danger-text">−{r.deducted}</span> : ""}</td></tr>
             ))}</tbody></table>
         </div>
@@ -427,6 +427,11 @@ async function Settings({ c, manage }: { c: typeof competitions.$inferSelect; ma
       <Field label="الأساسيون"><input type="number" name="startersCount" defaultValue={c.startersCount} /></Field>
       <Field label="تراكم الإنذارات"><input type="number" name="yellowThreshold" defaultValue={c.yellowThreshold} /></Field>
       <Field label="إيقاف الطرد المباشر (مباريات)"><input type="number" name="redBanMatches" defaultValue={c.redBanMatches} /></Field>
+      <Field label="التبديلات المسموحة" hint="م65: الكبار والشباب 3، الآمال 5"><input type="number" name="maxSubs" defaultValue={c.maxSubs} /></Field>
+      <Field label="تبديل إضافي في الوقت الإضافي"><input type="number" name="maxSubsExtra" defaultValue={c.maxSubsExtra} /></Field>
+      <Field label="لاعبو الفئة الأدنى في القائمة" hint="م69: 3 — فارغ = بلا حد"><input type="number" name="maxLowerCategory" defaultValue={c.maxLowerCategory ?? ""} /></Field>
+      <Field label="حارس المرمى الأجنبي" hint="م71"><select name="noForeignGK" defaultValue={c.noForeignGK ? "1" : "0"}><option value="1">غير مسموح</option><option value="0">مسموح</option></select></Field>
+      <Field label="النتيجة الاعتبارية للمتسبب" hint="م42 و43 و68: صفر - 2"><input type="number" name="forfeitGoals" min={1} defaultValue={c.forfeitGoals} /></Field>
       <Field label="ملاحظات" full><textarea name="notes" defaultValue={c.notes ?? ""} /></Field>
       {manage && <div className="full"><Submit>حفظ الإعدادات</Submit></div>}
     </form>
