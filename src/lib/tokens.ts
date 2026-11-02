@@ -7,7 +7,8 @@ import { userTokens, users } from "@/db/schema";
 import { sendMail } from "./mail";
 
 const sha = (t: string) => crypto.createHash("sha256").update(t).digest("hex");
-export const appUrl = () => (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+export const appUrl = () =>
+  (process.env.APP_URL ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000")).replace(/\/$/, "");
 export const unusableHash = () => bcrypt.hashSync(crypto.randomBytes(24).toString("hex"), 8);
 
 export async function createToken(userId: number, kind: "VERIFY" | "RESET" | "EMAIL_CHANGE", hours: number, newEmail?: string) {

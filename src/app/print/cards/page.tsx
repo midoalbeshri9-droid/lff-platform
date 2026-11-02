@@ -1,3 +1,4 @@
+import { appUrl } from "@/lib/tokens";
 import { redirect } from "next/navigation";
 import { eq, inArray, desc } from "drizzle-orm";
 import QRCode from "qrcode";
@@ -30,7 +31,7 @@ export default async function PrintCards({ searchParams }: { searchParams: Promi
     .innerJoin(seasons, eq(seasons.id, registrations.seasonId)).leftJoin(ageCategories, eq(ageCategories.id, registrations.categoryId))
     .where(inArray(registrations.id, ids));
   const ok = rows.filter((x) => x.r.status === "APPROVED");
-  const base = process.env.APP_URL ?? "http://localhost:3000";
+  const base = appUrl();
   const cards = await Promise.all(ok.map(async ({ r, p, club, season, cat }) => ({
     id: r.id,
     photo: fileUrl(p.photoKey),
