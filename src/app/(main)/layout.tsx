@@ -111,7 +111,7 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
         ...(u.can("admin.users") ? [{ label: "👥 المستخدمون والحسابات", href: "/admin/users" }] : []),
         ...(u.can("admin.permissions") ? [{ label: "🔐 مصفوفة الصلاحيات", href: "/admin/permissions" }] : []),
         ...(u.can("admin.clubs") ? [{ label: "🏟 الأندية", href: "/admin/clubs" }] : []),
-        ...(u.can("admin.settings") ? [{ label: "⚙ الإعدادات العامة", href: "/admin/settings" }] : []),
+        ...(u.can("admin.settings") ? [{ label: "⚙ الإعدادات العامة", href: "/admin/settings" }, { label: "📧 إعدادات البريد (Gmail)", href: "/admin/mail" }] : []),
         ...(u.can("admin.outbox") ? [{ label: "✉ صندوق الرسائل (روابط التفعيل)", href: "/admin/outbox" }] : []),
         ...(u.can("admin.audit") ? [{ label: "🛡 سجل العمليات", href: "/admin/audit" }] : []),
       ],

@@ -12,7 +12,9 @@ import { fmtDateTime, toLocalInput } from "@/lib/util";
 import { PageHead, Flash, Badge, Empty, Field, Options, type SP } from "@/components/ui";
 import { Submit } from "@/components/Client";
 import { LineupForm } from "@/components/LineupForm";
-import { saveMatch, deleteMatch, committeeLineup, addEvent, deleteEvent, setResult, approveReport, returnReport } from "../../competitions/actions";
+import { saveMatch, deleteMatch, committeeLineup, addEvent, deleteEvent, setResult, approveReport, returnReport, setPenalties } from "../../competitions/actions";
+import { competitionStages } from "@/db/schema";
+import { koRoundName } from "@/lib/competitionPure";
 
 export default async function MatchPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const u = await requireUser("comp.view", "ref.view");
@@ -25,11 +27,18 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
   const [home] = await db.select().from(clubs).where(eq(clubs.id, m.homeClubId));
   const [away] = await db.select().from(clubs).where(eq(clubs.id, m.awayClubId));
   const name = (cid: number) => (cid === home.id ? home.name : away.name);
+  const [stage] = m.stageId ? await db.select().from(competitionStages).where(eq(competitionStages.id, m.stageId)) : [];
+  const ko = stage?.format === "KNOCKOUT";
+  let roundLabel = `الجولة ${m.round}`;
+  if (ko) {
+    const inRound = await db.select({ t: matches.tieNo }).from(matches).where(and(eq(matches.stageId, stage.id), eq(matches.round, m.round)));
+    roundLabel = koRoundName(new Set(inRound.map((x) => x.t)).size * 2, m.round) + (m.leg === 2 ? " — الإياب" : "");
+  }
   const tabs: [string, string][] = [["report", "التقرير والأحداث"], ["lineups", "قوائم الفريقين"], ["officials", "الطاقم والمراقبة"], ["info", "بيانات المباراة"]];
 
   return (
     <>
-      <PageHead title={`${home.name} × ${away.name}`} sub={<>{c.name} — الجولة {m.round} — {fmtDateTime(m.kickoff)} — {m.venue ?? ""} <Badge v={MATCH_STATUS[m.status]} /> <Badge v={REPORT_STATUS[m.reportStatus]} /></>}
+      <PageHead title={`${home.name} × ${away.name}`} sub={<>{c.name}{stage ? ` — ${stage.name}` : ""}{m.groupName ? ` — المجموعة ${m.groupName}` : ""} — {roundLabel} — {fmtDateTime(m.kickoff)} — {m.venue ?? ""} <Badge v={MATCH_STATUS[m.status]} /> <Badge v={REPORT_STATUS[m.reportStatus]} /></>}
         crumbs={[["المسابقات", "/competitions"], [c.name, `/competitions/${c.id}`], ["مباراة"]]}
         actions={<>
           {u.can("comp.sanctions") && <Link className="btn btn-danger" href={`/competitions/sanctions/new?match=${id}`}>⚖ قرار عقوبة</Link>}
@@ -39,11 +48,21 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
       {(await matchNotices(id)).map((n) => <div key={n.id} className="alert err">⚖ {SANCTION_TYPE[n.type]} — قرار {n.number}: {n.reason}</div>)}
       <div className="card vs">
         <div className="team">{home.name}</div>
-        <div className="score">{m.homeScore ?? "–"} : {m.awayScore ?? "–"}</div>
+        <div className="score">{m.homeScore ?? "–"} : {m.awayScore ?? "–"}{m.homePens != null && <div style={{ fontSize: ".9rem" }}>ترجيح {m.homePens} : {m.awayPens}</div>}</div>
         <div className="team">{away.name}</div>
       </div>
       <div className="tabs">{tabs.map(([k, l]) => <Link key={k} href={`?tab=${k}`} className={`tab ${tab === k ? "active" : ""}`}>{l}</Link>)}</div>
       {tab === "report" && <Report m={m} u={u} name={name} />}
+      {tab === "report" && ko && u.can("comp.reports") && (
+        <form action={setPenalties} className="card row">
+          <input type="hidden" name="matchId" value={m.id} />
+          <strong>ركلات الترجيح</strong>
+          <span className="muted" style={{ fontSize: ".85rem" }}>عند التعادل في المباراة (أو في المجموع بعد الإياب)</span>
+          <Field label={home.name}><input className="score-in" type="number" name="homePens" min={0} defaultValue={m.homePens ?? ""} /></Field>
+          <Field label={away.name}><input className="score-in" type="number" name="awayPens" min={0} defaultValue={m.awayPens ?? ""} /></Field>
+          <Submit className="btn btn-light">حفظ</Submit>
+        </form>
+      )}
       {tab === "lineups" && <Lineups m={m} c={c} canEdit={u.can("comp.lineups") && m.reportStatus !== "APPROVED"} clubsList={[home, away]} />}
       {tab === "officials" && <Officials id={id} canAssign={u.can("ref.assign")} canEvals={u.canAny("ref.evals", "comp.view")} canReport={u.can("comp.view")} canSanction={u.can("comp.sanctions")} />}
       {tab === "report" && <MatchSanctions id={id} />}

@@ -9,6 +9,7 @@ import { saveUpload, ALLOWED_IMG } from "@/lib/storage";
 import { attempt, str, req, int, bool, UserError, reqPhone, reqEmail } from "@/lib/util";
 import { sendActivation, sendReset, unusableHash } from "@/lib/tokens";
 import { ensureUniqueContact, sentMsg } from "@/lib/users";
+import { testMail } from "@/lib/mail";
 
 export async function saveUser(f: FormData) {
   const u = await requireUser("admin.users");
@@ -153,3 +154,36 @@ export async function saveSettings(f: FormData) {
   });
 }
 
+
+// ---------------- إعدادات البريد (Gmail) ----------------
+export async function saveMailSettings(f: FormData) {
+  const u = await requireUser("admin.settings");
+  await attempt("/admin/mail", async () => {
+    const user = (str(f, "smtp_user") ?? "").trim();
+    if (user && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user)) throw new UserError("البريد الإلكتروني غير صحيح");
+    const vals: Record<string, string> = {
+      smtp_host: str(f, "smtp_host") ?? "smtp.gmail.com", smtp_port: String(int(f, "smtp_port") ?? 465), smtp_user: user, mail_from: str(f, "mail_from") ?? "",
+    };
+    const pass = (str(f, "smtp_pass") ?? "").replace(/\s+/g, "");
+    if (pass) vals.smtp_pass = pass; // فارغة = إبقاء كلمة المرور المحفوظة
+    if (f.get("clear") === "1") { vals.smtp_pass = ""; vals.smtp_user = ""; }
+    for (const [key, value] of Object.entries(vals)) await db.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value } });
+    await audit(u, "تعديل إعدادات البريد", "Setting", null, { smtp_user: vals.smtp_user, host: vals.smtp_host });
+    return f.get("clear") === "1" ? "أُلغي ربط البريد" : "تم حفظ إعدادات البريد — جرّب «إرسال رسالة تجريبية»";
+  });
+}
+
+export async function sendTestMail(f: FormData) {
+  const u = await requireUser("admin.settings");
+  await attempt("/admin/mail", async () => {
+    const to = reqEmail(f, "to");
+    let r: Awaited<ReturnType<typeof testMail>>;
+    try { r = await testMail(to); } catch (e) {
+      const msg = String((e as Error).message);
+      throw new UserError(/Invalid login|BadCredentials|535/i.test(msg) ? "رفض Gmail الدخول: تأكد من البريد ومن «كلمة مرور التطبيق» (16 حرفًا) وأن التحقق بخطوتين مفعّل" : `تعذر الاتصال بخادم البريد: ${msg.slice(0, 160)}`);
+    }
+    await audit(u, "رسالة بريد تجريبية", "Setting", null, { to, sent: r.sent });
+    if (!r.sent) throw new UserError(`لم تُرسل الرسالة: ${"error" in r ? r.error : "تحقق من الإعدادات"}`);
+    return `✓ أُرسلت رسالة تجريبية إلى ${to} — تحقق من صندوق الوارد (أو البريد غير الهام)`;
+  });
+}

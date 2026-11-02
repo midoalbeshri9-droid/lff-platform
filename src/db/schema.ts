@@ -291,7 +291,7 @@ export const cardPrints = pgTable("card_prints", {
 });
 
 // ======================= المسابقات =======================
-export const compTypeEnum = pgEnum("competition_type", ["LEAGUE", "GROUPS", "CUP"]);
+export const compTypeEnum = pgEnum("competition_type", ["LEAGUE", "GROUPS", "CUP", "GROUPS_KNOCKOUT"]);
 export const compStatusEnum = pgEnum("competition_status", ["DRAFT", "ACTIVE", "FINISHED"]);
 
 export const competitions = pgTable("competitions", {
@@ -312,6 +312,7 @@ export const competitions = pgTable("competitions", {
   yellowRules: text("yellow_rules"), // مستويات: "3:1,5:2,7:3"
   entryFee: numeric("entry_fee", { precision: 12, scale: 2 }),
   redBanMatches: integer("red_ban_matches").notNull().default(1),
+  tiebreak: text("tiebreak").notNull().default("GD"), // GD = فارق الأهداف أولًا، H2H = المواجهات المباشرة أولًا
   status: compStatusEnum("status").notNull().default("DRAFT"),
   startDate: d("start_date"),
   notes: text("notes"),
@@ -324,14 +325,45 @@ export const competitionTeams = pgTable("competition_teams", {
   groupName: text("group_name"),
 }, (t) => [uniqueIndex("comp_team_uq").on(t.competitionId, t.clubId)]);
 
+// مراحل المسابقة: دوري، مجموعات، خروج المغلوب — بالترتيب، مع تأهل الفرق من مرحلة لأخرى
+export const stageFormatEnum = pgEnum("stage_format", ["LEAGUE", "GROUPS", "KNOCKOUT"]);
+export const stageStatusEnum = pgEnum("stage_status", ["PENDING", "ACTIVE", "DONE"]);
+export const competitionStages = pgTable("competition_stages", {
+  id: serial("id").primaryKey(),
+  competitionId: integer("competition_id").notNull().references(() => competitions.id, { onDelete: "cascade" }),
+  seq: integer("seq").notNull().default(1),
+  name: text("name").notNull(),
+  format: stageFormatEnum("format").notNull().default("LEAGUE"),
+  legs: integer("legs").notNull().default(2), // دوري/مجموعات: عدد الأدوار — خروج المغلوب: مباراة أو ذهاب وإياب
+  finalLegs: integer("final_legs").notNull().default(1), // خروج المغلوب: النهائي مباراة واحدة أو ذهاب وإياب
+  groupsCount: integer("groups_count"),
+  qualifyPerGroup: integer("qualify_per_group"), // عدد المتأهلين من كل مجموعة للمرحلة التالية
+  status: stageStatusEnum("status").notNull().default("PENDING"),
+  notes: text("notes"),
+}, (t) => [index("stage_comp_idx").on(t.competitionId, t.seq)]);
+
+export const stageTeams = pgTable("stage_teams", {
+  id: serial("id").primaryKey(),
+  stageId: integer("stage_id").notNull().references(() => competitionStages.id, { onDelete: "cascade" }),
+  clubId: integer("club_id").notNull().references(() => clubs.id),
+  groupName: text("group_name"),
+  seed: integer("seed"), // الترتيب في المرحلة السابقة (1 = الأول)
+  fromGroup: text("from_group"), // المجموعة التي تأهل منها
+}, (t) => [uniqueIndex("stage_team_uq").on(t.stageId, t.clubId)]);
+
 export const matchStatusEnum = pgEnum("match_status", ["SCHEDULED", "PLAYED", "POSTPONED", "CANCELLED", "FORFEIT"]);
 export const reportStatusEnum = pgEnum("report_status", ["NONE", "SUBMITTED", "RETURNED", "APPROVED"]);
 
 export const matches = pgTable("matches", {
   id: serial("id").primaryKey(),
   competitionId: integer("competition_id").notNull().references(() => competitions.id, { onDelete: "cascade" }),
+  stageId: integer("stage_id").references(() => competitionStages.id, { onDelete: "cascade" }),
   round: integer("round").notNull().default(1),
   groupName: text("group_name"),
+  tieNo: integer("tie_no"), // رقم المواجهة في خروج المغلوب (يجمع الذهاب والإياب)
+  leg: integer("leg"),
+  homePens: integer("home_pens"),
+  awayPens: integer("away_pens"),
   homeClubId: integer("home_club_id").notNull().references(() => clubs.id),
   awayClubId: integer("away_club_id").notNull().references(() => clubs.id),
   kickoff: ts("kickoff"),
@@ -568,6 +600,7 @@ export const sanctions = pgTable("sanctions", {
   staffId: integer("staff_id").references(() => staff.id),
   clubId: integer("club_id").notNull().references(() => clubs.id), // نادي المعاقَب (أو النادي نفسه)
   competitionId: integer("competition_id").references(() => competitions.id),
+  stageId: integer("stage_id").references(() => competitionStages.id, { onDelete: "set null" }), // خصم النقاط يُطبق على هذه المرحلة
   matchId: integer("match_id").references(() => matches.id),
   articleId: integer("article_id").references(() => sanctionArticles.id),
   articleText: text("article_text"),

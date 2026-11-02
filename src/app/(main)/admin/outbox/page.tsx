@@ -15,12 +15,12 @@ export default async function Outbox({ searchParams }: { searchParams: SP }) {
   return (
     <>
       <PageHead title="صندوق الرسائل الصادرة" sub="رسائل التفعيل واستعادة كلمة المرور والإشعارات — البريد وSMS" />
-      {!mailConfigured() ? (
+      {!(await mailConfigured()) ? (
         <div className="alert warn">
           البريد غير مُعدّ بعد، لذلك لا تُرسل الرسائل تلقائيًا. انسخ رابط التفعيل من الجدول وأرسله للمستخدم (واتساب مثلًا).
-          لتفعيل الإرسال أضف إعدادات Gmail في ملف <span className="kbd">.env</span> (SMTP_USER و SMTP_PASS) — الشرح في README.
+          لتفعيل الإرسال اضبط Gmail من <a href="/admin/mail"><strong>إعدادات البريد</strong></a>.
         </div>
-      ) : <div className="alert ok">البريد مُعدّ — الرسائل تُرسل تلقائيًا.</div>}
+      ) : <div className="alert ok">البريد مُعدّ — الرسائل تُرسل تلقائيًا. <a href="/admin/mail">إعدادات البريد</a></div>}
       <form className="filters">
         <div className="field"><label>الحالة</label><select name="status" defaultValue={sp.status ?? ""}><option value="">الكل</option>{Object.entries(ST).map(([k, v]) => <option key={k} value={k}>{v[0]}</option>)}</select></div>
         <button className="btn btn-light">عرض</button>

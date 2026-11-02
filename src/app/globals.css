@@ -387,3 +387,22 @@ details.box summary { cursor: pointer; font-weight: 700; }
 .verify .big.ok { background: var(--green-l); color: var(--green-d); }
 .verify .big.bad { background: var(--red-l); color: var(--red); }
 .cr80 .canvas { box-shadow: none; border-radius: 0; }
+
+/* ===== مراحل المسابقة ===== */
+.tabs.sub { margin-top: -.4rem; }
+.tabs.sub .tab { font-size: .85rem; }
+tr.ok-row td { background: var(--green-l); }
+.stage-flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: .6rem; margin-bottom: 1rem; }
+.stage-card { display: block; min-width: 190px; margin: 0; color: inherit; border: 2px solid transparent; }
+.stage-card:hover { text-decoration: none; border-color: var(--line); }
+.stage-card.active { border-color: var(--gold); background: var(--gold-l); }
+.stage-card.add { min-width: 260px; }
+.stage-card.add summary { cursor: pointer; font-weight: 700; color: var(--green-d); }
+.stage-arrow { align-self: center; font-size: 1.4rem; color: var(--gold); }
+.bracket { display: flex; gap: .8rem; overflow-x: auto; align-items: flex-start; padding-bottom: .5rem; }
+.bracket-col { min-width: 230px; margin: 0; }
+.tie { border: 1px solid var(--line); border-radius: 8px; margin-bottom: .6rem; overflow: hidden; }
+.tie-team { display: flex; justify-content: space-between; padding: .35rem .6rem; border-bottom: 1px solid var(--line); }
+.tie-team.win { background: var(--green-l); font-weight: 700; }
+.tie-team.lose { color: #9a988f; }
+.tie-meta { display: flex; flex-wrap: wrap; gap: .5rem; padding: .3rem .6rem; font-size: .75rem; background: #faf9f6; }

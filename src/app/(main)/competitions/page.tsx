@@ -43,9 +43,12 @@ export default async function Competitions({ searchParams }: { searchParams: SP 
           <form action={saveCompetition} className="form f3 mt">
             <Field label="الاسم"><input type="text" name="name" required placeholder="الدوري الليبي الممتاز" /></Field>
             <Field label="الموسم"><select name="seasonId" defaultValue={cur?.id}>{ss.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
-            <Field label="النوع"><select name="type"><Options map={COMP_TYPE} /></select></Field>
+            <Field label="النظام" hint="يمكن إضافة مراحل أخرى لاحقًا (مثل سداسي التتويج)"><select name="type"><Options map={COMP_TYPE} /></select></Field>
+            <Field label="عدد المجموعات" hint="لأنظمة المجموعات"><input type="number" name="groupsCount" defaultValue={2} min={2} max={12} /></Field>
+            <Field label="المتأهلون من كل مجموعة"><input type="number" name="qualifyPerGroup" defaultValue={2} min={1} /></Field>
+            <Field label="خروج المغلوب"><select name="koLegs"><option value="1">مباراة واحدة</option><option value="2">ذهاب وإياب</option></select></Field>
             <Field label="الفئة العمرية" hint="تُمنع مشاركة لاعب من فئة أكبر"><select name="categoryId"><option value="">الفريق الأول (مفتوحة)</option>{cats.filter((c) => c.maxAge != null).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
-            <Field label="عدد الأدوار (ذهاب/إياب)"><input type="number" name="legs" defaultValue={2} min={1} max={4} /></Field>
+            <Field label="أدوار الدوري/المجموعات (ذهاب/إياب)"><input type="number" name="legs" defaultValue={2} min={1} max={4} /></Field>
             <Field label="تاريخ البداية"><input type="date" name="startDate" /></Field>
             <Field label="نقاط الفوز"><input type="number" name="pointsWin" defaultValue={3} /></Field>
             <Field label="نقاط التعادل"><input type="number" name="pointsDraw" defaultValue={1} /></Field>

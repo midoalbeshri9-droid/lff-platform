@@ -1,12 +1,16 @@
 "use server";
 import { and, eq, ne, or } from "drizzle-orm";
 import { db } from "@/db";
-import { competitions, competitionTeams, matches, matchEvents, assignments, matchRequests, competitionSquads, registrations, clubs } from "@/db/schema";
+import { competitions, competitionTeams, matches, matchEvents, assignments, matchRequests, competitionSquads, registrations, clubs, competitionStages, stageTeams } from "@/db/schema";
 import { addCharge } from "@/lib/finance";
 import { foreignOnPitchCheck } from "@/lib/competition";
 import { requireUser } from "@/lib/auth";
 import { audit, notifyClub, notifyOfficial } from "@/lib/audit";
-import { generateFixtures, approveMatch } from "@/lib/competition";
+import { approveMatch, standings } from "@/lib/competition";
+import {
+  ensureStages, templateStages, addToFirstStage, removeFromStages, generateStageFixtures, clearStageFixtures, drawGroups, setGroups,
+  nextKnockoutRound, qualifyToNext, getStage,
+} from "@/lib/stages";
 import { saveLineup } from "@/lib/lineup";
 import { attempt, str, req, int, ints, num, UserError, fromLocalInput } from "@/lib/util";
 
@@ -20,9 +24,14 @@ export async function saveCompetition(f: FormData) {
       squadMax: int(f, "squadMax") ?? 20, startersCount: int(f, "startersCount") ?? 11, maxForeign: int(f, "maxForeign"),
       maxForeignOnPitch: int(f, "maxForeignOnPitch"), squadListMax: int(f, "squadListMax"), yellowRules: str(f, "yellowRules"), entryFee: num(f, "entryFee"),
       yellowThreshold: int(f, "yellowThreshold") ?? 3, redBanMatches: int(f, "redBanMatches") ?? 1, startDate: str(f, "startDate"), notes: str(f, "notes"),
+      tiebreak: str(f, "tiebreak") === "H2H" ? "H2H" : "GD",
     };
     if (id) await db.update(competitions).set(data).where(eq(competitions.id, id));
-    else await db.insert(competitions).values(data);
+    else {
+      const [c] = await db.insert(competitions).values(data).returning();
+      const st = templateStages(c.type, c.legs, { groupsCount: int(f, "groupsCount"), qualifyPerGroup: int(f, "qualifyPerGroup"), koLegs: int(f, "koLegs") });
+      await db.insert(competitionStages).values(st.map((x, i) => ({ ...x, competitionId: c.id, status: (i === 0 ? "ACTIVE" : "PENDING") as "ACTIVE" })));
+    }
     await audit(u, id ? "تعديل مسابقة" : "إنشاء مسابقة", "Competition", id, data.name);
     return "تم حفظ المسابقة";
   });
@@ -47,6 +56,7 @@ export async function addTeams(f: FormData) {
     if (!clubIds.length) throw new UserError("اختر ناديًا واحدًا على الأقل");
     const group = str(f, "groupName");
     const added = await db.insert(competitionTeams).values(clubIds.map((clubId) => ({ competitionId: id, clubId, groupName: group }))).onConflictDoNothing().returning();
+    await addToFirstStage(id, added.map((t) => t.clubId), group);
     const [c] = await db.select().from(competitions).where(eq(competitions.id, id));
     if (Number(c.entryFee) > 0) for (const t of added) await addCharge(db, { clubId: t.clubId, category: "ENTRY_FEE", description: `رسوم الاشتراك في ${c.name}`, amount: c.entryFee!, refType: "compteam", refId: t.id, createdBy: u.fullName });
     await audit(u, "إضافة فرق لمسابقة", "Competition", id, clubIds);
@@ -62,30 +72,192 @@ export async function removeTeam(f: FormData) {
     const [m] = await db.select({ id: matches.id }).from(matches).where(and(eq(matches.competitionId, id), or(eq(matches.homeClubId, clubId), eq(matches.awayClubId, clubId)))).limit(1);
     if (m) throw new UserError("للفريق مباريات مجدولة — احذف الجدول أولًا");
     await db.delete(competitionTeams).where(and(eq(competitionTeams.competitionId, id), eq(competitionTeams.clubId, clubId)));
+    await removeFromStages(id, clubId);
     await audit(u, "حذف فريق من مسابقة", "Competition", id, clubId);
     return "تم الحذف";
   });
 }
 
+const stageBack = (id: number, stageId?: number | null) => `/competitions/${id}?tab=stages${stageId ? `&stage=${stageId}` : ""}`;
+
 export async function makeFixtures(f: FormData) {
   const u = await requireUser("comp.manage");
   const id = int(f, "id")!;
-  await attempt(`/competitions/${id}?tab=fixtures`, async () => {
-    const n = await generateFixtures(id);
-    await audit(u, "إنشاء جدول المباريات", "Competition", id, { matches: n });
-    return `تم إنشاء ${n} مباراة — حدّد مواعيدها من صفحة كل مباراة أو بالجدول`;
+  const stageId = int(f, "stageId");
+  await attempt(stageId ? stageBack(id, stageId) : `/competitions/${id}?tab=fixtures`, async () => {
+    const st = await ensureStages(id);
+    const target = stageId ?? (st.find((x) => x.status !== "DONE") ?? st[0]).id;
+    const n = await generateStageFixtures(target);
+    await audit(u, "إنشاء جدول المباريات", "Competition", id, { stage: target, matches: n });
+    return `تم إنشاء ${n} مباراة — حدّد مواعيدها من تبويب «الجدول والمباريات»`;
   });
 }
 
 export async function clearFixtures(f: FormData) {
   const u = await requireUser("comp.manage");
   const id = int(f, "id")!;
-  await attempt(`/competitions/${id}?tab=fixtures`, async () => {
-    const played = await db.select({ id: matches.id }).from(matches).where(and(eq(matches.competitionId, id), ne(matches.reportStatus, "NONE"))).limit(1);
-    if (played.length) throw new UserError("توجد مباريات لها تقارير — لا يمكن حذف الجدول");
-    await db.delete(matches).where(eq(matches.competitionId, id));
-    await audit(u, "حذف جدول المباريات", "Competition", id);
+  const stageId = int(f, "stageId");
+  await attempt(stageId ? stageBack(id, stageId) : `/competitions/${id}?tab=fixtures`, async () => {
+    if (stageId) await clearStageFixtures(stageId);
+    else {
+      const played = await db.select({ id: matches.id }).from(matches).where(and(eq(matches.competitionId, id), ne(matches.reportStatus, "NONE"))).limit(1);
+      if (played.length) throw new UserError("توجد مباريات لها تقارير — لا يمكن حذف الجدول");
+      await db.delete(matches).where(eq(matches.competitionId, id));
+    }
+    await audit(u, "حذف جدول المباريات", "Competition", id, { stage: stageId });
     return "تم حذف الجدول";
+  });
+}
+
+// ---------------- مراحل المسابقة ----------------
+function stageData(f: FormData) {
+  const format = (str(f, "format") ?? "LEAGUE") as "LEAGUE" | "GROUPS" | "KNOCKOUT";
+  return {
+    name: req(f, "name", "اسم المرحلة"), format,
+    legs: Math.max(1, Math.min(4, int(f, "legs") ?? (format === "KNOCKOUT" ? 1 : 2))),
+    finalLegs: Math.max(1, Math.min(2, int(f, "finalLegs") ?? 1)),
+    groupsCount: format === "GROUPS" ? int(f, "groupsCount") : null,
+    qualifyPerGroup: int(f, "qualifyPerGroup"), notes: str(f, "notes"),
+  };
+}
+
+export async function addStage(f: FormData) {
+  const u = await requireUser("comp.manage");
+  const id = int(f, "id")!;
+  await attempt(`/competitions/${id}?tab=stages`, async () => {
+    const st = await ensureStages(id);
+    const data = stageData(f);
+    const [s] = await db.insert(competitionStages).values({ ...data, competitionId: id, seq: (st[st.length - 1]?.seq ?? 0) + 1 }).returning();
+    await audit(u, "إضافة مرحلة", "Competition", id, data.name);
+    return `تمت إضافة المرحلة «${s.name}» — تتأهل إليها الفرق من المرحلة السابقة أو أضفها يدويًا`;
+  });
+}
+
+export async function saveStage(f: FormData) {
+  const u = await requireUser("comp.manage");
+  const stageId = int(f, "stageId")!;
+  const s = await getStage(stageId);
+  await attempt(stageBack(s.competitionId, stageId), async () => {
+    const data = stageData(f);
+    const [m] = await db.select({ id: matches.id }).from(matches).where(eq(matches.stageId, stageId)).limit(1);
+    if (m && data.format !== s.format) throw new UserError("لا يمكن تغيير نظام مرحلة مجدولة — احذف جدولها أولًا");
+    await db.update(competitionStages).set(data).where(eq(competitionStages.id, stageId));
+    await audit(u, "تعديل مرحلة", "Competition", s.competitionId, data.name);
+    return "تم حفظ المرحلة";
+  });
+}
+
+export async function deleteStage(f: FormData) {
+  const u = await requireUser("comp.manage");
+  const stageId = int(f, "stageId")!;
+  const s = await getStage(stageId);
+  await attempt(`/competitions/${s.competitionId}?tab=stages`, async () => {
+    const [m] = await db.select({ id: matches.id }).from(matches).where(eq(matches.stageId, stageId)).limit(1);
+    if (m) throw new UserError("للمرحلة مباريات — احذف جدولها أولًا");
+    const st = await ensureStages(s.competitionId);
+    if (st.length === 1) throw new UserError("لا بد من مرحلة واحدة على الأقل");
+    await db.delete(competitionStages).where(eq(competitionStages.id, stageId));
+    // إعادة ترقيم المراحل
+    let seq = 1;
+    for (const x of st.filter((x) => x.id !== stageId)) await db.update(competitionStages).set({ seq: seq++ }).where(eq(competitionStages.id, x.id));
+    await audit(u, "حذف مرحلة", "Competition", s.competitionId, s.name);
+    return "تم حذف المرحلة";
+  });
+}
+
+export async function stageAddTeams(f: FormData) {
+  const u = await requireUser("comp.manage");
+  const stageId = int(f, "stageId")!;
+  const s = await getStage(stageId);
+  await attempt(stageBack(s.competitionId, stageId), async () => {
+    const ids = ints(f, "club");
+    if (!ids.length) throw new UserError("اختر فريقًا");
+    const [m] = await db.select({ id: matches.id }).from(matches).where(eq(matches.stageId, stageId)).limit(1);
+    if (m) throw new UserError("المرحلة مجدولة — احذف جدولها أولًا");
+    await db.insert(stageTeams).values(ids.map((clubId) => ({ stageId, clubId, groupName: str(f, "groupName") }))).onConflictDoNothing();
+    await audit(u, "إضافة فرق لمرحلة", "Competition", s.competitionId, { stage: s.name, ids });
+    return `تمت إضافة ${ids.length} فريق للمرحلة`;
+  });
+}
+
+export async function stageRemoveTeam(f: FormData) {
+  const u = await requireUser("comp.manage");
+  const stageId = int(f, "stageId")!;
+  const s = await getStage(stageId);
+  await attempt(stageBack(s.competitionId, stageId), async () => {
+    const [m] = await db.select({ id: matches.id }).from(matches).where(eq(matches.stageId, stageId)).limit(1);
+    if (m) throw new UserError("المرحلة مجدولة — احذف جدولها أولًا");
+    await db.delete(stageTeams).where(and(eq(stageTeams.stageId, stageId), eq(stageTeams.clubId, int(f, "clubId")!)));
+    await audit(u, "حذف فريق من مرحلة", "Competition", s.competitionId, { stage: s.name });
+    return "تم الحذف";
+  });
+}
+
+export async function stageDraw(f: FormData) {
+  const u = await requireUser("comp.manage");
+  const stageId = int(f, "stageId")!;
+  const s = await getStage(stageId);
+  await attempt(stageBack(s.competitionId, stageId), async () => {
+    const count = int(f, "groupsCount") ?? s.groupsCount ?? 2;
+    const seeded = f.get("mode") === "seeded" ? ints(f, "seedOrder") : undefined;
+    await drawGroups(stageId, count, seeded);
+    await audit(u, "قرعة المجموعات", "Competition", s.competitionId, { stage: s.name, count, seeded: !!seeded });
+    return `تمت القرعة على ${count} مجموعات`;
+  });
+}
+
+export async function stageSaveGroups(f: FormData) {
+  const u = await requireUser("comp.manage");
+  const stageId = int(f, "stageId")!;
+  const s = await getStage(stageId);
+  await attempt(stageBack(s.competitionId, stageId), async () => {
+    const map = new Map<number, string | null>();
+    for (const clubId of ints(f, "team")) map.set(clubId, str(f, `g_${clubId}`));
+    await setGroups(stageId, map);
+    await audit(u, "توزيع المجموعات يدويًا", "Competition", s.competitionId, { stage: s.name });
+    return "تم حفظ توزيع المجموعات";
+  });
+}
+
+export async function stageQualify(f: FormData) {
+  const u = await requireUser("comp.manage");
+  const stageId = int(f, "stageId")!;
+  const s = await getStage(stageId);
+  await attempt(stageBack(s.competitionId, stageId), async () => {
+    const per = int(f, "perGroup") ?? s.qualifyPerGroup ?? 2;
+    const r = await qualifyToNext(stageId, per, (cid, sid) => standings(cid, sid));
+    for (const t of await db.select().from(stageTeams).where(eq(stageTeams.stageId, r.next.id))) await notifyClub(t.clubId, "تأهل إلى المرحلة التالية", r.next.name, "/club/matches");
+    await audit(u, "تأهيل فرق للمرحلة التالية", "Competition", s.competitionId, { from: s.name, to: r.next.name, count: r.count });
+    return `تأهل ${r.count} فريق إلى «${r.next.name}»`;
+  });
+}
+
+export async function stageNextRound(f: FormData) {
+  const u = await requireUser("comp.manage");
+  const stageId = int(f, "stageId")!;
+  const s = await getStage(stageId);
+  await attempt(stageBack(s.competitionId, stageId), async () => {
+    const r = await nextKnockoutRound(stageId);
+    if (r.champion) {
+      const [cl] = await db.select({ n: clubs.name }).from(clubs).where(eq(clubs.id, r.champion));
+      await audit(u, "حسم خروج المغلوب", "Competition", s.competitionId, { champion: cl?.n });
+      return `🏆 البطل: ${cl?.n} — انتهت المرحلة`;
+    }
+    await audit(u, "إنشاء دور تالٍ", "Competition", s.competitionId, { stage: s.name, round: r.name });
+    return `تم إنشاء ${r.name} (${r.created} مباراة) — حدّد المواعيد من «الجدول والمباريات»`;
+  });
+}
+
+/** ركلات الترجيح لمباراة خروج مغلوب انتهت بالتعادل (أو مجموع متعادل) */
+export async function setPenalties(f: FormData) {
+  const u = await requireUser("comp.reports");
+  const matchId = int(f, "matchId")!;
+  await attempt(`/matches/${matchId}?tab=report`, async () => {
+    const hp = int(f, "homePens"), ap = int(f, "awayPens");
+    if (hp != null && ap != null && hp === ap) throw new UserError("ركلات الترجيح لا تنتهي بالتعادل");
+    await db.update(matches).set({ homePens: hp, awayPens: ap }).where(eq(matches.id, matchId));
+    await audit(u, "إدخال ركلات الترجيح", "Match", matchId, { hp, ap });
+    return hp == null ? "أُزيلت ركلات الترجيح" : `تم تسجيل ركلات الترجيح (${hp} - ${ap})`;
   });
 }
 
@@ -98,6 +270,7 @@ export async function saveMatch(f: FormData) {
     if (home === away) throw new UserError("لا يمكن أن يلعب الفريق ضد نفسه");
     const data = {
       competitionId: compId, round: int(f, "round") ?? 1, groupName: str(f, "groupName"), homeClubId: home, awayClubId: away,
+      ...(f.has("stageId") ? { stageId: int(f, "stageId"), tieNo: int(f, "tieNo"), leg: int(f, "leg") } : {}),
       kickoff: fromLocalInput(str(f, "kickoff")), venue: str(f, "venue"), city: str(f, "city"),
       status: (str(f, "status") ?? "SCHEDULED") as "SCHEDULED", notes: str(f, "notes"),
     };
@@ -109,7 +282,11 @@ export async function saveMatch(f: FormData) {
         const as = await db.select().from(assignments).where(eq(assignments.matchId, id));
         for (const a of as) await notifyOfficial(a.officialId, "تحديث موعد مباراة معيّن فيها", null, `/portal/matches/${id}`);
       }
-    } else await db.insert(matches).values(data);
+    } else {
+      const st = await ensureStages(compId);
+      const stageId = int(f, "stageId") ?? (st.find((x) => x.status !== "DONE") ?? st[st.length - 1]).id;
+      await db.insert(matches).values({ ...data, stageId });
+    }
     await audit(u, id ? "تعديل مباراة" : "إضافة مباراة", "Match", id, data);
     return "تم حفظ المباراة";
   });

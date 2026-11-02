@@ -46,6 +46,23 @@ export async function migrate() {
     const [c] = await db.select().from(s.assignments).where(sql`${s.assignments.matchId} = ${a.matchId} and ${s.assignments.role} = 'COMMISSIONER'`);
     if (!c) await db.update(s.assignments).set({ role: "COMMISSIONER" }).where(eq(s.assignments.id, a.id));
   }
+  // 6) مراحل المسابقات: كل مسابقة قديمة تصبح مرحلة واحدة بنظامها، وتُربط بها فرقها ومبارياتها
+  const comps = await db.select().from(s.competitions);
+  for (const c of comps) {
+    const [has] = await db.select({ id: s.competitionStages.id }).from(s.competitionStages).where(eq(s.competitionStages.competitionId, c.id)).limit(1);
+    if (has) continue;
+    const format = c.type === "CUP" ? "KNOCKOUT" : c.type === "LEAGUE" ? "LEAGUE" : "GROUPS";
+    const name = format === "KNOCKOUT" ? "خروج المغلوب" : format === "GROUPS" ? "دور المجموعات" : "الدوري";
+    const [st] = await db.insert(s.competitionStages).values({ competitionId: c.id, seq: 1, name, format, legs: format === "KNOCKOUT" ? 1 : c.legs, status: c.status === "FINISHED" ? "DONE" : "ACTIVE" }).returning();
+    if (c.type === "GROUPS_KNOCKOUT") await db.insert(s.competitionStages).values({ competitionId: c.id, seq: 2, name: "الأدوار الإقصائية", format: "KNOCKOUT", legs: 1 });
+    const teams = await db.select().from(s.competitionTeams).where(eq(s.competitionTeams.competitionId, c.id));
+    if (teams.length) await db.insert(s.stageTeams).values(teams.map((t) => ({ stageId: st.id, clubId: t.clubId, groupName: t.groupName }))).onConflictDoNothing();
+    await db.update(s.matches).set({ stageId: st.id }).where(sql`${s.matches.competitionId} = ${c.id} and ${s.matches.stageId} is null`);
+    if (format === "KNOCKOUT") await db.update(s.matches).set({ tieNo: sql`${s.matches.id}`, leg: 1 }).where(sql`${s.matches.stageId} = ${st.id} and ${s.matches.tieNo} is null`);
+  }
+
+  // 7) إعدادات البريد الافتراضية (فارغة حتى يضبطها المدير)
+  await db.insert(s.settings).values({ key: "smtp_port", value: "465" }).onConflictDoNothing();
   console.log("✓ اكتمل ترحيل البيانات");
 }
 

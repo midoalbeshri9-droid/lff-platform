@@ -1,21 +1,37 @@
 import "server-only";
 import nodemailer from "nodemailer";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { outbox } from "@/db/schema";
+import { outbox, settings } from "@/db/schema";
 
-// البريد عبر SMTP (Gmail بكلمة مرور تطبيق، أو أي مزود). إن لم يُضبط تُحفظ الرسالة في صندوق الرسائل ليرسلها المدير يدويًا.
-export const mailConfigured = () => !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
-let transporter: nodemailer.Transporter | null = null;
-function tx() {
-  if (!transporter)
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT ?? 465),
-      secure: Number(process.env.SMTP_PORT ?? 465) === 465,
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    });
-  return transporter;
+// البريد عبر SMTP (Gmail بكلمة مرور تطبيق، أو أي مزود).
+// المصدر: متغيرات البيئة (SMTP_*) إن وُجدت، وإلا «إعدادات البريد» المحفوظة من صفحة الإدارة.
+// إن لم يُضبط تُحفظ الرسالة في صندوق الرسائل ليرسلها المدير يدويًا.
+export type MailConfig = { host: string; port: number; user: string; pass: string; from: string; source: "env" | "db" };
+
+export async function mailConfig(): Promise<MailConfig | null> {
+  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+    return { host: process.env.SMTP_HOST, port: Number(process.env.SMTP_PORT ?? 465), user: process.env.SMTP_USER, pass: process.env.SMTP_PASS, from: process.env.MAIL_FROM || process.env.SMTP_USER, source: "env" };
+  }
+  const rows = await db.select().from(settings).where(inArray(settings.key, ["smtp_host", "smtp_port", "smtp_user", "smtp_pass", "mail_from"]));
+  const g = (k: string) => rows.find((r) => r.key === k)?.value?.trim() ?? "";
+  if (!g("smtp_user") || !g("smtp_pass")) return null;
+  const user = g("smtp_user");
+  return { host: g("smtp_host") || "smtp.gmail.com", port: Number(g("smtp_port") || 465), user, pass: g("smtp_pass").replace(/\s+/g, ""), from: g("mail_from") ? `${g("mail_from")} <${user}>` : user, source: "db" };
+}
+
+export const mailConfigured = async () => !!(await mailConfig());
+
+function transport(c: MailConfig) {
+  return nodemailer.createTransport({ host: c.host, port: c.port, secure: c.port === 465, auth: { user: c.user, pass: c.pass } });
+}
+
+/** فحص الاتصال بخادم البريد وإرسال رسالة تجريبية */
+export async function testMail(to: string) {
+  const c = await mailConfig();
+  if (!c) throw new Error("البريد غير مُعدّ");
+  await transport(c).verify();
+  return sendMail({ to, subject: "رسالة تجريبية من منظومة الاتحاد", text: "تم ضبط البريد بنجاح — ستصل رسائل التفعيل واستعادة كلمة المرور للمستخدمين تلقائيًا." });
 }
 
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -36,13 +52,14 @@ function layout(title: string, body: string, link?: string, linkText?: string) {
 
 export async function sendMail(opts: { to: string; subject: string; text: string; link?: string; linkText?: string; userId?: number }) {
   const [row] = await db.insert(outbox).values({ channel: "EMAIL", to: opts.to, subject: opts.subject, body: opts.text, link: opts.link ?? null, userId: opts.userId ?? null }).returning();
-  if (!mailConfigured()) {
+  const cfg = await mailConfig();
+  if (!cfg) {
     await db.update(outbox).set({ status: "NOT_CONFIGURED" }).where(eq(outbox.id, row.id));
     return { sent: false, id: row.id };
   }
   try {
-    await tx().sendMail({
-      from: process.env.MAIL_FROM || process.env.SMTP_USER,
+    await transport(cfg).sendMail({
+      from: cfg.from,
       to: opts.to,
       subject: opts.subject,
       text: `${opts.text}${opts.link ? "\n\n" + opts.link : ""}`,
@@ -52,7 +69,7 @@ export async function sendMail(opts: { to: string; subject: string; text: string
     return { sent: true, id: row.id };
   } catch (e) {
     await db.update(outbox).set({ status: "FAILED", error: String((e as Error).message).slice(0, 500) }).where(eq(outbox.id, row.id));
-    return { sent: false, id: row.id };
+    return { sent: false, id: row.id, error: String((e as Error).message) };
   }
 }
 

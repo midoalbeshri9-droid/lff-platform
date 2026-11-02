@@ -1,7 +1,7 @@
 import "server-only";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db, type Tx } from "@/db";
-import { sanctions, suspensions, matches, counters, charges, settings, players, staff, clubs, sanctionTypeEnum } from "@/db/schema";
+import { sanctions, suspensions, matches, counters, charges, settings, players, staff, clubs, sanctionTypeEnum, competitionStages } from "@/db/schema";
 import { addCharge, cancelChargeByRef } from "./finance";
 import { notifyClub } from "./audit";
 import { SANCTION_TYPE, SANCTION_FOR } from "./labels";
@@ -78,9 +78,15 @@ export async function issueSanction(tx: Tx, i: SanctionInput, by: string) {
   const [cfg] = await tx.select().from(settings).where(eq(settings.key, "appeal_days"));
   const decisionDate = i.decisionDate ?? today();
   const appealDeadline = new Date(new Date(decisionDate).getTime() + Number(cfg?.value ?? 7) * 864e5).toISOString().slice(0, 10);
+  // خصم النقاط يُربط بمرحلة الدوري/المجموعات الجارية حتى لا يتغير ترتيب مرحلة منتهية
+  let stageId: number | null = null;
+  if (i.type === "POINTS_DEDUCTION" && i.competitionId) {
+    const st = await tx.select().from(competitionStages).where(and(eq(competitionStages.competitionId, i.competitionId), ne(competitionStages.format, "KNOCKOUT"))).orderBy(asc(competitionStages.seq));
+    stageId = (st.find((x) => x.status !== "DONE") ?? st[st.length - 1])?.id ?? null;
+  }
   const [s] = await tx.insert(sanctions).values({
     number, targetType: i.targetType, playerId: i.targetType === "PLAYER" ? i.playerId : null, staffId: i.targetType === "STAFF" ? i.staffId : null,
-    clubId: i.clubId, competitionId: i.competitionId ?? null, matchId: i.matchId ?? null, articleId: i.articleId ?? null, articleText: i.articleText ?? null,
+    clubId: i.clubId, competitionId: i.competitionId ?? null, stageId, matchId: i.matchId ?? null, articleId: i.articleId ?? null, articleText: i.articleText ?? null,
     type: i.type, matchesCount: i.matchesCount ?? null, fromDate: i.fromDate ?? null, toDate: i.toDate ?? null, points: i.points ?? null,
     fineAmount: i.fineAmount ?? null, reason: i.reason, decisionDate, appealDeadline, notes: i.notes ?? null, createdBy: by,
   }).returning();
@@ -120,10 +126,11 @@ export async function amendSanction(tx: Tx, id: number, v: { matchesCount?: numb
   }
 }
 
-/** النقاط المخصومة لكل نادٍ في مسابقة */
-export async function pointsDeducted(competitionId: number) {
+/** النقاط المخصومة لكل نادٍ في مرحلة (القرارات القديمة بلا مرحلة تُحسب على أول مرحلة دوري) */
+export async function pointsDeducted(competitionId: number, stageId?: number, isFirstTableStage = true) {
+  const stageCond = stageId == null ? undefined : isFirstTableStage ? or(eq(sanctions.stageId, stageId), isNull(sanctions.stageId)) : eq(sanctions.stageId, stageId);
   const rows = await db.select({ clubId: sanctions.clubId, pts: sql<number>`coalesce(sum(${sanctions.points}), 0)::int` }).from(sanctions)
-    .where(and(eq(sanctions.competitionId, competitionId), eq(sanctions.type, "POINTS_DEDUCTION"), inArray(sanctions.status, ["ACTIVE", "COMPLETED", "APPEALED"])))
+    .where(and(eq(sanctions.competitionId, competitionId), stageCond, eq(sanctions.type, "POINTS_DEDUCTION"), inArray(sanctions.status, ["ACTIVE", "COMPLETED", "APPEALED"])))
     .groupBy(sanctions.clubId);
   return new Map(rows.map((r) => [r.clubId, r.pts]));
 }

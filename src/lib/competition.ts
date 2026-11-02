@@ -1,73 +1,79 @@
 import "server-only";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db, type Tx } from "@/db";
-import { competitions, competitionTeams, matches, matchEvents, suspensions, clubs, registrations } from "@/db/schema";
+import { competitions, matches, matchEvents, suspensions, clubs, registrations, stageTeams } from "@/db/schema";
 import { UserError } from "./util";
 import { roundRobin } from "./competitionPure";
+import { ensureStages, generateStageFixtures } from "./stages";
 import { pointsDeducted } from "./sanctions";
 import { refereeFeesForMatch } from "./finance";
 export { roundRobin };
 
+/** إنشاء جدول المسابقة كاملًا (المرحلة الأولى غير المجدولة) — للتوافق مع الزر القديم */
 export async function generateFixtures(competitionId: number) {
-  const [c] = await db.select().from(competitions).where(eq(competitions.id, competitionId));
-  const teams = await db.select().from(competitionTeams).where(eq(competitionTeams.competitionId, competitionId));
-  if (teams.length < 2) throw new UserError("أضف فريقين على الأقل قبل الجدولة");
-  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(matches).where(eq(matches.competitionId, competitionId));
-  if (n > 0) throw new UserError("الجدول مُنشأ مسبقًا — احذف المباريات أولًا لإعادة الجدولة");
-  const clubRows = await db.select({ id: clubs.id, stadium: clubs.stadium, city: clubs.city }).from(clubs);
-  const venue = (id: number) => clubRows.find((x) => x.id === id);
-
-  const rows: (typeof matches.$inferInsert)[] = [];
-  if (c.type === "GROUPS") {
-    const groups = [...new Set(teams.map((t) => t.groupName ?? "أ"))];
-    for (const g of groups) {
-      const ids = teams.filter((t) => (t.groupName ?? "أ") === g).map((t) => t.clubId);
-      roundRobin(ids, c.legs).forEach((m) =>
-        rows.push({ competitionId, round: m.round, groupName: g, homeClubId: m.home, awayClubId: m.away, venue: venue(m.home)?.stadium, city: venue(m.home)?.city }),
-      );
-    }
-  } else if (c.type === "CUP") {
-    const ids = teams.map((t) => t.clubId).sort(() => Math.random() - 0.5);
-    for (let i = 0; i + 1 < ids.length; i += 2)
-      rows.push({ competitionId, round: 1, homeClubId: ids[i], awayClubId: ids[i + 1], venue: venue(ids[i])?.stadium, city: venue(ids[i])?.city });
-  } else {
-    roundRobin(teams.map((t) => t.clubId), c.legs).forEach((m) =>
-      rows.push({ competitionId, round: m.round, homeClubId: m.home, awayClubId: m.away, venue: venue(m.home)?.stadium, city: venue(m.home)?.city }),
-    );
-  }
-  if (rows.length) await db.insert(matches).values(rows);
-  return rows.length;
+  const stages = await ensureStages(competitionId);
+  const st = stages.find((x) => x.status !== "DONE") ?? stages[0];
+  return generateStageFixtures(st.id);
 }
 
 export type StandingRow = { clubId: number; name: string; group: string | null; p: number; w: number; d: number; l: number; gf: number; ga: number; gd: number; pts: number; deducted: number };
 
-export async function standings(competitionId: number): Promise<StandingRow[]> {
-  const [c] = await db.select().from(competitions).where(eq(competitions.id, competitionId));
-  const teams = await db
-    .select({ clubId: competitionTeams.clubId, name: clubs.name, group: competitionTeams.groupName })
-    .from(competitionTeams)
-    .innerJoin(clubs, eq(clubs.id, competitionTeams.clubId))
-    .where(eq(competitionTeams.competitionId, competitionId));
-  const ms = await db
-    .select()
-    .from(matches)
-    .where(and(eq(matches.competitionId, competitionId), inArray(matches.status, ["PLAYED", "FORFEIT"])));
-  const t = new Map<number, StandingRow>();
-  teams.forEach((x) => t.set(x.clubId, { clubId: x.clubId, name: x.name, group: x.group, p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, gd: 0, pts: 0, deducted: 0 }));
+type MRow = typeof matches.$inferSelect;
+
+function tally(rows: Map<number, StandingRow>, ms: MRow[], win: number, draw: number) {
   for (const m of ms) {
     if (m.homeScore == null || m.awayScore == null) continue;
-    const h = t.get(m.homeClubId), a = t.get(m.awayClubId);
+    const h = rows.get(m.homeClubId), a = rows.get(m.awayClubId);
     if (!h || !a) continue;
     h.p++; a.p++;
     h.gf += m.homeScore; h.ga += m.awayScore; a.gf += m.awayScore; a.ga += m.homeScore;
-    if (m.homeScore > m.awayScore) { h.w++; a.l++; h.pts += c.pointsWin; }
-    else if (m.homeScore < m.awayScore) { a.w++; h.l++; a.pts += c.pointsWin; }
-    else { h.d++; a.d++; h.pts += c.pointsDraw; a.pts += c.pointsDraw; }
+    if (m.homeScore > m.awayScore) { h.w++; a.l++; h.pts += win; }
+    else if (m.homeScore < m.awayScore) { a.w++; h.l++; a.pts += win; }
+    else { h.d++; a.d++; h.pts += draw; a.pts += draw; }
   }
-  const ded = await pointsDeducted(competitionId);
-  return [...t.values()]
-    .map((r) => ({ ...r, gd: r.gf - r.ga, deducted: ded.get(r.clubId) ?? 0, pts: r.pts - (ded.get(r.clubId) ?? 0) }))
-    .sort((x, y) => (x.group ?? "").localeCompare(y.group ?? "") || y.pts - x.pts || y.gd - x.gd || y.gf - x.gf || x.name.localeCompare(y.name, "ar"));
+}
+
+/**
+ * جدول الترتيب لمرحلة (دوري أو مجموعات). بدون stageId: أول مرحلة دوري/مجموعات غير منتهية، وإلا آخر واحدة.
+ * كسر التعادل: GD = النقاط ← فارق الأهداف ← الأهداف ← المواجهات المباشرة. H2H = النقاط ← المواجهات المباشرة ← فارق الأهداف ← الأهداف.
+ */
+export async function standings(competitionId: number, stageId?: number): Promise<StandingRow[]> {
+  const [c] = await db.select().from(competitions).where(eq(competitions.id, competitionId));
+  const stages = await ensureStages(competitionId);
+  const tableStages = stages.filter((x) => x.format !== "KNOCKOUT");
+  const st = stageId ? stages.find((x) => x.id === stageId) : tableStages.find((x) => x.status !== "DONE") ?? tableStages[tableStages.length - 1];
+  if (!st || st.format === "KNOCKOUT") return [];
+  const teams = await db
+    .select({ clubId: stageTeams.clubId, name: clubs.name, group: stageTeams.groupName })
+    .from(stageTeams).innerJoin(clubs, eq(clubs.id, stageTeams.clubId))
+    .where(eq(stageTeams.stageId, st.id));
+  const ms = await db.select().from(matches)
+    .where(and(eq(matches.stageId, st.id), inArray(matches.status, ["PLAYED", "FORFEIT"])));
+  const t = new Map<number, StandingRow>();
+  teams.forEach((x) => t.set(x.clubId, { clubId: x.clubId, name: x.name, group: st.format === "GROUPS" ? x.group : null, p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, gd: 0, pts: 0, deducted: 0 }));
+  tally(t, ms, c.pointsWin, c.pointsDraw);
+  const ded = await pointsDeducted(competitionId, st.id, tableStages[0]?.id === st.id);
+  const rows = [...t.values()].map((r) => ({ ...r, gd: r.gf - r.ga, deducted: ded.get(r.clubId) ?? 0, pts: r.pts - (ded.get(r.clubId) ?? 0) }));
+
+  // المواجهات المباشرة بين الفرق المتساوية في النقاط داخل المجموعة نفسها
+  const h2h = new Map<number, { pts: number; gd: number; gf: number }>();
+  const byKey = new Map<string, StandingRow[]>();
+  for (const r of rows) { const k = `${r.group ?? ""}|${r.pts}`; byKey.set(k, [...(byKey.get(k) ?? []), r]); }
+  for (const tied of byKey.values()) {
+    if (tied.length < 2) continue;
+    const ids = new Set(tied.map((x) => x.clubId));
+    const mini = new Map<number, StandingRow>();
+    tied.forEach((x) => mini.set(x.clubId, { ...x, p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, gd: 0, pts: 0 }));
+    tally(mini, ms.filter((m) => ids.has(m.homeClubId) && ids.has(m.awayClubId)), c.pointsWin, c.pointsDraw);
+    mini.forEach((v, k) => h2h.set(k, { pts: v.pts, gd: v.gf - v.ga, gf: v.gf }));
+  }
+  const H = (r: StandingRow) => h2h.get(r.clubId) ?? { pts: 0, gd: 0, gf: 0 };
+  const byH2H = (x: StandingRow, y: StandingRow) => H(y).pts - H(x).pts || H(y).gd - H(x).gd || H(y).gf - H(x).gf;
+  const byGoals = (x: StandingRow, y: StandingRow) => y.gd - x.gd || y.gf - x.gf;
+  return rows.sort((x, y) =>
+    (x.group ?? "").localeCompare(y.group ?? "", "ar") || y.pts - x.pts ||
+    (c.tiebreak === "H2H" ? byH2H(x, y) || byGoals(x, y) : byGoals(x, y) || byH2H(x, y)) ||
+    x.name.localeCompare(y.name, "ar"));
 }
 
 /**

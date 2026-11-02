@@ -1,26 +1,28 @@
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { competitions } from "@/db/schema";
+import { competitions, competitionStages } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { standings } from "@/lib/competition";
 import { fmtDate } from "@/lib/util";
 import { PrintButton } from "@/components/Client";
 import { Letterhead } from "@/components/Letterhead";
 
-export default async function Standings({ params }: { params: Promise<{ id: string }> }) {
+export default async function Standings({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ stage?: string }> }) {
   const u = await getCurrentUser();
   if (!u?.can("comp.view")) redirect("/denied");
   const id = Number((await params).id);
   const [c] = await db.select().from(competitions).where(eq(competitions.id, id));
-  const rows = await standings(id);
+  const stageId = Number((await searchParams).stage) || undefined;
+  const rows = await standings(id, stageId);
+  const [st] = stageId ? await db.select().from(competitionStages).where(eq(competitionStages.id, stageId)) : [];
   const groups = [...new Set(rows.map((r) => r.group ?? ""))];
   return (
     <div className="print-root">
       <div className="print-toolbar no-print"><PrintButton /></div>
       <div className="sheet">
         <Letterhead sub="لجنة المسابقات" subEn="Competitions Committee" />
-        <h1 className="doc-title">ترتيب {c?.name}</h1>
+        <h1 className="doc-title">ترتيب {c?.name}{st ? ` — ${st.name}` : ""}</h1>
         <div className="meta-line"><span>حتى تاريخ {fmtDate(new Date())}</span></div>
         {groups.map((g) => (
           <table key={g} className="roster-table" style={{ marginBottom: 12 }}>
