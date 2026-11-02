@@ -214,3 +214,12 @@ export const DECISION_STATUS: Record<string, [string, string]> = { PENDING: ["ب
 export const CORR_STATUS: Record<string, [string, string]> = { OPEN: ["مفتوحة", "b-amber"], REPLIED: ["تم الرد", "b-blue"], CLOSED: ["مغلقة", "b-green"] };
 export const STADIUM_STATUS: Record<string, [string, string]> = { APPROVED: ["معتمد", "b-green"], CONDITIONAL: ["معتمد بشروط", "b-amber"], SUSPENDED: ["موقوف", "b-red"], CLOSED: ["مغلق", "b-gray"] };
 export const INSPECTION_RESULT: Record<string, string> = { PASS: "صالح", CONDITIONAL: "صالح بشروط", FAIL: "غير صالح" };
+
+/** مراقب المباراة تعيّنه لجنة المسابقات، وبقية الطاقم لجنة الحكام */
+export const OBSERVER_ROLES = ["COMMISSIONER", "REF_OBSERVER"];
+export const ARCHIVE_CATEGORY: Record<string, string> = {
+  DECISIONS: "قرارات", CORRESPONDENCE: "مراسلات", MINUTES: "محاضر", REGULATIONS: "لوائح وتعاميم", CONTRACTS: "عقود واتفاقيات",
+  MATCH_REPORTS: "تقارير المباريات", PLAYERS: "ملفات اللاعبين", CLUBS: "ملفات الأندية", REFEREES: "ملفات الحكام",
+  FINANCE: "مالية", LEGAL: "قانونية وقضايا", MEDIA: "إعلام وصور", HR: "شؤون إدارية وموظفون", OTHER: "أخرى",
+};
+export const CONFIDENTIALITY: Record<string, [string, string]> = { GENERAL: ["عامة للجان", "b-gray"], COMMITTEE: ["خاصة باللجنة", "b-amber"], SECRET: ["سرية", "b-red"] };

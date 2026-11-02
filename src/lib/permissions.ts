@@ -29,6 +29,7 @@ export const PERMISSION_GROUPS: { group: string; items: [string, string][] }[] =
       ["comp.articles", "إدارة لائحة العقوبات"],
       ["comp.requests", "البت في طلبات تأجيل المباريات"],
       ["comp.stadiums", "إدارة سجل الملاعب والمعاينات"],
+      ["comp.observers", "تعيين مراقبي المباريات"],
     ],
   },
   {
@@ -36,8 +37,8 @@ export const PERMISSION_GROUPS: { group: string; items: [string, string][] }[] =
     items: [
       ["ref.view", "عرض الحكام والمراقبين والتعيينات"],
       ["ref.manage", "إدارة سجل الحكام والمراقبين والاختبارات"],
-      ["ref.assign", "تعيين الطواقم (مسودة)"],
-      ["ref.approve", "اعتماد التعيينات"],
+      ["ref.assign", "تعيين طواقم التحكيم (مسودة)"],
+      ["ref.approve", "اعتماد تعيينات الحكام"],
       ["ref.evals", "الاطلاع على تقييمات المراقبين"],
     ],
   },
@@ -56,6 +57,14 @@ export const PERMISSION_GROUPS: { group: string; items: [string, string][] }[] =
       ["sec.view", "الاطلاع على الصادر والوارد والمحاضر والقرارات"],
       ["sec.manage", "تسجيل المراسلات والمحاضر والقرارات"],
       ["kpi.view", "لوحة المؤشرات والمقارنة بين المواسم"],
+    ],
+  },
+  {
+    group: "الأرشيف الإلكتروني",
+    items: [
+      ["archive.view", "البحث في الأرشيف والاطلاع على الوثائق العامة"],
+      ["archive.manage", "إضافة الوثائق وتعديلها وحذفها"],
+      ["archive.secret", "الاطلاع على الوثائق السرية وكل وثائق اللجان"],
     ],
   },
   {
@@ -100,22 +109,22 @@ const VIEW = ["reg.view", "comp.view", "ref.view", "ref.evals", "reports.view", 
 
 export const DEFAULT_PERMISSIONS: Record<Role, string[]> = {
   ADMIN: ALL_PERMISSIONS.filter(fed),
-  PRESIDENT: [...VIEW, "sec.view", "kpi.view"],
-  SECRETARY_GENERAL: [...VIEW, "sec.view", "sec.manage", "kpi.view"],
-  SEC_STAFF: ["sec.view", "sec.manage"],
-  REG_HEAD: ["reg.view", "reg.review", "reg.edit", "reg.windows", "reg.suspend", "reg.lists", "reg.contracts", "reg.staff", "cards.print", "cards.design", "comp.view", "reports.view", "sec.view"],
-  REG_STAFF: ["reg.view", "reg.review", "reg.lists", "reg.contracts", "reg.staff", "cards.print"],
-  COMP_HEAD: ["comp.view", "comp.manage", "comp.lineups", "comp.reports", "comp.suspend", "comp.sanctions", "comp.articles", "comp.requests", "comp.stadiums", "reg.view", "ref.view", "reports.view", "sec.view"],
-  COMP_STAFF: ["comp.view", "comp.manage", "comp.lineups", "comp.requests", "comp.stadiums", "reg.view"],
-  REF_HEAD: ["ref.view", "ref.manage", "ref.assign", "ref.approve", "ref.evals", "comp.view", "reports.view", "sec.view"],
-  REF_STAFF: ["ref.view", "ref.manage", "ref.assign", "comp.view"],
+  PRESIDENT: [...VIEW, "sec.view", "kpi.view", "archive.view", "archive.secret"],
+  SECRETARY_GENERAL: [...VIEW, "sec.view", "sec.manage", "kpi.view", "archive.view", "archive.manage", "archive.secret"],
+  SEC_STAFF: ["sec.view", "sec.manage", "archive.view", "archive.manage"],
+  REG_HEAD: ["reg.view", "reg.review", "reg.edit", "reg.windows", "reg.suspend", "reg.lists", "reg.contracts", "reg.staff", "cards.print", "cards.design", "comp.view", "reports.view", "sec.view", "archive.view", "archive.manage"],
+  REG_STAFF: ["reg.view", "reg.review", "reg.lists", "reg.contracts", "reg.staff", "cards.print", "archive.view"],
+  COMP_HEAD: ["comp.view", "comp.manage", "comp.lineups", "comp.reports", "comp.suspend", "comp.sanctions", "comp.articles", "comp.requests", "comp.stadiums", "comp.observers", "reg.view", "ref.view", "reports.view", "sec.view", "archive.view", "archive.manage"],
+  COMP_STAFF: ["comp.view", "comp.manage", "comp.lineups", "comp.requests", "comp.stadiums", "comp.observers", "reg.view", "ref.view", "archive.view"],
+  REF_HEAD: ["ref.view", "ref.manage", "ref.assign", "ref.approve", "ref.evals", "comp.view", "reports.view", "sec.view", "archive.view", "archive.manage"],
+  REF_STAFF: ["ref.view", "ref.manage", "ref.assign", "comp.view", "archive.view"],
   CLUB_MANAGER: ["club.view", "club.edit", "club.submit", "club.lineups", "club.origin", "club.finance", "club.appeals"],
   CLUB_EMPLOYEE: ["club.view", "club.edit", "club.lineups"],
   CLUB_VIEWER: ["club.view"],
   REFEREE: ["portal.referee"],
   OBSERVER: ["portal.observer"],
-  FIN_HEAD: ["fin.view", "fin.manage", "fin.approve", "fin.settings", "reports.view", "sec.view"],
-  FIN_STAFF: ["fin.view", "fin.manage"],
+  FIN_HEAD: ["fin.view", "fin.manage", "fin.approve", "fin.settings", "reports.view", "sec.view", "archive.view", "archive.manage"],
+  FIN_STAFF: ["fin.view", "fin.manage", "archive.view"],
 };
 
 export const CLUB_ROLES: Role[] = ["CLUB_MANAGER", "CLUB_EMPLOYEE", "CLUB_VIEWER"];

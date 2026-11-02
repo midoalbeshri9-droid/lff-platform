@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, eq, asc } from "drizzle-orm";
+import { and, eq, asc, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { matches, clubs, competitions, matchSquads, matchEvents, players, assignments, officials, commissionerReports, evaluations } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { clubEligibility } from "@/lib/eligibility";
-import { MATCH_STATUS, REPORT_STATUS, EVENT_TYPE, ASSIGN_ROLE, ASSIGN_STATUS, SANCTION_TYPE, SANCTION_STATUS } from "@/lib/labels";
+import { MATCH_STATUS, REPORT_STATUS, EVENT_TYPE, ASSIGN_ROLE, ASSIGN_STATUS, SANCTION_TYPE, SANCTION_STATUS, OBSERVER_ROLES } from "@/lib/labels";
 import { sanctions } from "@/db/schema";
 import { matchNotices } from "@/lib/sanctions";
 import { fmtDateTime, toLocalInput } from "@/lib/util";
@@ -15,6 +15,7 @@ import { LineupForm } from "@/components/LineupForm";
 import { saveMatch, deleteMatch, committeeLineup, addEvent, deleteEvent, setResult, approveReport, returnReport, setPenalties } from "../../competitions/actions";
 import { competitionStages } from "@/db/schema";
 import { koRoundName } from "@/lib/competitionPure";
+import { assignOfficial } from "../../referees/actions";
 import { allStadiums } from "@/lib/stadiums";
 
 export default async function MatchPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
@@ -44,6 +45,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
         actions={<>
           {u.can("comp.sanctions") && <Link className="btn btn-danger" href={`/competitions/sanctions/new?match=${id}`}>⚖ قرار عقوبة</Link>}
           <Link className="btn btn-light" href={`/print/match/${id}`} target="_blank">🖨 ورقة المباراة</Link>
+          {u.can("archive.view") && <Link className="btn btn-light" href={`/archive?match=${id}`}>🗄 وثائق المباراة</Link>}
         </>} />
       <Flash sp={sp} />
       {(await matchNotices(id)).map((n) => <div key={n.id} className="alert err">⚖ {SANCTION_TYPE[n.type]} — قرار {n.number}: {n.reason}</div>)}
@@ -65,7 +67,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
         </form>
       )}
       {tab === "lineups" && <Lineups m={m} c={c} canEdit={u.can("comp.lineups") && m.reportStatus !== "APPROVED"} clubsList={[home, away]} />}
-      {tab === "officials" && <Officials id={id} canAssign={u.can("ref.assign")} canEvals={u.canAny("ref.evals", "comp.view")} canReport={u.can("comp.view")} canSanction={u.can("comp.sanctions")} />}
+      {tab === "officials" && <Officials id={id} canObserver={u.can("comp.observers") && m.reportStatus !== "APPROVED"} canAssign={u.can("ref.assign")} canEvals={u.canAny("ref.evals", "comp.view")} canReport={u.can("comp.view")} canSanction={u.can("comp.sanctions")} />}
       {tab === "report" && <MatchSanctions id={id} />}
       {tab === "info" && <Info m={m} home={home} away={away} canEdit={u.can("comp.manage")} />}
       {tab === "info" && <datalist id="stadiums-list">{(await allStadiums()).filter((x) => x.status !== "CLOSED").map((x) => <option key={x.id} value={x.name}>{x.city ?? ""}</option>)}</datalist>}
@@ -173,7 +175,7 @@ async function MatchSanctions({ id }: { id: number }) {
   );
 }
 
-async function Officials({ id, canAssign, canEvals, canReport, canSanction }: { id: number; canAssign: boolean; canEvals: boolean; canReport: boolean; canSanction: boolean }) {
+async function Officials({ id, canObserver, canAssign, canEvals, canReport, canSanction }: { id: number; canObserver: boolean; canAssign: boolean; canEvals: boolean; canReport: boolean; canSanction: boolean }) {
   const rows = await db.select({ a: assignments, name: officials.fullName }).from(assignments).innerJoin(officials, eq(officials.id, assignments.officialId)).where(eq(assignments.matchId, id));
   const [cr] = await db.select().from(commissionerReports).where(eq(commissionerReports.matchId, id));
   const ev = canEvals ? await db.select({ e: evaluations, name: officials.fullName }).from(evaluations).innerJoin(officials, eq(officials.id, evaluations.officialId)).where(eq(evaluations.matchId, id)) : [];
@@ -182,8 +184,9 @@ async function Officials({ id, canAssign, canEvals, canReport, canSanction }: { 
       <div className="card table-wrap">
         <div className="card-head"><h3>طاقم التحكيم والمراقبة</h3>{canAssign && <Link className="btn btn-sm btn-light" href={`/referees/assignments/${id}`}>تعيين الطاقم</Link>}</div>
         {rows.length === 0 ? <Empty>لم يُعيّن الطاقم بعد</Empty> : (
-          <table className="t"><tbody>{rows.map(({ a, name }) => <tr key={a.id}><td>{ASSIGN_ROLE[a.role]}</td><td><strong>{name}</strong></td><td><Badge v={ASSIGN_STATUS[a.status]} /></td></tr>)}</tbody></table>
+          <table className="t"><tbody>{rows.map(({ a, name }) => <tr key={a.id}><td>{ASSIGN_ROLE[a.role]}</td><td><strong>{name}</strong></td><td><Badge v={ASSIGN_STATUS[a.status]} />{a.declineReason && <div className="danger-text" style={{ fontSize: ".8rem" }}>اعتذر: {a.declineReason}</div>}</td></tr>)}</tbody></table>
         )}
+        {canObserver && <ObserverForm id={id} current={rows.find((r) => OBSERVER_ROLES.includes(r.a.role) && r.a.status !== "DECLINED")?.a.officialId ?? null} />}
       </div>
       <div>
         {canReport && <div className="card">
@@ -205,6 +208,23 @@ async function Officials({ id, canAssign, canEvals, canReport, canSanction }: { 
         )}
       </div>
     </div>
+  );
+}
+
+/** تعيين مراقب المباراة — من صلاحية لجنة المسابقات */
+async function ObserverForm({ id, current }: { id: number; current: number | null }) {
+  const list = await db.select().from(officials).where(and(eq(officials.status, "ACTIVE"), inArray(officials.type, ["COMMISSIONER", "REF_OBSERVER"]))).orderBy(officials.fullName);
+  return (
+    <form action={assignOfficial} className="row mt" style={{ borderTop: "1px solid var(--line)", paddingTop: ".6rem" }}>
+      <input type="hidden" name="matchId" value={id} /><input type="hidden" name="role" value="COMMISSIONER" /><input type="hidden" name="back" value={`/matches/${id}?tab=officials`} />
+      <strong>مراقب المباراة:</strong>
+      <select name="officialId" defaultValue={current ?? ""} style={{ minWidth: 220 }}>
+        <option value="">— بدون —</option>
+        {list.map((o) => <option key={o.id} value={o.id}>{o.fullName}{o.city ? ` — ${o.city}` : ""}</option>)}
+      </select>
+      <label className="check" title="تجاوز التحذيرات"><input type="checkbox" name="force" /> تجاوز التحذيرات</label>
+      <Submit className="btn btn-sm">تعيين</Submit>
+    </form>
   );
 }
 

@@ -913,3 +913,44 @@ export const decisions = pgTable("decisions", {
   createdAt: ts("created_at").notNull().defaultNow(),
   updatedAt: ts("updated_at").notNull().defaultNow(),
 });
+
+// ======================= الأرشيف الإلكتروني =======================
+export const archiveDocs = pgTable("archive_docs", {
+  id: serial("id").primaryKey(),
+  number: text("number").notNull().unique(), // أر/2026/00001
+  title: text("title").notNull(),
+  category: text("category").notNull().default("OTHER"),
+  committee: text("committee"),
+  docDate: d("doc_date"),
+  refNumber: text("ref_number"), // رقم الوثيقة الأصلي
+  description: text("description"),
+  tags: text("tags"),
+  confidentiality: text("confidentiality").notNull().default("GENERAL"), // GENERAL | COMMITTEE | SECRET
+  clubId: integer("club_id").references(() => clubs.id, { onDelete: "set null" }),
+  playerId: integer("player_id").references(() => players.id, { onDelete: "set null" }),
+  matchId: integer("match_id").references(() => matches.id, { onDelete: "set null" }),
+  officialId: integer("official_id").references(() => officials.id, { onDelete: "set null" }),
+  competitionId: integer("competition_id").references(() => competitions.id, { onDelete: "set null" }),
+  seasonId: integer("season_id").references(() => seasons.id, { onDelete: "set null" }),
+  physicalLocation: text("physical_location"), // موقع النسخة الورقية (الخزانة/الرف/الملف)
+  retentionUntil: d("retention_until"),
+  fileKey: text("file_key").notNull(),
+  fileName: text("file_name"),
+  mime: text("mime"),
+  size: integer("size"),
+  hash: text("hash"),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  createdBy: text("created_by"),
+  createdAt: ts("created_at").notNull().defaultNow(),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+}, (t) => [index("archive_cat_idx").on(t.category, t.docDate), index("archive_hash_idx").on(t.hash)]);
+
+export const archiveVersions = pgTable("archive_versions", {
+  id: serial("id").primaryKey(),
+  docId: integer("doc_id").notNull().references(() => archiveDocs.id, { onDelete: "cascade" }),
+  fileKey: text("file_key").notNull(),
+  fileName: text("file_name"),
+  replacedBy: text("replaced_by"),
+  replacedAt: ts("replaced_at").notNull().defaultNow(),
+  note: text("note"),
+});

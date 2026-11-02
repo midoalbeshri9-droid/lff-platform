@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { officials, officialTests, assignments, matches, clubs, users } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { audit, notifyOfficial } from "@/lib/audit";
-import { ASSIGN_ROLE } from "@/lib/labels";
+import { ASSIGN_ROLE, OBSERVER_ROLES } from "@/lib/labels";
 import { checkAssignment } from "@/lib/assign";
 import { attempt, str, req, int, bool, UserError, reqEmail, reqPhone } from "@/lib/util";
 import { ensureUniqueContact, sentMsg } from "@/lib/users";
@@ -76,10 +76,12 @@ export async function createOfficialAccount(f: FormData) {
 
 /** اعتذار الحكم عن التعيين يُسجّل من البوابة؛ هنا تعيد اللجنة فتح الدور */
 export async function assignOfficial(f: FormData) {
-  const u = await requireUser("ref.assign");
+  const role = req(f, "role", "الدور") as "REFEREE";
+  const observer = OBSERVER_ROLES.includes(role);
+  // مراقب المباراة من صلاحية لجنة المسابقات، وبقية الطاقم من صلاحية لجنة الحكام
+  const u = await requireUser(observer ? "comp.observers" : "ref.assign");
   const matchId = int(f, "matchId")!;
-  await attempt(`/referees/assignments/${matchId}`, async () => {
-    const role = req(f, "role", "الدور") as "REFEREE";
+  await attempt(str(f, "back") ?? `/referees/assignments/${matchId}`, async () => {
     const officialId = int(f, "officialId");
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
     if (m.reportStatus === "APPROVED") throw new UserError("المباراة معتمدة");
@@ -91,6 +93,16 @@ export async function assignOfficial(f: FormData) {
     const { errors, warnings } = await checkAssignment(matchId, officialId, role);
     if (errors.length) throw new UserError("لا يمكن التعيين: " + errors.join("، "));
     if (warnings.length && !bool(f, "force")) throw new UserError("تحذير: " + warnings.join("، ") + " — فعّل «تجاوز التحذيرات» للمتابعة");
+    if (observer) {
+      // تعيين لجنة المسابقات للمراقب نافذ مباشرة ويُبلَّغ المراقب
+      const now = new Date();
+      await db.insert(assignments).values({ matchId, officialId, role: "COMMISSIONER", assignedBy: u.fullName, status: "APPROVED", approvedBy: u.fullName, approvedAt: now })
+        .onConflictDoUpdate({ target: [assignments.matchId, assignments.role], set: { officialId, status: "APPROVED", assignedBy: u.fullName, assignedAt: now, approvedAt: now, approvedBy: u.fullName, declineReason: null } });
+      const cl = await db.select().from(clubs).where(inArray(clubs.id, [m.homeClubId, m.awayClubId]));
+      await notifyOfficial(officialId, "تعيين: مراقب المباراة", `${cl.find((c) => c.id === m.homeClubId)?.name} × ${cl.find((c) => c.id === m.awayClubId)?.name}`, `/portal/matches/${matchId}`);
+      await audit(u, "تعيين مراقب مباراة", "Match", matchId, { officialId, warnings });
+      return `تم تعيين مراقب المباراة وإبلاغه${warnings.length ? " (مع تحذيرات)" : ""}`;
+    }
     await db.insert(assignments).values({ matchId, officialId, role, assignedBy: u.fullName, status: "DRAFT" })
       .onConflictDoUpdate({ target: [assignments.matchId, assignments.role], set: { officialId, status: "DRAFT", assignedBy: u.fullName, assignedAt: new Date(), approvedAt: null, approvedBy: null } });
     await audit(u, "تعيين (مسودة)", "Match", matchId, { role, officialId, warnings });
@@ -103,12 +115,12 @@ export async function approveAssignments(f: FormData) {
   const matchId = int(f, "matchId")!;
   const back = str(f, "back") ?? `/referees/assignments/${matchId}`;
   await attempt(back, async () => {
-    const drafts = await db.select().from(assignments).where(and(eq(assignments.matchId, matchId), eq(assignments.status, "DRAFT")));
+    const drafts = (await db.select().from(assignments).where(and(eq(assignments.matchId, matchId), eq(assignments.status, "DRAFT")))).filter((a) => !OBSERVER_ROLES.includes(a.role));
     if (!drafts.length) throw new UserError("لا توجد تعيينات مسودة");
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
     const cl = await db.select().from(clubs).where(inArray(clubs.id, [m.homeClubId, m.awayClubId]));
     const title = `${cl.find((c) => c.id === m.homeClubId)?.name} × ${cl.find((c) => c.id === m.awayClubId)?.name}`;
-    await db.update(assignments).set({ status: "APPROVED", approvedBy: u.fullName, approvedAt: new Date() }).where(and(eq(assignments.matchId, matchId), eq(assignments.status, "DRAFT")));
+    await db.update(assignments).set({ status: "APPROVED", approvedBy: u.fullName, approvedAt: new Date() }).where(inArray(assignments.id, drafts.map((a) => a.id)));
     for (const a of drafts) await notifyOfficial(a.officialId, `تعيين: ${ASSIGN_ROLE[a.role]}`, `${title} — ${m.kickoff?.toLocaleString("en-GB", { timeZone: "Africa/Tripoli" }) ?? ""}`, `/portal/matches/${matchId}`);
     await audit(u, "اعتماد التعيينات", "Match", matchId, { count: drafts.length });
     return `تم اعتماد ${drafts.length} تعيين وإبلاغ الطاقم`;

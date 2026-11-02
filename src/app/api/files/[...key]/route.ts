@@ -1,6 +1,8 @@
 import { eq, and, or } from "drizzle-orm";
 import { db } from "@/db";
-import { registrationDocuments, registrations, players, correspondence, decisions } from "@/db/schema";
+import { registrationDocuments, registrations, players, correspondence, decisions, archiveDocs, archiveVersions } from "@/db/schema";
+import { canSeeDoc } from "@/lib/archive";
+import { audit } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { readObject, mimeOf } from "@/lib/storage";
 
@@ -12,7 +14,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ key: st
   if (key.includes("..")) return new Response("bad", { status: 400 });
 
   let allowed = false;
-  if (key.startsWith("cards/")) allowed = true; // خلفيات البطاقات
+  let dispName: string | null = null;
+  if (key.startsWith("archive/")) {
+    // الأرشيف: حسب درجة السرية، مع تسجيل كل اطلاع
+    const [d] = await db.select().from(archiveDocs).where(eq(archiveDocs.fileKey, key));
+    const [v] = d ? [] : await db.select({ docId: archiveVersions.docId }).from(archiveVersions).where(eq(archiveVersions.fileKey, key));
+    const doc = d ?? (v ? (await db.select().from(archiveDocs).where(eq(archiveDocs.id, v.docId)))[0] : undefined);
+    if (!doc || !canSeeDoc(u, doc) || (doc.isDeleted && !u.can("archive.secret"))) return new Response("forbidden", { status: 403 });
+    await audit(u, d ? "اطلاع على وثيقة" : "اطلاع على نسخة سابقة", "ArchiveDoc", doc.id, doc.number);
+    dispName = (d ? doc.fileName : null) ?? `${doc.number.replace(/\//g, "-")}.${key.split(".").pop()}`;
+    allowed = true;
+  } else if (key.startsWith("cards/")) allowed = true; // خلفيات البطاقات
   else if (key.startsWith("regulations/")) allowed = true; // اللوائح المعتمدة متاحة لكل المستخدمين
   else if (!u.isClub && !u.isOfficial) allowed = u.canAny("reg.view", "comp.view", "cards.print", "ref.view", "sec.view", "fin.view");
   else if (u.isClub) {
@@ -37,6 +49,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ key: st
   const buf = await readObject(key);
   if (!buf) return new Response("not found", { status: 404 });
   return new Response(new Uint8Array(buf), {
-    headers: { "Content-Type": mimeOf(key), "Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff" },
+    headers: { "Content-Type": mimeOf(key), "Cache-Control": key.startsWith("archive/") ? "private, no-store" : "private, max-age=3600", "X-Content-Type-Options": "nosniff",
+      ...(dispName ? { "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(dispName)}` } : {}) },
   });
 }

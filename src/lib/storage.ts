@@ -24,19 +24,27 @@ const bucket = () => process.env.S3_BUCKET!;
 
 export const ALLOWED_DOC = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
 export const ALLOWED_IMG = ["image/jpeg", "image/png", "image/webp"];
-const EXT: Record<string, string> = { "application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+/** الأرشيف الإلكتروني يقبل أيضًا ملفات Word وExcel */
+export const ALLOWED_ARCHIVE = [...ALLOWED_DOC, DOCX, XLSX, "application/msword", "application/vnd.ms-excel"];
+const EXT: Record<string, string> = {
+  "application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+  [DOCX]: "docx", [XLSX]: "xlsx", "application/msword": "doc", "application/vnd.ms-excel": "xls",
+};
 const MAX = 8 * 1024 * 1024;
 
 export type Saved = { key: string; mime: string; size: number; name: string; hash: string };
 
-export async function saveUpload(file: File, folder: string, allowed = ALLOWED_DOC): Promise<Saved> {
+export async function saveUpload(file: File, folder: string, allowed = ALLOWED_DOC, max = MAX): Promise<Saved> {
   if (!file || file.size === 0) throw new UserError("لم يتم اختيار ملف");
-  if (file.size > MAX) throw new UserError("حجم الملف أكبر من 8 ميغابايت");
-  if (!allowed.includes(file.type)) throw new UserError("نوع الملف غير مسموح (PDF أو صورة فقط)");
+  if (file.size > max) throw new UserError(`حجم الملف أكبر من ${Math.round(max / 1048576)} ميغابايت`);
+  if (!allowed.includes(file.type)) throw new UserError(allowed.length > ALLOWED_DOC.length ? "نوع الملف غير مسموح (PDF أو صورة أو Word أو Excel)" : "نوع الملف غير مسموح (PDF أو صورة فقط)");
   const buf = Buffer.from(await file.arrayBuffer());
   // تحقق بسيط من توقيع الملف لمنع رفع ملفات متنكرة
   const sig = buf.subarray(0, 4).toString("hex");
-  const okSig = sig.startsWith("25504446") || sig.startsWith("ffd8ff") || sig === "89504e47" || sig === "52494646";
+  const okSig = sig.startsWith("25504446") || sig.startsWith("ffd8ff") || sig === "89504e47" || sig === "52494646"
+    || (sig === "504b0304" && [DOCX, XLSX].includes(file.type)) || (sig === "d0cf11e0" && ["application/msword", "application/vnd.ms-excel"].includes(file.type));
   if (!okSig) throw new UserError("محتوى الملف لا يطابق نوعه");
   const hash = crypto.createHash("sha256").update(buf).digest("hex");
   const key = `${folder}/${new Date().getFullYear()}/${crypto.randomUUID()}.${EXT[file.type]}`;
@@ -76,7 +84,8 @@ export async function deleteObject(key: string) {
 
 export function mimeOf(key: string) {
   const e = key.split(".").pop()?.toLowerCase();
-  return e === "pdf" ? "application/pdf" : e === "png" ? "image/png" : e === "webp" ? "image/webp" : "image/jpeg";
+  const m: Record<string, string> = { pdf: "application/pdf", png: "image/png", webp: "image/webp", docx: DOCX, xlsx: XLSX, doc: "application/msword", xls: "application/vnd.ms-excel" };
+  return m[e ?? ""] ?? "image/jpeg";
 }
 
 /** رابط عرض ملف عبر المنظومة (مع فحص الصلاحية) */

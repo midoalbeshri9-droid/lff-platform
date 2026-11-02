@@ -431,3 +431,12 @@ tr.ok-row td { background: var(--green-l); }
 .kpi-group td { background: var(--gold-l); font-weight: 700; }
 .kpi-bar { height: 5px; background: #eeece6; border-radius: 3px; margin-top: 3px; overflow: hidden; }
 .kpi-bar span { display: block; height: 100%; background: var(--green); }
+
+/* ===== الأرشيف ===== */
+.arch-cats { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .8rem; }
+.arch-cat { padding: .3rem .7rem; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: inherit; font-size: .85rem; }
+.arch-cat b { color: var(--green-d); margin-inline-start: .25rem; }
+.arch-cat.active { background: var(--green-d); color: #fff; border-color: var(--green-d); }
+.arch-cat.active b { color: var(--gold); }
+.arch-cat:hover { text-decoration: none; border-color: var(--gold); }
+.arch-other { margin: 0; padding-inline-start: 1.1rem; line-height: 2; }

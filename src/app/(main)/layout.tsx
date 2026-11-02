@@ -125,6 +125,7 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
     const mine = await count(db.select({ n }).from(decisions).where(and(eq(decisions.assignee, ROLE_COMMITTEE[u.role]), inArray(decisions.status, ["PENDING", "IN_PROGRESS"]))));
     if (mine) items.push({ label: "📌 قرارات مطلوبة", href: "/secretariat/decisions", badge: mine });
   }
+  if (u.can("archive.view")) items.push({ label: "🗄 الأرشيف", href: "/archive" });
   if (u.can("reports.view")) items.push({ label: "التقارير", href: "/reports" });
   items.push({ label: "📚 اللوائح", href: "/regulations" });
   if (u.canAny("admin.users", "admin.permissions", "admin.clubs", "admin.audit", "admin.settings", "admin.outbox")) {

@@ -141,8 +141,9 @@ export async function declineAssignment(f: FormData) {
     if (m.kickoff && m.kickoff.getTime() < Date.now()) throw new UserError("بدأت المباراة");
     const reason = req(f, "reason", "سبب الاعتذار");
     await db.update(assignments).set({ status: "DECLINED", declineReason: reason }).where(eq(assignments.id, id));
-    await notifyRoles(["REF_HEAD", "REF_STAFF"], `اعتذار عن تعيين — ${u.fullName}`, reason, `/referees/assignments/${matchId}`);
+    const obs = a.role === "COMMISSIONER" || a.role === "REF_OBSERVER";
+    await notifyRoles(obs ? ["COMP_HEAD", "COMP_STAFF"] : ["REF_HEAD", "REF_STAFF"], `اعتذار عن تعيين${obs ? " مراقب مباراة" : ""} — ${u.fullName}`, reason, obs ? `/matches/${matchId}?tab=officials` : `/referees/assignments/${matchId}`);
     await audit(u, "اعتذار عن تعيين", "Match", matchId, reason);
-    return "تم تسجيل اعتذارك وإبلاغ لجنة الحكام";
+    return obs ? "تم تسجيل اعتذارك وإبلاغ لجنة المسابقات" : "تم تسجيل اعتذارك وإبلاغ لجنة الحكام";
   });
 }
