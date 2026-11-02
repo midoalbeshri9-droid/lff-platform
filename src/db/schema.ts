@@ -12,7 +12,7 @@ const d = (n: string) => date(n, { mode: "string" });
 export const roleEnum = pgEnum("role", [
   "ADMIN", "PRESIDENT", "SECRETARY_GENERAL",
   "REG_HEAD", "REG_STAFF", "COMP_HEAD", "COMP_STAFF", "REF_HEAD", "REF_STAFF",
-  "CLUB_MANAGER", "CLUB_EMPLOYEE", "CLUB_VIEWER", "REFEREE", "OBSERVER", "FIN_HEAD", "FIN_STAFF",
+  "CLUB_MANAGER", "CLUB_EMPLOYEE", "CLUB_VIEWER", "REFEREE", "OBSERVER", "FIN_HEAD", "FIN_STAFF", "SEC_STAFF",
 ]);
 
 export const users = pgTable("users", {
@@ -363,6 +363,7 @@ export const matches = pgTable("matches", {
   id: serial("id").primaryKey(),
   competitionId: integer("competition_id").notNull().references(() => competitions.id, { onDelete: "cascade" }),
   stageId: integer("stage_id").references(() => competitionStages.id, { onDelete: "cascade" }),
+  stadiumId: integer("stadium_id").references(() => stadiums.id, { onDelete: "set null" }),
   round: integer("round").notNull().default(1),
   groupName: text("group_name"),
   tieNo: integer("tie_no"), // رقم المواجهة في خروج المغلوب (يجمع الذهاب والإياب)
@@ -821,4 +822,94 @@ export const regulations = pgTable("regulations", {
   isActive: boolean("is_active").notNull().default(true),
   createdBy: text("created_by"),
   createdAt: ts("created_at").notNull().defaultNow(),
+});
+
+
+// ======================= سجل الملاعب =======================
+export const stadiums = pgTable("stadiums", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  city: text("city"),
+  capacity: integer("capacity"),
+  clubId: integer("club_id").references(() => clubs.id, { onDelete: "set null" }), // النادي صاحب الملعب / المعتمد عليه
+  surface: text("surface").notNull().default("NATURAL"), // NATURAL | ARTIFICIAL
+  hasLights: boolean("has_lights").notNull().default(false),
+  status: text("status").notNull().default("APPROVED"), // APPROVED | CONDITIONAL | SUSPENDED | CLOSED
+  approvalUntil: d("approval_until"),
+  lastInspection: d("last_inspection"),
+  suspendedUntil: d("suspended_until"),
+  suspensionReason: text("suspension_reason"),
+  decisionRef: text("decision_ref"),
+  notes: text("notes"),
+  createdAt: ts("created_at").notNull().defaultNow(),
+});
+
+export const stadiumInspections = pgTable("stadium_inspections", {
+  id: serial("id").primaryKey(),
+  stadiumId: integer("stadium_id").notNull().references(() => stadiums.id, { onDelete: "cascade" }),
+  date: d("date").notNull(),
+  result: text("result").notNull(), // PASS | CONDITIONAL | FAIL
+  inspector: text("inspector"),
+  notes: text("notes"),
+  fileKey: text("file_key"),
+  createdBy: text("created_by"),
+  createdAt: ts("created_at").notNull().defaultNow(),
+});
+
+// ======================= الأمانة العامة =======================
+export const correspondence = pgTable("correspondence", {
+  id: serial("id").primaryKey(),
+  direction: text("direction").notNull(), // IN وارد | OUT صادر
+  number: text("number").notNull().unique(),
+  refNumber: text("ref_number"), // رقم الجهة المرسلة
+  date: d("date").notNull(),
+  subject: text("subject").notNull(),
+  party: text("party").notNull(), // من / إلى
+  committee: text("committee"), // الجهة المختصة داخل الاتحاد
+  clubId: integer("club_id").references(() => clubs.id, { onDelete: "set null" }),
+  playerId: integer("player_id").references(() => players.id, { onDelete: "set null" }),
+  matchId: integer("match_id").references(() => matches.id, { onDelete: "set null" }),
+  summary: text("summary"),
+  fileKey: text("file_key"),
+  fileName: text("file_name"),
+  status: text("status").notNull().default("OPEN"), // OPEN | REPLIED | CLOSED
+  replyToId: integer("reply_to_id"),
+  dueDate: d("due_date"),
+  visibleToClub: boolean("visible_to_club").notNull().default(false),
+  createdBy: text("created_by"),
+  createdAt: ts("created_at").notNull().defaultNow(),
+}, (t) => [index("corr_date_idx").on(t.date)]);
+
+export const meetings = pgTable("meetings", {
+  id: serial("id").primaryKey(),
+  body: text("body").notNull(), // BOARD | REG | COMP | REF | FIN | DISC | OTHER
+  number: text("number").notNull().unique(),
+  date: d("date").notNull(),
+  location: text("location"),
+  attendees: text("attendees"),
+  agenda: text("agenda"),
+  minutes: text("minutes"),
+  fileKey: text("file_key"),
+  status: text("status").notNull().default("DRAFT"), // DRAFT | APPROVED
+  createdBy: text("created_by"),
+  createdAt: ts("created_at").notNull().defaultNow(),
+});
+
+export const decisions = pgTable("decisions", {
+  id: serial("id").primaryKey(),
+  number: text("number").notNull().unique(),
+  meetingId: integer("meeting_id").references(() => meetings.id, { onDelete: "set null" }),
+  body: text("body").notNull(), // الجهة المصدرة
+  date: d("date").notNull(),
+  title: text("title").notNull(),
+  text: text("text"),
+  assignee: text("assignee"), // الجهة المكلفة بالتنفيذ
+  dueDate: d("due_date"),
+  status: text("status").notNull().default("PENDING"), // PENDING | IN_PROGRESS | DONE | CANCELLED
+  followUp: text("follow_up"),
+  clubId: integer("club_id").references(() => clubs.id, { onDelete: "set null" }),
+  fileKey: text("file_key"),
+  createdBy: text("created_by"),
+  createdAt: ts("created_at").notNull().defaultNow(),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
 });

@@ -36,20 +36,21 @@ export function back(path: string, msg: { ok?: string; err?: string }): never {
 }
 
 /** يغلّف إجراء الخادم: الأخطاء المعروفة ترجع للصفحة كرسالة */
-export async function attempt(path: string, fn: () => Promise<string | void>): Promise<never> {
+export async function attempt(target: string | (() => string), fn: () => Promise<string | void>): Promise<never> {
   let ok: string | void;
+  const p = () => (typeof target === "function" ? target() : target);
   try {
     ok = await fn();
   } catch (e: unknown) {
     if (e && typeof e === "object" && "digest" in e && String((e as { digest: string }).digest).startsWith("NEXT_REDIRECT")) throw e;
-    if (e instanceof UserError) back(path, { err: e.message });
+    if (e instanceof UserError) back(p(), { err: e.message });
     const pg = e as { code?: string; detail?: string };
-    if (pg?.code === "23505") back(path, { err: "القيمة مسجلة مسبقًا (تكرار غير مسموح)" });
-    if (pg?.code === "23503") back(path, { err: "لا يمكن الحذف لارتباط السجل ببيانات أخرى" });
+    if (pg?.code === "23505") back(p(), { err: "القيمة مسجلة مسبقًا (تكرار غير مسموح)" });
+    if (pg?.code === "23503") back(p(), { err: "لا يمكن الحذف لارتباط السجل ببيانات أخرى" });
     console.error(e);
-    back(path, { err: "تعذّر تنفيذ العملية، حاول مجددًا" });
+    back(p(), { err: "تعذّر تنفيذ العملية، حاول مجددًا" });
   }
-  back(path, { ok: ok || "تم الحفظ بنجاح" });
+  back(p(), { ok: ok || "تم الحفظ بنجاح" });
 }
 
 export const today = () => new Date().toISOString().slice(0, 10);

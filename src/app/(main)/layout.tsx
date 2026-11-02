@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, lt, notInArray, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { notifications, registrations, matches, assignments, staff, appeals, matchRequests, users } from "@/db/schema";
+import { notifications, registrations, matches, assignments, staff, appeals, matchRequests, users, decisions } from "@/db/schema";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth";
-import { ROLE_LABEL } from "@/lib/labels";
+import { ROLE_LABEL, ROLE_COMMITTEE } from "@/lib/labels";
+import { today } from "@/lib/util";
 import { NavMenu, type NavItem } from "@/components/Client";
 
 async function count(q: Promise<{ n: number }[]>) {
@@ -30,6 +31,7 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
       { label: "العقوبات", href: "/club/sanctions" },
       ...(u.can("club.finance") ? [{ label: "الحساب المالي", href: "/club/finance" }] : []),
       { label: "قائمة الفريق المعتمدة", href: "/club/roster" },
+      { label: "مراسلات الاتحاد", href: "/club/mail" },
       ...(u.role === "CLUB_MANAGER" ? [{ label: "مستخدمو النادي", href: "/club/users" }] : []),
     ];
   }
@@ -68,6 +70,8 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
       children: [
         { label: "🏆 المسابقات", href: "/competitions" },
         { label: "⚽ المباريات", href: "/matches" },
+        { label: "📅 التقويم والتعارضات", href: "/competitions/calendar" },
+        { label: "🏟 سجل الملاعب", href: "/competitions/stadiums" },
         ...(u.can("comp.reports") ? [{ label: "📄 تقارير بانتظار الاعتماد", href: "/matches?report=SUBMITTED", badge: reports }] : []),
         { label: "⛔ الإيقافات", href: "/registration/suspensions?kind=MATCHES" },
         "sep",
@@ -102,6 +106,24 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
         ...(u.can("fin.settings") ? ["sep" as const, { label: "⚙ الرسوم والأجور والقواعد", href: "/finance/settings" }] : []),
       ],
     });
+  }
+  if (u.canAny("sec.view", "kpi.view")) {
+    const late = u.can("sec.view") ? await count(db.select({ n }).from(decisions).where(and(lt(decisions.dueDate, today()), notInArray(decisions.status, ["DONE", "CANCELLED"])))) : 0;
+    items.push({
+      label: "الأمانة العامة",
+      badge: late,
+      children: [
+        ...(u.can("sec.view") ? [
+          { label: "✉ الصادر والوارد", href: "/secretariat/mail" },
+          { label: "📝 محاضر الاجتماعات", href: "/secretariat/meetings" },
+          { label: "📌 القرارات ومتابعة التنفيذ", href: "/secretariat/decisions", badge: late },
+        ] : []),
+        ...(u.can("kpi.view") ? [{ label: "📊 لوحة المؤشرات", href: "/kpis" }] : []),
+      ],
+    });
+  } else if (ROLE_COMMITTEE[u.role]) {
+    const mine = await count(db.select({ n }).from(decisions).where(and(eq(decisions.assignee, ROLE_COMMITTEE[u.role]), inArray(decisions.status, ["PENDING", "IN_PROGRESS"]))));
+    if (mine) items.push({ label: "📌 قرارات مطلوبة", href: "/secretariat/decisions", badge: mine });
   }
   if (u.can("reports.view")) items.push({ label: "التقارير", href: "/reports" });
   items.push({ label: "📚 اللوائح", href: "/regulations" });

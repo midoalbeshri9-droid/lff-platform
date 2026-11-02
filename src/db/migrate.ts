@@ -69,7 +69,16 @@ export async function migrate() {
     await db.insert(s.settings).values({ key: "lff_comp_reg_2018", value: new Date().toISOString() }).onConflictDoNothing();
   }
 
-  // 8) إعدادات البريد الافتراضية (فارغة حتى يضبطها المدير)
+  // 8) سجل الملاعب: يُنشأ من ملاعب الأندية المسجلة، وتُربط المباريات بها بالاسم
+  const clubRows = await db.select().from(s.clubs);
+  for (const c of clubRows) {
+    if (!c.stadium?.trim()) continue;
+    await db.insert(s.stadiums).values({ name: c.stadium.trim(), city: c.city, clubId: c.id }).onConflictDoNothing();
+  }
+  await db.execute(sql`update "matches" set "stadium_id" = "stadiums"."id" from "stadiums" where "matches"."stadium_id" is null and trim("matches"."venue") = "stadiums"."name"`);
+  await db.insert(s.settings).values({ key: "min_rest_hours", value: "48" }).onConflictDoNothing();
+
+  // 9) إعدادات البريد الافتراضية (فارغة حتى يضبطها المدير)
   await db.insert(s.settings).values({ key: "smtp_port", value: "465" }).onConflictDoNothing();
   console.log("✓ اكتمل ترحيل البيانات");
 }

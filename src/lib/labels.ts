@@ -1,5 +1,6 @@
 // التسميات العربية لكل القيم الثابتة
 export const ROLE_LABEL: Record<string, string> = {
+  SEC_STAFF: "موظف الأمانة العامة",
   ADMIN: "مدير المنظومة",
   PRESIDENT: "رئيس الاتحاد",
   SECRETARY_GENERAL: "الأمين العام",
@@ -205,3 +206,11 @@ export const FEE_CODES: Record<string, string> = {
   REG_NEW: "قيد جديد", REG_RENEWAL: "تجديد قيد", REG_TRANSFER: "انتقال نهائي", REG_LOAN: "إعارة", REG_LOAN_RETURN: "عودة من إعارة",
   CARD_REPLACEMENT: "بطاقة بديلة", STAFF_REG: "قيد إداري / جهاز فني",
 };
+
+export const COMMITTEE: Record<string, string> = { BOARD: "مجلس الإدارة", SEC: "الأمانة العامة", REG: "لجنة القيد وأوضاع اللاعبين", COMP: "لجنة المسابقات", REF: "لجنة الحكام", FIN: "اللجنة المالية", DISC: "لجنة الانضباط", APPEAL: "لجنة الاستئناف", MED: "اللجنة الطبية", OTHER: "أخرى" };
+/** اللجنة التي ينتمي إليها دور المستخدم (لمتابعة القرارات المكلفة بها) */
+export const ROLE_COMMITTEE: Record<string, string> = { REG_HEAD: "REG", REG_STAFF: "REG", COMP_HEAD: "COMP", COMP_STAFF: "COMP", REF_HEAD: "REF", REF_STAFF: "REF", FIN_HEAD: "FIN", FIN_STAFF: "FIN", SECRETARY_GENERAL: "SEC", SEC_STAFF: "SEC", PRESIDENT: "BOARD" };
+export const DECISION_STATUS: Record<string, [string, string]> = { PENDING: ["بانتظار التنفيذ", "b-amber"], IN_PROGRESS: ["قيد التنفيذ", "b-blue"], DONE: ["نُفّذ", "b-green"], CANCELLED: ["ملغى", "b-gray"] };
+export const CORR_STATUS: Record<string, [string, string]> = { OPEN: ["مفتوحة", "b-amber"], REPLIED: ["تم الرد", "b-blue"], CLOSED: ["مغلقة", "b-green"] };
+export const STADIUM_STATUS: Record<string, [string, string]> = { APPROVED: ["معتمد", "b-green"], CONDITIONAL: ["معتمد بشروط", "b-amber"], SUSPENDED: ["موقوف", "b-red"], CLOSED: ["مغلق", "b-gray"] };
+export const INSPECTION_RESULT: Record<string, string> = { PASS: "صالح", CONDITIONAL: "صالح بشروط", FAIL: "غير صالح" };

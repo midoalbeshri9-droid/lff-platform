@@ -102,7 +102,7 @@ async function demo() {
   const V = { isVerified: true, verifiedAt: new Date(), mustChangePassword: false };
   const demoUsers: [string, string, s.Role][] = [
     ["president", "رئيس الاتحاد", "PRESIDENT"], ["reg.head", "رئيس لجنة القيد", "REG_HEAD"], ["reg.staff", "موظف لجنة القيد", "REG_STAFF"],
-    ["comp.head", "رئيس لجنة المسابقات", "COMP_HEAD"], ["ref.head", "رئيس لجنة الحكام", "REF_HEAD"], ["fin.head", "رئيس اللجنة المالية", "FIN_HEAD"], ["fin.staff", "موظف اللجنة المالية", "FIN_STAFF"],
+    ["comp.head", "رئيس لجنة المسابقات", "COMP_HEAD"], ["ref.head", "رئيس لجنة الحكام", "REF_HEAD"], ["fin.head", "رئيس اللجنة المالية", "FIN_HEAD"], ["fin.staff", "موظف اللجنة المالية", "FIN_STAFF"], ["sec.gen", "الأمين العام", "SECRETARY_GENERAL"],
   ];
   await db.insert(s.users).values(demoUsers.map(([username, fullName, role], i) => ({ username, fullName, role, passwordHash: pw, email: `${username.replace(".", "_")}@lff-demo.ly`, phone: `09100000${String(i + 10)}`, ...V })));
   // حساب لكل نادٍ

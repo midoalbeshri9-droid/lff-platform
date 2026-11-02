@@ -1,8 +1,9 @@
 "use server";
 import { and, eq, ne, or } from "drizzle-orm";
 import { db } from "@/db";
-import { competitions, competitionTeams, matches, matchEvents, assignments, matchRequests, competitionSquads, registrations, clubs, competitionStages, stageTeams } from "@/db/schema";
+import { competitions, competitionTeams, matches, matchEvents, assignments, matchRequests, competitionSquads, registrations, clubs, competitionStages, stageTeams, settings } from "@/db/schema";
 import { addCharge } from "@/lib/finance";
+import { resolveStadium, stadiumBlock } from "@/lib/stadiums";
 import { foreignOnPitchCheck, subsLimitCheck } from "@/lib/competition";
 import { requireUser } from "@/lib/auth";
 import { audit, notifyClub, notifyOfficial } from "@/lib/audit";
@@ -277,6 +278,10 @@ export async function saveMatch(f: FormData) {
       kickoff: fromLocalInput(str(f, "kickoff")), venue: str(f, "venue"), city: str(f, "city"),
       status: (str(f, "status") ?? "SCHEDULED") as "SCHEDULED", notes: str(f, "notes"),
     };
+    const sd = await resolveStadium(data.venue);
+    const block = stadiumBlock(sd, data.kickoff ? data.kickoff.toISOString().slice(0, 10) : null);
+    if (block && data.status === "SCHEDULED") throw new UserError(block);
+    Object.assign(data, { stadiumId: sd?.id ?? null, city: data.city ?? sd?.city ?? null });
     if (id) {
       const [old] = await db.select().from(matches).where(eq(matches.id, id));
       await db.update(matches).set(data).where(eq(matches.id, id));
@@ -307,7 +312,10 @@ export async function bulkSchedule(f: FormData) {
     for (const id of ids) {
       const k = fromLocalInput(str(f, `k_${id}`));
       const v = str(f, `v_${id}`);
-      await db.update(matches).set({ kickoff: k, venue: v }).where(and(eq(matches.id, id), eq(matches.competitionId, compId)));
+      const sd = await resolveStadium(v);
+      const block = stadiumBlock(sd, k ? k.toISOString().slice(0, 10) : null);
+      if (block) throw new UserError(`مباراة #${id}: ${block}`);
+      await db.update(matches).set({ kickoff: k, venue: v, stadiumId: sd?.id ?? null }).where(and(eq(matches.id, id), eq(matches.competitionId, compId)));
       n++;
     }
     await audit(u, "جدولة مواعيد", "Competition", compId, { n });
@@ -454,5 +462,15 @@ export async function saveSquadList(f: FormData) {
     const [cl] = await db.select({ n: clubs.name }).from(clubs).where(eq(clubs.id, clubId));
     await audit(u, "حفظ قائمة الموسم", "Competition", competitionId, { club: cl?.n, count: ids.length });
     return `تم حفظ قائمة الموسم (${ids.length} لاعب)`;
+  });
+}
+
+export async function saveRestHours(f: FormData) {
+  const u = await requireUser("comp.manage");
+  await attempt("/competitions/calendar", async () => {
+    const v = String(Math.max(12, int(f, "hours") ?? 48));
+    await db.insert(settings).values({ key: "min_rest_hours", value: v }).onConflictDoUpdate({ target: settings.key, set: { value: v } });
+    await audit(u, "تعديل الحد الأدنى للراحة", "Setting", null, v);
+    return "تم الحفظ";
   });
 }

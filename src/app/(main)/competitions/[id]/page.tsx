@@ -9,6 +9,7 @@ import { SquadListForm } from "@/components/SquadList";
 import { POSITION } from "@/lib/labels";
 import { requireUser } from "@/lib/auth";
 import { standings, topScorers } from "@/lib/competition";
+import { allStadiums } from "@/lib/stadiums";
 import { ensureStages, knockoutRounds, STAGE_FORMAT, STAGE_STATUS, type Stage } from "@/lib/stages";
 import { GROUP_LETTERS } from "@/lib/competitionPure";
 import { COMP_TYPE, COMP_STATUS, MATCH_STATUS, REPORT_STATUS, TIEBREAK } from "@/lib/labels";
@@ -74,6 +75,7 @@ async function Fixtures({ id, manage, teams, stages, stage }: { id: number; mana
     .where(and(eq(matches.competitionId, id), eq(matches.stageId, stage.id))).orderBy(asc(matches.round), asc(matches.tieNo), asc(matches.leg), asc(matches.kickoff), asc(matches.id));
   const rounds = [...new Set(ms.map((x) => x.m.round))];
   const ko = stage.format === "KNOCKOUT" ? await knockoutRounds(stage.id) : [];
+  const sts = await allStadiums();
   const roundTitle = (r: number) => (stage.format === "KNOCKOUT" ? ko.find((x) => x.round === r)?.name ?? `الدور ${r}` : `الجولة ${r}`);
   return (
     <>
@@ -101,13 +103,14 @@ async function Fixtures({ id, manage, teams, stages, stage }: { id: number; mana
                 <Field label="المباراة"><select name="leg"><option value="1">الذهاب / مباراة واحدة</option><option value="2">الإياب</option></select></Field>
               </>}
               <Field label="الموعد"><input type="datetime-local" name="kickoff" /></Field>
-              <Field label="الملعب"><input type="text" name="venue" /></Field>
+              <Field label="الملعب"><input type="text" name="venue" list="stadiums-list" /></Field>
               <div className="full"><Submit>إضافة</Submit></div>
             </form>
           </details>
           <Link className="btn btn-light" href={`/print/fixtures/${id}`} target="_blank">🖨 طباعة الجدول</Link>
         </div>
       )}
+      <datalist id="stadiums-list">{sts.filter((x) => x.status !== "CLOSED").map((x) => <option key={x.id} value={x.name}>{x.city ?? ""}</option>)}</datalist>
       {ms.length === 0 ? <div className="card"><Empty>لم يُنشأ جدول هذه المرحلة بعد{stage.format !== "LEAGUE" && " — جهّز الفرق والمجموعات من تبويب «المراحل»"}</Empty></div> : (
         <form action={bulkSchedule}>
           <input type="hidden" name="competitionId" value={id} />
@@ -120,7 +123,7 @@ async function Fixtures({ id, manage, teams, stages, stage }: { id: number; mana
                     {m.groupName && <span className="b b-gray" style={{ marginInlineStart: 6 }}>المجموعة {m.groupName}</span>}
                     {m.tieNo != null && <span className="b b-gray" style={{ marginInlineStart: 6 }}>مواجهة {m.tieNo}{m.leg === 2 ? " — إياب" : m.leg === 1 && ms.some((x) => x.m.tieNo === m.tieNo && x.m.round === r && x.m.leg === 2) ? " — ذهاب" : ""}</span>}</td>
                   <td>{manage && m.reportStatus === "NONE" ? <><input type="hidden" name="mid" value={m.id} /><input type="datetime-local" name={`k_${m.id}`} defaultValue={toLocalInput(m.kickoff)} /></> : fmtDateTime(m.kickoff)}</td>
-                  <td>{manage && m.reportStatus === "NONE" ? <input type="text" name={`v_${m.id}`} defaultValue={m.venue ?? ""} placeholder="الملعب" /> : m.venue}</td>
+                  <td>{manage && m.reportStatus === "NONE" ? <input type="text" list="stadiums-list" name={`v_${m.id}`} defaultValue={m.venue ?? ""} placeholder="الملعب" /> : m.venue}</td>
                   <td className="num"><strong>{m.homeScore != null ? `${m.homeScore} - ${m.awayScore}` : "—"}</strong>{m.homePens != null && <div className="muted" style={{ fontSize: ".75rem" }}>ترجيح {m.homePens} - {m.awayPens}</div>}</td>
                   <td><Badge v={MATCH_STATUS[m.status]} /> {m.reportStatus !== "NONE" && <Badge v={REPORT_STATUS[m.reportStatus]} />}</td>
                   <td><Link className="btn btn-sm btn-light" href={`/matches/${m.id}`}>التفاصيل</Link></td>

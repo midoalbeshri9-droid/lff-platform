@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { competitions, competitionStages, stageTeams, competitionTeams, matches, clubs } from "@/db/schema";
+import { competitions, competitionStages, stageTeams, competitionTeams, matches, clubs, stadiums } from "@/db/schema";
 import { UserError } from "./util";
 import { roundRobin, koPairs, koRoundName, tieWinner, GROUP_LETTERS } from "./competitionPure";
 
@@ -100,14 +100,20 @@ export async function setGroups(stageId: number, groups: Map<number, string | nu
 
 async function venues() {
   const rows = await db.select({ id: clubs.id, stadium: clubs.stadium, city: clubs.city }).from(clubs);
-  return (id: number) => rows.find((x) => x.id === id);
+  const st = await db.select().from(stadiums);
+  // الملعب المعتمد للنادي من سجل الملاعب أولًا، وإلا الاسم المكتوب في بيانات النادي
+  return (id: number) => {
+    const reg = st.find((x) => x.clubId === id && x.status !== "CLOSED") ?? st.find((x) => x.name === rows.find((r) => r.id === id)?.stadium);
+    const c = rows.find((x) => x.id === id);
+    return c ? { stadium: reg?.name ?? c.stadium, city: reg?.city ?? c.city, stadiumId: reg?.id ?? null } : undefined;
+  };
 }
 
-function koMatches(competitionId: number, stageId: number, round: number, pairs: [number, number][], legs: number, venue: (id: number) => { stadium: string | null; city: string | null } | undefined, startTie = 1) {
+function koMatches(competitionId: number, stageId: number, round: number, pairs: [number, number][], legs: number, venue: (id: number) => { stadium: string | null; city: string | null; stadiumId: number | null } | undefined, startTie = 1) {
   const rows: (typeof matches.$inferInsert)[] = [];
   pairs.forEach(([a, b], i) => {
-    rows.push({ competitionId, stageId, round, tieNo: startTie + i, leg: 1, homeClubId: a, awayClubId: b, venue: venue(a)?.stadium, city: venue(a)?.city });
-    if (legs >= 2) rows.push({ competitionId, stageId, round, tieNo: startTie + i, leg: 2, homeClubId: b, awayClubId: a, venue: venue(b)?.stadium, city: venue(b)?.city });
+    rows.push({ competitionId, stageId, round, tieNo: startTie + i, leg: 1, homeClubId: a, awayClubId: b, venue: venue(a)?.stadium, city: venue(a)?.city, stadiumId: venue(a)?.stadiumId });
+    if (legs >= 2) rows.push({ competitionId, stageId, round, tieNo: startTie + i, leg: 2, homeClubId: b, awayClubId: a, venue: venue(b)?.stadium, city: venue(b)?.city, stadiumId: venue(b)?.stadiumId });
   });
   return rows;
 }
@@ -132,14 +138,14 @@ export async function generateStageFixtures(stageId: number) {
     for (const g of groups) {
       const ids = teams.filter((t) => t.groupName === g).map((t) => t.clubId);
       if (ids.length < 2) throw new UserError(`المجموعة ${g} فيها فريق واحد`);
-      roundRobin(ids, s.legs).forEach((m) => rows.push({ competitionId: s.competitionId, stageId, round: m.round, groupName: g, homeClubId: m.home, awayClubId: m.away, venue: venue(m.home)?.stadium, city: venue(m.home)?.city }));
+      roundRobin(ids, s.legs).forEach((m) => rows.push({ competitionId: s.competitionId, stageId, round: m.round, groupName: g, homeClubId: m.home, awayClubId: m.away, venue: venue(m.home)?.stadium, city: venue(m.home)?.city, stadiumId: venue(m.home)?.stadiumId }));
     }
   } else if (s.format === "KNOCKOUT") {
     if (teams.length % 2) throw new UserError(`عدد الفرق فردي (${teams.length}) — أضف أو احذف فريقًا، أو أضف المباريات يدويًا`);
     const legs = teams.length === 2 ? s.finalLegs : s.legs;
     rows.push(...koMatches(s.competitionId, stageId, 1, koPairs(teams), legs, venue));
   } else {
-    roundRobin(teams.map((t) => t.clubId), s.legs).forEach((m) => rows.push({ competitionId: s.competitionId, stageId, round: m.round, homeClubId: m.home, awayClubId: m.away, venue: venue(m.home)?.stadium, city: venue(m.home)?.city }));
+    roundRobin(teams.map((t) => t.clubId), s.legs).forEach((m) => rows.push({ competitionId: s.competitionId, stageId, round: m.round, homeClubId: m.home, awayClubId: m.away, venue: venue(m.home)?.stadium, city: venue(m.home)?.city, stadiumId: venue(m.home)?.stadiumId }));
   }
   if (rows.length) await db.insert(matches).values(rows);
   await db.update(competitionStages).set({ status: "ACTIVE" }).where(eq(competitionStages.id, stageId));

@@ -15,6 +15,7 @@ import { LineupForm } from "@/components/LineupForm";
 import { saveMatch, deleteMatch, committeeLineup, addEvent, deleteEvent, setResult, approveReport, returnReport, setPenalties } from "../../competitions/actions";
 import { competitionStages } from "@/db/schema";
 import { koRoundName } from "@/lib/competitionPure";
+import { allStadiums } from "@/lib/stadiums";
 
 export default async function MatchPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const u = await requireUser("comp.view", "ref.view");
@@ -67,6 +68,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
       {tab === "officials" && <Officials id={id} canAssign={u.can("ref.assign")} canEvals={u.canAny("ref.evals", "comp.view")} canReport={u.can("comp.view")} canSanction={u.can("comp.sanctions")} />}
       {tab === "report" && <MatchSanctions id={id} />}
       {tab === "info" && <Info m={m} home={home} away={away} canEdit={u.can("comp.manage")} />}
+      {tab === "info" && <datalist id="stadiums-list">{(await allStadiums()).filter((x) => x.status !== "CLOSED").map((x) => <option key={x.id} value={x.name}>{x.city ?? ""}</option>)}</datalist>}
     </>
   );
 }
@@ -215,7 +217,7 @@ function Info({ m, home, away, canEdit }: { m: typeof matches.$inferSelect; home
         <Field label="الجولة"><input type="number" name="round" defaultValue={m.round} disabled={!canEdit} /></Field>
         <Field label="الموعد"><input type="datetime-local" name="kickoff" defaultValue={toLocalInput(m.kickoff)} disabled={!canEdit} /></Field>
         <Field label="الحالة"><select name="status" defaultValue={m.status} disabled={!canEdit}><Options map={MATCH_STATUS} /></select></Field>
-        <Field label="الملعب"><input type="text" name="venue" defaultValue={m.venue ?? ""} disabled={!canEdit} /></Field>
+        <Field label="الملعب" hint="من سجل الملاعب"><input type="text" name="venue" list="stadiums-list" defaultValue={m.venue ?? ""} disabled={!canEdit} /></Field>
         <Field label="المدينة"><input type="text" name="city" defaultValue={m.city ?? ""} disabled={!canEdit} /></Field>
         <Field label="المجموعة"><input type="text" name="groupName" defaultValue={m.groupName ?? ""} disabled={!canEdit} /></Field>
         <Field label="ملاحظات" full><textarea name="notes" defaultValue={m.notes ?? ""} disabled={!canEdit} /></Field>

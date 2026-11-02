@@ -1,6 +1,6 @@
 import { eq, and, or } from "drizzle-orm";
 import { db } from "@/db";
-import { registrationDocuments, registrations, players } from "@/db/schema";
+import { registrationDocuments, registrations, players, correspondence, decisions } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { readObject, mimeOf } from "@/lib/storage";
 
@@ -14,9 +14,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ key: st
   let allowed = false;
   if (key.startsWith("cards/")) allowed = true; // خلفيات البطاقات
   else if (key.startsWith("regulations/")) allowed = true; // اللوائح المعتمدة متاحة لكل المستخدمين
-  else if (!u.isClub && !u.isOfficial) allowed = u.canAny("reg.view", "comp.view", "cards.print", "ref.view");
+  else if (!u.isClub && !u.isOfficial) allowed = u.canAny("reg.view", "comp.view", "cards.print", "ref.view", "sec.view", "fin.view");
   else if (u.isClub) {
-    if (key.startsWith(`docs/${u.clubId}/`)) {
+    if (key.startsWith("correspondence/") || key.startsWith("decisions/")) {
+      const [c] = await db.select({ id: correspondence.id }).from(correspondence).where(and(eq(correspondence.fileKey, key), eq(correspondence.clubId, u.clubId!), eq(correspondence.visibleToClub, true)));
+      const [d] = c ? [c] : await db.select({ id: decisions.id }).from(decisions).where(and(eq(decisions.fileKey, key), eq(decisions.clubId, u.clubId!)));
+      allowed = !!(c || d);
+    } else if (key.startsWith(`docs/${u.clubId}/`)) {
       const [d] = await db.select({ id: registrationDocuments.id }).from(registrationDocuments)
         .innerJoin(registrations, eq(registrations.id, registrationDocuments.registrationId))
         .where(and(eq(registrationDocuments.fileKey, key), eq(registrations.clubId, u.clubId!)));
