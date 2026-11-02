@@ -61,7 +61,7 @@ async function base() {
     { name: "قائمة مختصرة", columns: ["seq", "number", "fullName", "birthYear", "category"], options: { title: "قائمة اللاعبين" } },
   ]);
   const pw = process.env.SEED_ADMIN_PASSWORD || "Admin@12345";
-  await db.insert(s.users).values({ username: "admin", fullName: "مدير المنظومة", role: "ADMIN", passwordHash: hash(pw), mustChangePassword: true, isVerified: true, verifiedAt: new Date() });
+  await db.insert(s.users).values({ username: "admin", fullName: "مدير المنظومة", role: "ADMIN", passwordHash: hash(pw), mustChangePassword: !process.env.SEED_ADMIN_PASSWORD, isVerified: true, verifiedAt: new Date() });
   console.log(`✓ البيانات الأساسية — المستخدم: admin  كلمة المرور: ${pw}`);
   return true;
 }
