@@ -1,0 +1,114 @@
+import type { Role } from "@/db/schema";
+
+// كل الصلاحيات في المنظومة، مجمّعة حسب الجهة — يعدّلها مدير النظام من مصفوفة الصلاحيات
+export const PERMISSION_GROUPS: { group: string; items: [string, string][] }[] = [
+  {
+    group: "لجنة القيد وأوضاع اللاعبين",
+    items: [
+      ["reg.view", "عرض اللاعبين وطلبات القيد لكل الأندية"],
+      ["reg.review", "مراجعة الطلبات والمستندات (قبول / رفض / إعادة)"],
+      ["reg.edit", "تعديل بيانات لاعب بعد اعتماده"],
+      ["reg.windows", "إدارة المواسم وفترات القيد والفئات والمستندات"],
+      ["reg.suspend", "الإيقاف الإداري للاعبين ورفعه"],
+      ["reg.lists", "استخراج قوائم الفرق وتصديرها"],
+      ["reg.contracts", "الاطلاع على القيم المالية للعقود"],
+      ["reg.staff", "اعتماد الإداريين والجهاز الفني"],
+      ["cards.print", "طباعة بطاقات اللاعبين"],
+      ["cards.design", "تصميم قوالب البطاقات"],
+    ],
+  },
+  {
+    group: "لجنة المسابقات",
+    items: [
+      ["comp.view", "عرض المسابقات والمباريات"],
+      ["comp.manage", "إدارة المسابقات والفرق والجدولة"],
+      ["comp.lineups", "إدخال قوائم المباريات لأي نادٍ"],
+      ["comp.reports", "اعتماد تقارير المباريات والنتائج"],
+      ["comp.suspend", "إيقاف لاعبين بعدد مباريات ورفعه"],
+      ["comp.sanctions", "إصدار قرارات العقوبات والبت في الطعون"],
+      ["comp.articles", "إدارة لائحة العقوبات"],
+      ["comp.requests", "البت في طلبات تأجيل المباريات"],
+    ],
+  },
+  {
+    group: "لجنة الحكام والمراقبين",
+    items: [
+      ["ref.view", "عرض الحكام والمراقبين والتعيينات"],
+      ["ref.manage", "إدارة سجل الحكام والمراقبين والاختبارات"],
+      ["ref.assign", "تعيين الطواقم (مسودة)"],
+      ["ref.approve", "اعتماد التعيينات"],
+      ["ref.evals", "الاطلاع على تقييمات المراقبين"],
+    ],
+  },
+  {
+    group: "اللجنة المالية",
+    items: [
+      ["fin.view", "الاطلاع على الحسابات والتقارير المالية"],
+      ["fin.manage", "تسجيل الدفعات والمستحقات وإصدار الإيصالات"],
+      ["fin.approve", "الإعفاء من المستحقات وإلغاء الإيصالات"],
+      ["fin.settings", "جدول الرسوم ومستحقات الحكام وإعدادات المالية"],
+    ],
+  },
+  {
+    group: "الإدارة",
+    items: [
+      ["admin.users", "إدارة المستخدمين والحسابات"],
+      ["admin.permissions", "تعديل مصفوفة الصلاحيات"],
+      ["admin.clubs", "إدارة الأندية"],
+      ["admin.audit", "سجل العمليات"],
+      ["admin.outbox", "صندوق الرسائل الصادرة (روابط التفعيل)"],
+      ["admin.settings", "الإعدادات العامة"],
+      ["reports.view", "التقارير والإحصائيات"],
+    ],
+  },
+  {
+    group: "بوابة الأندية",
+    items: [
+      ["club.view", "عرض لاعبي النادي وطلباته"],
+      ["club.edit", "إضافة لاعبين ورفع المستندات"],
+      ["club.submit", "إرسال الطلبات إلى لجنة القيد"],
+      ["club.lineups", "إرسال قوائم المباريات"],
+      ["club.origin", "الرد على طلبات انتقال لاعبي النادي"],
+      ["club.finance", "الاطلاع على الحساب المالي للنادي"],
+      ["club.appeals", "تقديم الطعون وطلبات التأجيل"],
+    ],
+  },
+  {
+    group: "بوابة الحكام والمراقبين",
+    items: [
+      ["portal.referee", "إدخال تقرير المباراة (حكم الساحة)"],
+      ["portal.observer", "إدخال تقرير مراقب المباراة وتقييم الحكام"],
+    ],
+  },
+];
+
+export const ALL_PERMISSIONS = PERMISSION_GROUPS.flatMap((g) => g.items.map((i) => i[0]));
+
+const fed = (p: string) => !p.startsWith("club.") && !p.startsWith("portal.");
+/** الصلاحيات التي يملكها المدير دائمًا */
+export const ADMIN_LOCKED = ["admin.users", "admin.permissions"];
+const VIEW = ["reg.view", "comp.view", "ref.view", "ref.evals", "reports.view", "admin.audit", "fin.view"];
+
+export const DEFAULT_PERMISSIONS: Record<Role, string[]> = {
+  ADMIN: ALL_PERMISSIONS.filter(fed),
+  PRESIDENT: VIEW,
+  SECRETARY_GENERAL: VIEW,
+  REG_HEAD: ["reg.view", "reg.review", "reg.edit", "reg.windows", "reg.suspend", "reg.lists", "reg.contracts", "reg.staff", "cards.print", "cards.design", "comp.view", "reports.view"],
+  REG_STAFF: ["reg.view", "reg.review", "reg.lists", "reg.contracts", "reg.staff", "cards.print"],
+  COMP_HEAD: ["comp.view", "comp.manage", "comp.lineups", "comp.reports", "comp.suspend", "comp.sanctions", "comp.articles", "comp.requests", "reg.view", "ref.view", "reports.view"],
+  COMP_STAFF: ["comp.view", "comp.manage", "comp.lineups", "comp.requests", "reg.view"],
+  REF_HEAD: ["ref.view", "ref.manage", "ref.assign", "ref.approve", "ref.evals", "comp.view", "reports.view"],
+  REF_STAFF: ["ref.view", "ref.manage", "ref.assign", "comp.view"],
+  CLUB_MANAGER: ["club.view", "club.edit", "club.submit", "club.lineups", "club.origin", "club.finance", "club.appeals"],
+  CLUB_EMPLOYEE: ["club.view", "club.edit", "club.lineups"],
+  CLUB_VIEWER: ["club.view"],
+  REFEREE: ["portal.referee"],
+  OBSERVER: ["portal.observer"],
+  FIN_HEAD: ["fin.view", "fin.manage", "fin.approve", "fin.settings", "reports.view"],
+  FIN_STAFF: ["fin.view", "fin.manage"],
+};
+
+export const CLUB_ROLES: Role[] = ["CLUB_MANAGER", "CLUB_EMPLOYEE", "CLUB_VIEWER"];
+export const OFFICIAL_ROLES: Role[] = ["REFEREE", "OBSERVER"];
+export const isClubRole = (r: Role) => CLUB_ROLES.includes(r);
+export const isOfficialRole = (r: Role) => OFFICIAL_ROLES.includes(r);

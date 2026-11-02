@@ -1,0 +1,182 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { headers } from "next/headers";
+import { and, eq, sql } from "drizzle-orm";
+import { db } from "@/db";
+import { notifications, registrations, matches, assignments, staff, appeals, matchRequests, users } from "@/db/schema";
+import { getCurrentUser, type CurrentUser } from "@/lib/auth";
+import { ROLE_LABEL } from "@/lib/labels";
+import { NavMenu, type NavItem } from "@/components/Client";
+
+async function count(q: Promise<{ n: number }[]>) {
+  const [r] = await q;
+  return r?.n ?? 0;
+}
+
+async function buildNav(u: CurrentUser): Promise<NavItem[]> {
+  const n = sql<number>`count(*)::int`;
+  if (u.isClub) {
+    const corr = await count(db.select({ n }).from(registrations).where(and(eq(registrations.clubId, u.clubId!), eq(registrations.status, "NEEDS_CORRECTION"))));
+    const origin = u.can("club.origin")
+      ? await count(db.select({ n }).from(registrations).where(and(eq(registrations.fromClubId, u.clubId!), eq(registrations.originResponse, "PENDING"))))
+      : 0;
+    return [
+      { label: "الرئيسية", href: "/club" },
+      { label: "لاعبو النادي", href: "/club/players" },
+      { label: "الطلبات", href: "/club/requests", badge: corr },
+      ...(u.can("club.origin") ? [{ label: "طلبات انتقال لاعبينا", href: "/club/origin", badge: origin }] : []),
+      { label: "الجهاز الفني", href: "/club/staff" },
+      { label: "المباريات والقوائم", href: "/club/matches" },
+      { label: "العقوبات", href: "/club/sanctions" },
+      ...(u.can("club.finance") ? [{ label: "الحساب المالي", href: "/club/finance" }] : []),
+      { label: "قائمة الفريق المعتمدة", href: "/club/roster" },
+      ...(u.role === "CLUB_MANAGER" ? [{ label: "مستخدمو النادي", href: "/club/users" }] : []),
+    ];
+  }
+  if (u.isOfficial) {
+    return [
+      { label: "مبارياتي", href: "/portal" },
+      { label: "تقاريري السابقة", href: "/portal/history" },
+    ];
+  }
+
+  const items: NavItem[] = [{ label: "الرئيسية", href: "/dashboard" }];
+  if (u.can("reg.view")) {
+    const pending = await count(db.select({ n }).from(registrations).where(eq(registrations.status, "SUBMITTED")));
+    items.push({
+      label: "لجنة القيد",
+      badge: pending,
+      children: [
+        { label: "📝 طلبات القيد", href: "/registration/requests", badge: pending },
+        { label: "🧑‍💼 الإداريون والجهاز الفني", href: "/registration/staff", badge: await count(db.select({ n }).from(staff).where(eq(staff.status, "SUBMITTED"))) },
+        { label: "👤 سجل اللاعبين", href: "/registration/players" },
+        { label: "⇄ الانتقالات والإعارات", href: "/registration/transfers" },
+        ...(u.can("reg.suspend") || u.can("reg.view") ? [{ label: "⛔ الإيقافات", href: "/registration/suspensions" }] : []),
+        "sep",
+        ...(u.can("reg.lists") ? [{ label: "📋 قوائم الفرق", href: "/registration/lists" }] : []),
+        ...(u.can("cards.print") ? [{ label: "🪪 طباعة البطاقات", href: "/registration/cards" }] : []),
+        ...(u.can("cards.design") ? [{ label: "🎨 تصميم البطاقات", href: "/registration/cards/templates" }] : []),
+        ...(u.can("reg.windows") ? ["sep" as const, { label: "📅 المواسم وفترات القيد", href: "/registration/settings" }] : []),
+      ],
+    });
+  }
+  if (u.can("comp.view")) {
+    const reports = await count(db.select({ n }).from(matches).where(eq(matches.reportStatus, "SUBMITTED")));
+    items.push({
+      label: "لجنة المسابقات",
+      badge: u.can("comp.reports") ? reports : 0,
+      children: [
+        { label: "🏆 المسابقات", href: "/competitions" },
+        { label: "⚽ المباريات", href: "/matches" },
+        ...(u.can("comp.reports") ? [{ label: "📄 تقارير بانتظار الاعتماد", href: "/matches?report=SUBMITTED", badge: reports }] : []),
+        { label: "⛔ الإيقافات", href: "/registration/suspensions?kind=MATCHES" },
+        "sep",
+        { label: "⚖ العقوبات والقرارات", href: "/competitions/sanctions", badge: await count(db.select({ n }).from(appeals).where(eq(appeals.status, "PENDING"))) },
+        ...(u.can("comp.articles") ? [{ label: "📖 لائحة العقوبات", href: "/competitions/articles" }] : []),
+        { label: "🗓 طلبات التأجيل", href: "/competitions/requests", badge: await count(db.select({ n }).from(matchRequests).where(eq(matchRequests.status, "PENDING"))) },
+      ],
+    });
+  }
+  if (u.can("ref.view")) {
+    const drafts = u.can("ref.approve")
+      ? await count(db.select({ n }).from(assignments).where(eq(assignments.status, "DRAFT")))
+      : 0;
+    items.push({
+      label: "لجنة الحكام",
+      badge: drafts,
+      children: [
+        { label: "🟨 الحكام والمراقبون", href: "/referees" },
+        { label: "📋 تعيين الطواقم", href: "/referees/assignments", badge: drafts },
+        ...(u.can("ref.evals") ? [{ label: "★ تقييمات المراقبين", href: "/referees/evaluations" }] : []),
+      ],
+    });
+  }
+  if (u.can("fin.view")) {
+    items.push({
+      label: "اللجنة المالية",
+      children: [
+        { label: "💰 لوحة المالية", href: "/finance" },
+        { label: "🏟 حسابات الأندية", href: "/finance/clubs" },
+        { label: "🟨 مستحقات الحكام", href: "/finance/officials" },
+        { label: "🧾 الإيصالات وسندات الصرف", href: "/finance/payments" },
+        ...(u.can("fin.settings") ? ["sep" as const, { label: "⚙ الرسوم والأجور والقواعد", href: "/finance/settings" }] : []),
+      ],
+    });
+  }
+  if (u.can("reports.view")) items.push({ label: "التقارير", href: "/reports" });
+  if (u.canAny("admin.users", "admin.permissions", "admin.clubs", "admin.audit", "admin.settings", "admin.outbox")) {
+    items.push({
+      label: "الإدارة",
+      children: [
+        ...(u.can("admin.users") ? [{ label: "👥 المستخدمون والحسابات", href: "/admin/users" }] : []),
+        ...(u.can("admin.permissions") ? [{ label: "🔐 مصفوفة الصلاحيات", href: "/admin/permissions" }] : []),
+        ...(u.can("admin.clubs") ? [{ label: "🏟 الأندية", href: "/admin/clubs" }] : []),
+        ...(u.can("admin.settings") ? [{ label: "⚙ الإعدادات العامة", href: "/admin/settings" }] : []),
+        ...(u.can("admin.outbox") ? [{ label: "✉ صندوق الرسائل (روابط التفعيل)", href: "/admin/outbox" }] : []),
+        ...(u.can("admin.audit") ? [{ label: "🛡 سجل العمليات", href: "/admin/audit" }] : []),
+      ],
+    });
+  }
+  return items;
+}
+
+export default async function MainLayout({ children }: { children: React.ReactNode }) {
+  const u = await getCurrentUser();
+  if (!u) redirect("/login");
+  const path = (await headers()).get("x-path") ?? "";
+  if (u.mustChangePassword && !path.startsWith("/profile")) redirect("/profile?mustchange=1");
+
+  const [items, unread] = await Promise.all([
+    buildNav(u),
+    count(db.select({ n: sql<number>`count(*)::int` }).from(notifications).where(and(eq(notifications.userId, u.id), eq(notifications.isRead, false)))),
+  ]);
+  const [me] = await db.select({ email: users.email, phone: users.phone }).from(users).where(eq(users.id, u.id));
+  const missingContact = !me?.email || !me?.phone;
+  const sub = u.isClub ? `بوابة الأندية — ${u.clubName}` : u.isOfficial ? "بوابة الحكام والمراقبين" : "منظومة القيد والمسابقات والحكام";
+
+  return (
+    <>
+      <header className="lff-header" style={{ position: "relative" }}>
+        <div className="lff-container hdr-row">
+          <Link className="brand" href="/">
+            <img src="/img/logo-128.png" alt="شعار الاتحاد الليبي لكرة القدم" />
+            <span>
+              <span className="t1">الاتحاد الليبي لكرة القدم</span>
+              <span className="t2">{sub}</span>
+            </span>
+          </Link>
+          <div className="hdr-actions">
+            <Link className="hdr-icon" href="/notifications" title="الإشعارات">
+              <span>🔔</span>
+              {unread > 0 && <span className="count">{unread}</span>}
+            </Link>
+            <Link className="hdr-user" href="/profile" title="حسابي">
+              <span className="avatar">{u.fullName.slice(0, 1)}</span>
+              <span className="who">
+                <strong>{u.fullName}</strong>
+                <small>{ROLE_LABEL[u.role]}</small>
+              </span>
+            </Link>
+            <form action="/logout" method="post">
+              <button className="btn btn-outline-light btn-sm">خروج</button>
+            </form>
+          </div>
+        </div>
+      </header>
+      <div className="lff-flagbar" />
+      <NavMenu items={items} />
+      <main className="lff-container content">
+        {missingContact && !path.startsWith("/profile") && <div className="alert warn">أكمل بيانات حسابك: البريد الإلكتروني ورقم الهاتف مطلوبان. <Link href="/profile">تحديث الآن</Link></div>}
+        {children}
+      </main>
+      <footer className="lff-footer no-print">
+        <div className="lff-container ftr-row">
+          <span>© {new Date().getFullYear()} الاتحاد الليبي لكرة القدم — {sub}</span>
+          <span>{ROLE_LABEL[u.role]}</span>
+        </div>
+      </footer>
+    </>
+  );
+}
+
+export const dynamic = "force-dynamic";
