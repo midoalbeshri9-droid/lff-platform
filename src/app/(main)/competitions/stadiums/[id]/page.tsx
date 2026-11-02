@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { stadiums, stadiumInspections, clubs, matches } from "@/db/schema";
@@ -23,12 +23,13 @@ export default async function StadiumPage({ params, searchParams }: { params: Pr
   const h = alias(clubs, "h"), a = alias(clubs, "a");
   const up = await db.select({ m: matches, home: h.name, away: a.name }).from(matches).innerJoin(h, eq(h.id, matches.homeClubId)).innerJoin(a, eq(a.id, matches.awayClubId))
     .where(and(eq(matches.stadiumId, id), gte(matches.kickoff, new Date()))).orderBy(matches.kickoff).limit(30);
-  const cl = await db.select({ id: clubs.id, name: clubs.name }).from(clubs).orderBy(clubs.name);
+  const usedBy = await db.select({ id: clubs.id, name: clubs.name, main: clubs.mainStadiumId }).from(clubs).where(or(eq(clubs.mainStadiumId, id), eq(clubs.backupStadiumId, id))).orderBy(clubs.name);
   const block = stadiumBlock(s, today());
   return (
     <>
       <PageHead title={s.name} sub={<>{s.city} — <Badge v={STADIUM_STATUS[s.status]} /></>} crumbs={[["سجل الملاعب", "/competitions/stadiums"], [s.name]]} />
       <Flash sp={sp} />
+      {usedBy.length > 0 && <div className="card row"><strong>الأندية المعتمدة عليه:</strong>{usedBy.map((c) => <span key={c.id} className={`b ${c.main === id ? "b-green" : "b-gray"}`}>{c.name} — {c.main === id ? "أساسي" : "احتياطي"}</span>)}</div>}
       {block && <div className="alert err">⛔ {block}{s.decisionRef ? ` — القرار: ${s.decisionRef}` : ""}</div>}
       <div className="grid g2">
         <div>
@@ -37,7 +38,6 @@ export default async function StadiumPage({ params, searchParams }: { params: Pr
             <Field label="الاسم"><input type="text" name="name" defaultValue={s.name} required disabled={!manage} /></Field>
             <Field label="المدينة"><input type="text" name="city" defaultValue={s.city ?? ""} disabled={!manage} /></Field>
             <Field label="السعة"><input type="number" name="capacity" defaultValue={s.capacity ?? ""} disabled={!manage} /></Field>
-            <Field label="النادي"><select name="clubId" defaultValue={s.clubId ?? ""} disabled={!manage}><option value="">—</option>{cl.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
             <Field label="الأرضية"><select name="surface" defaultValue={s.surface} disabled={!manage}><option value="NATURAL">طبيعية</option><option value="ARTIFICIAL">صناعية</option></select></Field>
             <Field label="الاعتماد حتى"><input type="date" name="approvalUntil" defaultValue={s.approvalUntil ?? ""} disabled={!manage} /></Field>
             <label className="check"><input type="checkbox" name="hasLights" value="1" defaultChecked={s.hasLights} disabled={!manage} /> إنارة كاشفة</label>

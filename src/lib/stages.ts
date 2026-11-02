@@ -99,13 +99,14 @@ export async function setGroups(stageId: number, groups: Map<number, string | nu
 }
 
 async function venues() {
-  const rows = await db.select({ id: clubs.id, stadium: clubs.stadium, city: clubs.city }).from(clubs);
+  const rows = await db.select({ id: clubs.id, stadium: clubs.stadium, city: clubs.city, main: clubs.mainStadiumId }).from(clubs);
   const st = await db.select().from(stadiums);
-  // الملعب المعتمد للنادي من سجل الملاعب أولًا، وإلا الاسم المكتوب في بيانات النادي
+  // م26: الملعب الأساسي الذي اختاره النادي من سجل الملاعب، وإلا الاسم المكتوب قديمًا
   return (id: number) => {
-    const reg = st.find((x) => x.clubId === id && x.status !== "CLOSED") ?? st.find((x) => x.name === rows.find((r) => r.id === id)?.stadium);
     const c = rows.find((x) => x.id === id);
-    return c ? { stadium: reg?.name ?? c.stadium, city: reg?.city ?? c.city, stadiumId: reg?.id ?? null } : undefined;
+    if (!c) return undefined;
+    const reg = st.find((x) => x.id === c.main) ?? st.find((x) => x.name === c.stadium);
+    return { stadium: reg?.name ?? c.stadium, city: reg?.city ?? c.city, stadiumId: reg?.id ?? null };
   };
 }
 

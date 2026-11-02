@@ -25,7 +25,7 @@ export default async function Clubs({ searchParams }: { searchParams: SP }) {
       <Field label="الرمز"><input type="text" name="code" dir="ltr" defaultValue={c?.code ?? ""} /></Field>
       <Field label="المدينة"><input type="text" name="city" defaultValue={c?.city ?? ""} /></Field>
       <Field label="المنطقة"><input type="text" name="region" defaultValue={c?.region ?? ""} /></Field>
-      <Field label="الملعب"><input type="text" name="stadium" defaultValue={c?.stadium ?? ""} /></Field>
+      <input type="hidden" name="stadium" defaultValue={c?.stadium ?? ""} />
       <Field label="الهاتف"><input type="text" name="phone" dir="ltr" defaultValue={c?.phone ?? ""} /></Field>
       <Field label="البريد"><input type="email" name="email" dir="ltr" defaultValue={c?.email ?? ""} /></Field>
       <Field label="الشعار"><input type="file" name="logo" accept="image/*" /></Field>
@@ -40,7 +40,7 @@ export default async function Clubs({ searchParams }: { searchParams: SP }) {
       <div className="card table-wrap">
         <table className="t"><thead><tr><th>النادي</th><th>المدينة</th><th>الملعب</th><th>لاعبون معتمدون</th><th>حسابات</th><th>الحالة</th><th></th></tr></thead>
           <tbody>{rows.map(({ c, accounts, players }) => (
-            <tr key={c.id}><td><strong>{c.name}</strong><div className="muted kbd" style={{ fontSize: ".8rem" }}>{c.nameEn}</div></td><td>{c.city}</td><td>{c.stadium}</td>
+            <tr key={c.id}><td><strong>{c.name}</strong><div className="muted kbd" style={{ fontSize: ".8rem" }}>{c.nameEn}</div></td><td>{c.city}</td><td>{c.stadium ?? <a href="/competitions/stadiums#clubs" className="muted">لم يُحدد</a>}</td>
               <td className="num">{players}</td><td className="num">{accounts || <span className="b b-amber">بلا حساب</span>}</td>
               <td>{c.isActive ? <span className="b b-green">نشط</span> : <span className="b b-gray">غير نشط</span>}</td>
               <td><details><summary className="btn btn-sm btn-light">إدارة</summary>

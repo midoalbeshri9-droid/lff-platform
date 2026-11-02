@@ -76,6 +76,8 @@ export async function migrate() {
     await db.insert(s.stadiums).values({ name: c.stadium.trim(), city: c.city, clubId: c.id }).onConflictDoNothing();
   }
   await db.execute(sql`update "matches" set "stadium_id" = "stadiums"."id" from "stadiums" where "matches"."stadium_id" is null and trim("matches"."venue") = "stadiums"."name"`);
+  // م26: الملعب الأساسي للنادي من الاسم المسجل سابقًا
+  await db.execute(sql`update "clubs" set "main_stadium_id" = "stadiums"."id" from "stadiums" where "clubs"."main_stadium_id" is null and trim("clubs"."stadium") = "stadiums"."name"`);
   await db.insert(s.settings).values({ key: "min_rest_hours", value: "48" }).onConflictDoNothing();
 
   // 9) إعدادات البريد الافتراضية (فارغة حتى يضبطها المدير)

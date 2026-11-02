@@ -440,3 +440,4 @@ tr.ok-row td { background: var(--green-l); }
 .arch-cat.active b { color: var(--gold); }
 .arch-cat:hover { text-decoration: none; border-color: var(--gold); }
 .arch-other { margin: 0; padding-inline-start: 1.1rem; line-height: 2; }
+tr.warn-row td { background: #fff7e6; }

@@ -32,6 +32,7 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
       ...(u.can("club.finance") ? [{ label: "الحساب المالي", href: "/club/finance" }] : []),
       { label: "قائمة الفريق المعتمدة", href: "/club/roster" },
       { label: "مراسلات الاتحاد", href: "/club/mail" },
+      { label: "ملاعب النادي", href: "/club/stadiums" },
       ...(u.role === "CLUB_MANAGER" ? [{ label: "مستخدمو النادي", href: "/club/users" }] : []),
     ];
   }

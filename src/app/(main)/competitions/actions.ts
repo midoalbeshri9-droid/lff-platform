@@ -3,7 +3,7 @@ import { and, eq, ne, or } from "drizzle-orm";
 import { db } from "@/db";
 import { competitions, competitionTeams, matches, matchEvents, assignments, matchRequests, competitionSquads, registrations, clubs, competitionStages, stageTeams, settings } from "@/db/schema";
 import { addCharge } from "@/lib/finance";
-import { resolveStadium, stadiumBlock } from "@/lib/stadiums";
+import { resolveStadium, stadiumBlock, blockWithHint } from "@/lib/stadiums";
 import { foreignOnPitchCheck, subsLimitCheck } from "@/lib/competition";
 import { requireUser } from "@/lib/auth";
 import { audit, notifyClub, notifyOfficial } from "@/lib/audit";
@@ -280,7 +280,7 @@ export async function saveMatch(f: FormData) {
     };
     const sd = await resolveStadium(data.venue);
     const block = stadiumBlock(sd, data.kickoff ? data.kickoff.toISOString().slice(0, 10) : null);
-    if (block && data.status === "SCHEDULED") throw new UserError(block);
+    if (block && data.status === "SCHEDULED") throw new UserError(await blockWithHint(block, home, data.kickoff ? data.kickoff.toISOString().slice(0, 10) : null));
     Object.assign(data, { stadiumId: sd?.id ?? null, city: data.city ?? sd?.city ?? null });
     if (id) {
       const [old] = await db.select().from(matches).where(eq(matches.id, id));
@@ -314,7 +314,10 @@ export async function bulkSchedule(f: FormData) {
       const v = str(f, `v_${id}`);
       const sd = await resolveStadium(v);
       const block = stadiumBlock(sd, k ? k.toISOString().slice(0, 10) : null);
-      if (block) throw new UserError(`مباراة #${id}: ${block}`);
+      if (block) {
+        const [mm] = await db.select({ h: matches.homeClubId }).from(matches).where(eq(matches.id, id));
+        throw new UserError(`مباراة #${id}: ${await blockWithHint(block, mm.h, k ? k.toISOString().slice(0, 10) : null)}`);
+      }
       await db.update(matches).set({ kickoff: k, venue: v, stadiumId: sd?.id ?? null }).where(and(eq(matches.id, id), eq(matches.competitionId, compId)));
       n++;
     }

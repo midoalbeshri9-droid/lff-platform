@@ -1,6 +1,7 @@
 // منظومة لجان الاتحاد الليبي لكرة القدم — مخطط قاعدة البيانات (Drizzle / PostgreSQL)
 import { relations, sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   pgTable, pgEnum, serial, integer, bigserial, text, boolean, timestamp, date, jsonb, real,
   numeric, primaryKey, uniqueIndex, index, uuid,
 } from "drizzle-orm/pg-core";
@@ -110,7 +111,9 @@ export const clubs = pgTable("clubs", {
   shortName: text("short_name"),
   city: text("city"),
   region: text("region"),
-  stadium: text("stadium"),
+  stadium: text("stadium"), // قديم: اسم الملعب نصًا — حلّ محله الملعب الأساسي والاحتياطي من سجل الملاعب
+  mainStadiumId: integer("main_stadium_id").references((): AnyPgColumn => stadiums.id, { onDelete: "set null" }), // م26: الملعب الأساسي
+  backupStadiumId: integer("backup_stadium_id").references((): AnyPgColumn => stadiums.id, { onDelete: "set null" }), // م26: الملعب البديل
   phone: text("phone"),
   email: text("email"),
   logoKey: text("logo_key"),
@@ -831,7 +834,7 @@ export const stadiums = pgTable("stadiums", {
   name: text("name").notNull().unique(),
   city: text("city"),
   capacity: integer("capacity"),
-  clubId: integer("club_id").references(() => clubs.id, { onDelete: "set null" }), // النادي صاحب الملعب / المعتمد عليه
+  clubId: integer("club_id").references(() => clubs.id, { onDelete: "set null" }), // غير مستخدم: الأندية تختار ملاعبها (الأساسي والاحتياطي)
   surface: text("surface").notNull().default("NATURAL"), // NATURAL | ARTIFICIAL
   hasLights: boolean("has_lights").notNull().default(false),
   status: text("status").notNull().default("APPROVED"), // APPROVED | CONDITIONAL | SUSPENDED | CLOSED
