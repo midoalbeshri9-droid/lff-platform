@@ -5,6 +5,7 @@ import { and, eq, sql, lt, notInArray, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { notifications, registrations, matches, assignments, staff, appeals, matchRequests, users, decisions } from "@/db/schema";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth";
+import { scopeOf, regIn, clubIn, compIn } from "@/lib/scope";
 import { ROLE_LABEL, ROLE_COMMITTEE } from "@/lib/labels";
 import { today } from "@/lib/util";
 import { NavMenu, type NavItem } from "@/components/Client";
@@ -44,14 +45,15 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
   }
 
   const items: NavItem[] = [{ label: "الرئيسية", href: "/dashboard" }];
+  const sc = await scopeOf(u); // عدادات القائمة لمدير الدرجة تخص درجته فقط
   if (u.can("reg.view")) {
-    const pending = await count(db.select({ n }).from(registrations).where(eq(registrations.status, "SUBMITTED")));
+    const pending = await count(db.select({ n }).from(registrations).where(and(regIn(sc), eq(registrations.status, "SUBMITTED"))));
     items.push({
       label: "لجنة القيد",
       badge: pending,
       children: [
         { label: "📝 طلبات القيد", href: "/registration/requests", badge: pending },
-        { label: "🧑‍💼 الإداريون والجهاز الفني", href: "/registration/staff", badge: await count(db.select({ n }).from(staff).where(eq(staff.status, "SUBMITTED"))) },
+        { label: "🧑‍💼 الإداريون والجهاز الفني", href: "/registration/staff", badge: await count(db.select({ n }).from(staff).where(and(clubIn(sc, staff.clubId), eq(staff.status, "SUBMITTED")))) },
         { label: "👤 سجل اللاعبين", href: "/registration/players" },
         { label: "⇄ الانتقالات والإعارات", href: "/registration/transfers" },
         ...(u.can("reg.suspend") || u.can("reg.view") ? [{ label: "⛔ الإيقافات", href: "/registration/suspensions" }] : []),
@@ -64,7 +66,7 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
     });
   }
   if (u.can("comp.view")) {
-    const reports = await count(db.select({ n }).from(matches).where(eq(matches.reportStatus, "SUBMITTED")));
+    const reports = await count(db.select({ n }).from(matches).where(and(compIn(sc, matches.competitionId), eq(matches.reportStatus, "SUBMITTED"))));
     items.push({
       label: "لجنة المسابقات",
       badge: u.can("comp.reports") ? reports : 0,
@@ -76,15 +78,15 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
         ...(u.can("comp.reports") ? [{ label: "📄 تقارير بانتظار الاعتماد", href: "/matches?report=SUBMITTED", badge: reports }] : []),
         { label: "⛔ الإيقافات", href: "/registration/suspensions?kind=MATCHES" },
         "sep",
-        { label: "⚖ العقوبات والقرارات", href: "/competitions/sanctions", badge: await count(db.select({ n }).from(appeals).where(eq(appeals.status, "PENDING"))) },
+        { label: "⚖ العقوبات والقرارات", href: "/competitions/sanctions", badge: await count(db.select({ n }).from(appeals).where(and(clubIn(sc, appeals.clubId), eq(appeals.status, "PENDING")))) },
         ...(u.can("comp.articles") ? [{ label: "📖 لائحة العقوبات", href: "/competitions/articles" }] : []),
-        { label: "🗓 طلبات التأجيل", href: "/competitions/requests", badge: await count(db.select({ n }).from(matchRequests).where(eq(matchRequests.status, "PENDING"))) },
+        { label: "🗓 طلبات التأجيل", href: "/competitions/requests", badge: await count(db.select({ n }).from(matchRequests).where(and(clubIn(sc, matchRequests.clubId), eq(matchRequests.status, "PENDING")))) },
       ],
     });
   }
   if (u.can("ref.view")) {
     const drafts = u.can("ref.approve")
-      ? await count(db.select({ n }).from(assignments).where(eq(assignments.status, "DRAFT")))
+      ? await count(db.select({ n }).from(assignments).innerJoin(matches, eq(matches.id, assignments.matchId)).where(and(compIn(sc, matches.competitionId), eq(assignments.status, "DRAFT"))))
       : 0;
     items.push({
       label: "لجنة الحكام",
@@ -125,6 +127,16 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
   } else if (ROLE_COMMITTEE[u.role]) {
     const mine = await count(db.select({ n }).from(decisions).where(and(eq(decisions.assignee, ROLE_COMMITTEE[u.role]), inArray(decisions.status, ["PENDING", "IN_PROGRESS"]))));
     if (mine) items.push({ label: "📌 قرارات مطلوبة", href: "/secretariat/decisions", badge: mine });
+  }
+  // إدارة الدرجة: لمدير الدرجة (ومدير المنظومة يختار الدرجة)
+  if (u.canAny("div.clubs", "div.users") && (u.divisionId || u.role === "ADMIN")) {
+    items.push({
+      label: u.divisionId ? "🪜 إدارة الدرجة" : "🪜 إدارة الدرجات",
+      children: [
+        ...(u.can("div.clubs") ? [{ label: "🏟 أندية الدرجة", href: "/division/clubs" }] : []),
+        ...(u.can("div.users") ? [{ label: "👥 الحسابات والصلاحيات", href: "/division/users" }, { label: "🧾 سجل عمليات الدرجة", href: "/division/audit" }] : []),
+      ],
+    });
   }
   if (u.can("archive.view")) items.push({ label: "🗄 الأرشيف", href: "/archive" });
   if (u.can("reports.view")) items.push({ label: "التقارير", href: "/reports" });

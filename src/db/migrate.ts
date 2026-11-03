@@ -89,6 +89,12 @@ export async function migrate() {
   ]).onConflictDoNothing();
   // 11) نوع مستند عام لملف اللاعب (لا يُطلب إلزاميًا)
   await db.insert(s.documentTypes).values({ name: "مستند آخر", requiredFor: [], sortOrder: 99 }).onConflictDoNothing();
+  // 12) مدير الدرجة يضيف الملاعب (مرة واحدة)
+  const [st12] = await db.select().from(s.settings).where(eq(s.settings.key, "mig_div_stadiums"));
+  if (!st12) {
+    await db.insert(s.rolePermissions).values({ role: "DIV_MANAGER", permission: "comp.stadiums" }).onConflictDoNothing();
+    await db.insert(s.settings).values({ key: "mig_div_stadiums", value: new Date().toISOString() }).onConflictDoNothing();
+  }
   console.log("✓ اكتمل ترحيل البيانات");
 }
 

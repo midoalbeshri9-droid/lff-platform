@@ -18,7 +18,7 @@ export default async function StadiumPage({ params, searchParams }: { params: Pr
   const sp = await searchParams;
   const [s] = await db.select().from(stadiums).where(eq(stadiums.id, id));
   if (!s) notFound();
-  const manage = u.can("comp.stadiums");
+  const manage = u.can("comp.stadiums") && !u.divisionId; // مدير الدرجة يضيف ملاعب ولا يعدّل المسجلة
   const ins = await db.select().from(stadiumInspections).where(eq(stadiumInspections.stadiumId, id)).orderBy(desc(stadiumInspections.date));
   const h = alias(clubs, "h"), a = alias(clubs, "a");
   const up = await db.select({ m: matches, home: h.name, away: a.name }).from(matches).innerJoin(h, eq(h.id, matches.homeClubId)).innerJoin(a, eq(a.id, matches.awayClubId))

@@ -25,12 +25,13 @@ export default async function Divisions({ searchParams }: { searchParams: SP }) 
       <Flash sp={sp} />
       <div className="card table-wrap">
         {dv.length === 0 ? <Empty>لا درجات</Empty> : (
-          <table className="t"><thead><tr><th>المستوى</th><th>الدرجة</th><th className="num">الأندية</th><th className="num">المسابقات</th><th className="num">الحكام والمراقبون</th><th>المديرون والموظفون</th><th></th></tr></thead>
+          <table className="t"><thead><tr><th>المستوى</th><th>الدرجة</th><th className="num">الأندية</th><th className="num">المسابقات</th><th className="num">الحكام والمراقبون</th><th>المديرون والموظفون</th><th>إدارة</th><th></th></tr></thead>
             <tbody>{dv.map((d) => (
               <tr key={d.id} className={d.isActive ? "" : "muted"}>
                 <td className="num">{d.level}</td><td><strong>{d.name}</strong></td>
                 <td className="num">{n(cc, d.id)}</td><td className="num">{n(cm, d.id)}</td><td className="num">{n(co, d.id)}</td>
                 <td style={{ fontSize: ".85rem" }}>{mgrs.filter((m) => m.d === d.id).map((m) => `${m.name} (${ROLE_LABEL[m.role]})`).join("، ") || <Link href="/admin/users">+ إنشاء مدير</Link>}</td>
+                <td><div className="row" style={{ gap: ".3rem" }}><Link className="btn btn-sm btn-light" href={`/division/clubs?d=${d.id}`}>الأندية</Link><Link className="btn btn-sm btn-light" href={`/division/users?d=${d.id}`}>الحسابات</Link></div></td>
                 <td><details><summary className="btn btn-sm btn-light">تعديل</summary>
                   <form action={saveDivision} className="form f2 mt"><input type="hidden" name="id" value={d.id} />
                     <Field label="الاسم"><input type="text" name="name" defaultValue={d.name} required /></Field>
@@ -39,7 +40,7 @@ export default async function Divisions({ searchParams }: { searchParams: SP }) 
                     <Submit className="btn btn-sm">حفظ</Submit></form></details></td>
               </tr>
             ))}
-              <tr className="muted"><td></td><td>غير مصنف (اتحادي)</td><td className="num">{n(cc, null)}</td><td className="num">{n(cm, null)}</td><td className="num">{n(co, null)}</td><td colSpan={2} style={{ fontSize: ".8rem" }}>المسابقات غير المصنفة (كالكأس) والحكام غير المصنفين يديرها الاتحاد؛ ويمكن لمديري الدرجات تعيين الحكام غير المصنفين.</td></tr>
+              <tr className="muted"><td></td><td>غير مصنف (اتحادي)</td><td className="num">{n(cc, null)}</td><td className="num">{n(cm, null)}</td><td className="num">{n(co, null)}</td><td colSpan={3} style={{ fontSize: ".8rem" }}>المسابقات غير المصنفة (كالكأس) والحكام غير المصنفين يديرها الاتحاد؛ ويمكن لمديري الدرجات تعيين الحكام غير المصنفين.</td></tr>
             </tbody></table>
         )}
         <details className="mt"><summary>+ درجة جديدة</summary>

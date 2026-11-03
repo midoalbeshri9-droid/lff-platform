@@ -86,7 +86,8 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     .limit(1);
   if (!row || !row.u.isActive || row.u.sessionVersion !== v) return null;
   const u = row.u;
-  const base = await getPermissionsFor(u.role);
+  // موظف الدرجة الذي حدد له مدير الدرجة صلاحيات خاصة: تحل محل صلاحيات دوره
+  const base = u.role === "DIV_STAFF" && u.customPerms ? new Set(u.customPerms) : await getPermissionsFor(u.role);
   // المستخدم المحصور في درجة يفقد كل صلاحية غير قابلة للحصر
   const scoped = !!u.divisionId && !isClubRole(u.role) && !isOfficialRole(u.role) && u.role !== "ADMIN";
   // دور الدرجة بلا درجة محددة لا يملك أي صلاحية (حماية من الخطأ في الإعداد)

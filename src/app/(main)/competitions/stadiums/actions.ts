@@ -7,11 +7,16 @@ import { audit, notifyClub, notifyRoles, notifyStaff } from "@/lib/audit";
 import { stadiumBlock } from "@/lib/stadiums";
 import { saveUpload } from "@/lib/storage";
 import { attempt, str, req, int, bool, UserError, today } from "@/lib/util";
+import { inScopeClub } from "@/lib/scope";
+
+/** سجل الملاعب مشترك بين الدرجات: مدير الدرجة يضيف ملاعب جديدة، وتعديلها وإيقافها ومعاينتها للجنة المسابقات بالاتحاد */
+const fedOnly = (u: { divisionId: number | null }) => { if (u.divisionId) throw new UserError("تعديل الملاعب المسجلة وإيقافها ومعاينتها من صلاحية لجنة المسابقات بالاتحاد — يمكنك إضافة ملعب جديد"); };
 
 export async function saveStadium(f: FormData) {
   const u = await requireUser("comp.stadiums");
   const id = int(f, "id");
   await attempt(id ? `/competitions/stadiums/${id}` : "/competitions/stadiums", async () => {
+    if (id) fedOnly(u);
     const data = {
       name: req(f, "name", "اسم الملعب"), city: str(f, "city"), capacity: int(f, "capacity"),
       surface: str(f, "surface") ?? "NATURAL", hasLights: bool(f, "hasLights"), approvalUntil: str(f, "approvalUntil"), notes: str(f, "notes"),
@@ -29,6 +34,7 @@ export async function addInspection(f: FormData) {
   const u = await requireUser("comp.stadiums");
   const stadiumId = int(f, "stadiumId")!;
   await attempt(`/competitions/stadiums/${stadiumId}`, async () => {
+    fedOnly(u);
     const file = f.get("file") as File | null;
     const fileKey = file && file.size ? (await saveUpload(file, "stadiums")).key : null;
     const result = req(f, "result", "نتيجة المعاينة");
@@ -49,6 +55,7 @@ export async function suspendStadium(f: FormData) {
   const u = await requireUser("comp.stadiums");
   const id = int(f, "id")!;
   await attempt(`/competitions/stadiums/${id}`, async () => {
+    fedOnly(u);
     const status = f.get("close") === "1" ? "CLOSED" : "SUSPENDED";
     const reason = req(f, "reason", "سبب الإيقاف");
     await db.update(stadiums).set({ status, suspensionReason: reason, suspendedUntil: str(f, "until"), decisionRef: str(f, "decisionRef") }).where(eq(stadiums.id, id));
@@ -66,6 +73,7 @@ export async function reinstateStadium(f: FormData) {
   const u = await requireUser("comp.stadiums");
   const id = int(f, "id")!;
   await attempt(`/competitions/stadiums/${id}`, async () => {
+    fedOnly(u);
     await db.update(stadiums).set({ status: "APPROVED", suspensionReason: null, suspendedUntil: null }).where(eq(stadiums.id, id));
     await audit(u, "إعادة اعتماد ملعب", "Stadium", id);
     return "أُعيد اعتماد الملعب";
@@ -78,6 +86,7 @@ export async function setClubStadiums(f: FormData) {
   const clubId = u.isClub ? u.clubId! : int(f, "clubId")!;
   const back = u.isClub ? "/club/stadiums" : "/competitions/stadiums#clubs";
   await attempt(back, async () => {
+    if (!u.isClub && !(await inScopeClub(u, clubId))) throw new UserError("النادي خارج نطاق درجتك");
     const main = int(f, "mainStadiumId"), backup = int(f, "backupStadiumId");
     if (!main) throw new UserError("اختر الملعب الأساسي");
     if (main === backup) throw new UserError("الملعب الاحتياطي يجب أن يختلف عن الأساسي (م26)");

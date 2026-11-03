@@ -27,6 +27,7 @@ export const users = pgTable("users", {
   clubId: integer("club_id").references(() => clubs.id),
   officialId: integer("official_id").unique().references(() => officials.id),
   divisionId: integer("division_id").references((): AnyPgColumn => divisions.id), // مدير/موظف درجة: صلاحياته محصورة في هذه الدرجة
+  customPerms: text("custom_perms").array(), // صلاحيات خاصة بموظف الدرجة يحددها مدير الدرجة (تحل محل صلاحيات الدور)
   isActive: boolean("is_active").notNull().default(true),
   mustChangePassword: boolean("must_change_password").notNull().default(false),
   isVerified: boolean("is_verified").notNull().default(false),
