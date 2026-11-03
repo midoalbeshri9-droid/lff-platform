@@ -29,12 +29,17 @@ export async function refAddEvent(f: FormData) {
   await attempt(`/portal/matches/${matchId}`, async () => {
     await myRole(u.officialId, matchId, ["REFEREE"]);
     const m = await refEditable(matchId);
-    const clubId = int(f, "clubId")!;
-    if (![m.homeClubId, m.awayClubId].includes(clubId)) throw new UserError("الفريق غير صحيح");
+    let clubId = int(f, "clubId")!;
     const playerId = int(f, "playerId");
+    // فريق اللاعب يؤخذ من قائمة المباراة
     if (playerId) {
-      const [s] = await db.select().from(matchSquads).where(and(eq(matchSquads.matchId, matchId), eq(matchSquads.playerId, playerId)));
-      if (!s) throw new UserError("اللاعب ليس في قائمة المباراة");
+      const [own] = await db.select({ c: matchSquads.clubId }).from(matchSquads).where(and(eq(matchSquads.matchId, matchId), eq(matchSquads.playerId, playerId)));
+      if (own) clubId = own.c;
+    }
+    if (![m.homeClubId, m.awayClubId].includes(clubId)) throw new UserError("الفريق غير صحيح");
+    if (playerId) {
+      const [s] = await db.select().from(matchSquads).where(and(eq(matchSquads.matchId, matchId), eq(matchSquads.clubId, clubId), eq(matchSquads.playerId, playerId)));
+      if (!s) throw new UserError("اللاعب ليس في قائمة هذا الفريق في المباراة");
     }
     const type = str(f, "type") as "GOAL" | "SUB_IN";
     if (type === "SUB_IN") await subsLimitCheck(matchId, clubId, int(f, "minute"));
@@ -61,9 +66,11 @@ export async function refSaveReport(f: FormData) {
   const submit = f.get("submit") === "1";
   await attempt(`/portal/matches/${matchId}`, async () => {
     await myRole(u.officialId, matchId, ["REFEREE"]);
-    await refEditable(matchId);
+    const m = await refEditable(matchId);
     const home = int(f, "homeScore"), away = int(f, "awayScore");
     if (submit && (home == null || away == null)) throw new UserError("أدخل النتيجة النهائية قبل الإرسال");
+    if ((home != null && home < 0) || (away != null && away < 0)) throw new UserError("النتيجة لا تكون سالبة");
+    if (submit && m.kickoff && m.kickoff.getTime() > Date.now()) throw new UserError("لا يمكن إرسال التقرير قبل موعد المباراة");
     await db.update(matches).set({
       homeScore: home, awayScore: away, attendance: int(f, "attendance"), reportNotes: str(f, "reportNotes"),
       ...(submit ? { reportStatus: "SUBMITTED" as const, reportSubmittedAt: new Date(), reportReturn: null } : {}),
@@ -83,7 +90,7 @@ export async function saveEvaluation(f: FormData) {
   const submit = f.get("submit") === "1";
   await attempt(`/portal/matches/${matchId}`, async () => {
     await myRole(u.officialId, matchId, ["REF_OBSERVER", "COMMISSIONER"]);
-    const crew = await db.select().from(assignments).where(and(eq(assignments.matchId, matchId), inArray(assignments.role, ["REFEREE", "AR1", "AR2", "FOURTH", "VAR"])));
+    const crew = await db.select().from(assignments).where(and(eq(assignments.matchId, matchId), inArray(assignments.role, ["REFEREE", "AR1", "AR2", "FOURTH", "VAR"]), eq(assignments.status, "APPROVED")));
     const done = await db.select().from(evaluations).where(and(eq(evaluations.matchId, matchId), eq(evaluations.observerId, u.officialId), eq(evaluations.isSubmitted, true)));
     if (done.length) throw new UserError("التقييم مُرسل مسبقًا");
     for (const a of crew) {
@@ -132,11 +139,11 @@ export async function saveCommissionerReport(f: FormData) {
 // ---------------- اعتذار عن التعيين ----------------
 export async function declineAssignment(f: FormData) {
   const u = await requireOfficialUser();
-  const matchId = int(f, "matchId")!;
   await attempt("/portal", async () => {
     const id = int(f, "assignmentId")!;
     const [a] = await db.select().from(assignments).where(and(eq(assignments.id, id), eq(assignments.officialId, u.officialId)));
     if (!a || a.status === "DECLINED") throw new UserError("التعيين غير متاح");
+    const matchId = a.matchId; // المباراة من التعيين نفسه لا من النموذج
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
     if (m.kickoff && m.kickoff.getTime() < Date.now()) throw new UserError("بدأت المباراة");
     const reason = req(f, "reason", "سبب الاعتذار");

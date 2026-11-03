@@ -72,6 +72,8 @@ async function applyEffects(tx: Tx, id: number, by: string) {
     const g = c?.forfeitGoals ?? 2;
     const margin = m.homeScore != null && m.awayScore != null ? (homeLoses ? m.awayScore - m.homeScore : m.homeScore - m.awayScore) : -1;
     const keep = margin >= g;
+    // حفظ حالة المباراة قبل القرار لاستعادتها إن أُلغي (مثلًا عند قبول الطعن)
+    if (!s.prevMatch) await tx.update(sanctions).set({ prevMatch: JSON.stringify({ homeScore: m.homeScore, awayScore: m.awayScore, status: m.status, reportStatus: m.reportStatus, approvedAt: m.approvedAt, approvedBy: m.approvedBy }) }).where(eq(sanctions.id, id));
     await tx.update(matches).set({
       homeScore: keep ? m.homeScore : homeLoses ? 0 : g, awayScore: keep ? m.awayScore : homeLoses ? g : 0,
       status: "FORFEIT", reportStatus: "APPROVED", approvedAt: new Date(), approvedBy: `${by} (قرار ${s.number})`,
@@ -115,8 +117,11 @@ export async function revokeSanction(tx: Tx, id: number, by: string) {
   await cancelChargeByRef(tx, "sanction", id);
   await cancelChargeByRef(tx, "sanction_fees", id);
   if (s.type === "FORFEIT" && s.matchId) {
-    // تعود المباراة لتعتمد لجنة المسابقات نتيجتها من جديد
-    await tx.update(matches).set({ homeScore: null, awayScore: null, status: "SCHEDULED", reportStatus: "NONE", approvedAt: null, approvedBy: null }).where(eq(matches.id, s.matchId));
+    // تعود المباراة إلى حالتها قبل القرار (نتيجتها الأصلية إن كانت لُعبت واعتُمدت)، وإلا تعود مجدولة لتعتمد اللجنة نتيجتها
+    const prev = s.prevMatch ? (JSON.parse(s.prevMatch) as { homeScore: number | null; awayScore: number | null; status: string; reportStatus: string; approvedAt: string | null; approvedBy: string | null }) : null;
+    await tx.update(matches).set(prev
+      ? { homeScore: prev.homeScore, awayScore: prev.awayScore, status: prev.status as "SCHEDULED", reportStatus: prev.reportStatus as "NONE", approvedAt: prev.approvedAt ? new Date(prev.approvedAt) : null, approvedBy: prev.approvedBy }
+      : { homeScore: null, awayScore: null, status: "SCHEDULED", reportStatus: "NONE", approvedAt: null, approvedBy: null }).where(eq(matches.id, s.matchId));
   }
   await tx.update(sanctions).set({ status: "REVOKED" }).where(eq(sanctions.id, id));
 }
@@ -134,7 +139,10 @@ export async function amendSanction(tx: Tx, id: number, v: { matchesCount?: numb
     const paid = Number(c.paidAmount);
     await tx.update(charges).set({ amount: amt.toFixed(2), status: amt <= 0 ? "CANCELLED" : paid >= amt ? "PAID" : paid > 0 ? "PARTIAL" : "OPEN" }).where(eq(charges.id, s.chargeId));
   } else if (v.fineAmount != null && Number(v.fineAmount) > 0) {
-    await applyEffects(tx, id, by);
+    // إضافة غرامة فقط — دون إعادة تطبيق بقية آثار القرار (كالخسارة الاعتبارية ومكافآت الطاقم)
+    const [u] = await tx.select().from(sanctions).where(eq(sanctions.id, id));
+    const chargeId = await addCharge(tx, { clubId: u.clubId, category: "FINE", description: `قرار ${u.number} — ${await targetName(tx, u)}`, amount: u.fineAmount!, refType: "sanction", refId: u.id, createdBy: by });
+    await tx.update(sanctions).set({ chargeId }).where(eq(sanctions.id, id));
   }
 }
 

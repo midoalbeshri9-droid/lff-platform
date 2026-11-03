@@ -27,7 +27,9 @@ export class UserError extends Error {}
 
 /** يعيد التوجيه مع رسالة نجاح أو خطأ تُعرض أعلى الصفحة */
 export function back(path: string, msg: { ok?: string; err?: string }): never {
-  const u = new URL(path, "http://x");
+  // مسار داخلي فقط (يمنع التحويل إلى موقع خارجي عبر حقل «back» في النماذج)
+  const u = new URL(/^\/(?![\/\\])/.test(path) ? path : "/", "http://x");
+  if (u.host !== "x") redirect("/");
   u.searchParams.delete("ok");
   u.searchParams.delete("err");
   if (msg.ok) u.searchParams.set("ok", msg.ok);
@@ -53,7 +55,9 @@ export async function attempt(target: string | (() => string), fn: () => Promise
   back(p(), { ok: ok || "تم الحفظ بنجاح" });
 }
 
-export const today = () => new Date().toISOString().slice(0, 10);
+/** تاريخ اليوم بتوقيت ليبيا (YYYY-MM-DD) — لا بتوقيت الخادم UTC */
+export const dayOf = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: "Africa/Tripoli" });
+export const today = () => dayOf(new Date());
 
 export function fmtDate(v: string | Date | null | undefined) {
   if (!v) return "—";

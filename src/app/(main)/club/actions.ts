@@ -3,7 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import {
-  players, registrations, registrationDocuments, documentTypes, matches, users, seasons, contracts, staff, matchRequests,
+  players, registrations, registrationDocuments, documentTypes, matches, users, seasons, contracts, staff, matchRequests, staffRoleEnum,
 } from "@/db/schema";
 import { requireClubUser } from "@/lib/auth";
 import { audit, notifyRoles, notifyClub, notifyStaff } from "@/lib/audit";
@@ -345,6 +345,10 @@ export async function toggleClubUser(f: FormData) {
 
 
 // ---------------- الإداريون والجهاز الفني ----------------
+const staffRole = (r: string) => {
+  if (!(staffRoleEnum.enumValues as readonly string[]).includes(r)) throw new UserError("الصفة غير صحيحة");
+  return r as (typeof staffRoleEnum.enumValues)[number];
+};
 export async function saveStaff(f: FormData) {
   const u = await requireClubUser("club.edit");
   await attempt("/club/staff", async () => {
@@ -352,7 +356,7 @@ export async function saveStaff(f: FormData) {
     if (!season) throw new UserError("لا يوجد موسم حالي");
     const id = int(f, "id");
     const data = {
-      clubId: u.clubId, seasonId: season.id, fullName: req(f, "fullName", "الاسم"), role: req(f, "role", "الصفة") as "COACH",
+      clubId: u.clubId, seasonId: season.id, fullName: req(f, "fullName", "الاسم"), role: staffRole(req(f, "role", "الصفة")),
       nationalId: str(f, "nationalId"), nationality: str(f, "nationality") ?? "ليبي", dateOfBirth: str(f, "dateOfBirth"),
       phone: str(f, "phone"), licenseNo: str(f, "licenseNo"), licenseLevel: str(f, "licenseLevel"),
     };

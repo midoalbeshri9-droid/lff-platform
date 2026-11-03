@@ -8,7 +8,7 @@ import { Field } from "@/components/ui";
 import { Submit } from "@/components/Client";
 import { requireClubUser } from "@/lib/auth";
 import { clubEligibility } from "@/lib/eligibility";
-import { fmtDateTime } from "@/lib/util";
+import { fmtDateTime, dayOf } from "@/lib/util";
 import { PageHead, Flash, type SP } from "@/components/ui";
 import { LineupForm } from "@/components/LineupForm";
 import { saveClubLineup, requestPostpone } from "../../actions";
@@ -21,7 +21,7 @@ export default async function ClubLineup({ params, searchParams }: { params: Pro
   if (!m || (m.homeClubId !== u.clubId && m.awayClubId !== u.clubId)) notFound();
   const [c] = await db.select().from(competitions).where(eq(competitions.id, m.competitionId));
   const [opp] = await db.select().from(clubs).where(eq(clubs.id, m.homeClubId === u.clubId ? m.awayClubId : m.homeClubId));
-  const on = (m.kickoff ?? new Date()).toISOString().slice(0, 10);
+  const on = dayOf(m.kickoff ?? new Date());
   const elig = await clubEligibility(u.clubId, m.competitionId, on);
   const squad = await db.select().from(matchSquads).where(and(eq(matchSquads.matchId, id), eq(matchSquads.clubId, u.clubId)));
   const reqs = await db.select().from(matchRequests).where(and(eq(matchRequests.matchId, id), eq(matchRequests.clubId, u.clubId)));

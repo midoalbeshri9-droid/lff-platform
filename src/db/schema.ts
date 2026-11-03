@@ -639,6 +639,7 @@ export const sanctions = pgTable("sanctions", {
   status: sanctionStatusEnum("status").notNull().default("ACTIVE"),
   suspensionId: integer("suspension_id").references(() => suspensions.id),
   chargeId: integer("charge_id"),
+  prevMatch: text("prev_match"), // حالة المباراة قبل الخسارة الاعتبارية (JSON) لاستعادتها عند إلغاء القرار
   createdBy: text("created_by").notNull(),
   createdAt: ts("created_at").notNull().defaultNow(),
   notes: text("notes"),

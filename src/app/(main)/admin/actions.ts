@@ -17,6 +17,11 @@ export async function saveUser(f: FormData) {
   await attempt("/admin/users", async () => {
     const role = req(f, "role", "الدور") as Role;
     if (!roleEnum.enumValues.includes(role)) throw new UserError("دور غير صحيح");
+    // حسابات «مدير المنظومة» لا ينشئها أو يعدّلها إلا مدير منظومة
+    if (u.role !== "ADMIN") {
+      if (role === "ADMIN") throw new UserError("إنشاء حساب مدير منظومة من صلاحية مدير المنظومة فقط");
+      if (id) { const [t] = await db.select({ r: users.role }).from(users).where(eq(users.id, id)); if (t?.r === "ADMIN") throw new UserError("لا يمكنك تعديل حساب مدير المنظومة"); }
+    }
     const clubId = isClubRole(role) ? int(f, "clubId") : null;
     if (isClubRole(role) && !clubId) throw new UserError("حساب النادي يجب ربطه بنادٍ");
     const officialId = isOfficialRole(role) ? int(f, "officialId") : null;

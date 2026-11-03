@@ -1,7 +1,7 @@
 "use server";
 import { and, eq, ne, or } from "drizzle-orm";
 import { db } from "@/db";
-import { competitions, competitionTeams, matches, matchEvents, assignments, matchRequests, competitionSquads, registrations, clubs, competitionStages, stageTeams, settings } from "@/db/schema";
+import { competitions, competitionTeams, matches, matchEvents, assignments, matchRequests, competitionSquads, matchSquads, registrations, clubs, competitionStages, stageTeams, settings } from "@/db/schema";
 import { addCharge } from "@/lib/finance";
 import { resolveStadium, stadiumBlock, blockWithHint } from "@/lib/stadiums";
 import { guard, inScopeClub, inScopeComp, inScopeMatch, inScopeStage, scopeOf } from "@/lib/scope";
@@ -14,7 +14,7 @@ import {
   nextKnockoutRound, qualifyToNext, getStage,
 } from "@/lib/stages";
 import { saveLineup } from "@/lib/lineup";
-import { attempt, str, req, int, ints, num, UserError, fromLocalInput } from "@/lib/util";
+import { attempt, str, req, int, ints, num, UserError, fromLocalInput, dayOf } from "@/lib/util";
 
 export async function saveCompetition(f: FormData) {
   const u = await requireUser("comp.manage");
@@ -317,11 +317,14 @@ export async function saveMatch(f: FormData) {
       status: (str(f, "status") ?? "SCHEDULED") as "SCHEDULED", notes: str(f, "notes"),
     };
     const sd = await resolveStadium(data.venue);
-    const block = stadiumBlock(sd, data.kickoff ? data.kickoff.toISOString().slice(0, 10) : null);
-    if (block && data.status === "SCHEDULED") throw new UserError(await blockWithHint(block, home, data.kickoff ? data.kickoff.toISOString().slice(0, 10) : null));
+    const block = stadiumBlock(sd, data.kickoff ? dayOf(data.kickoff) : null);
+    if (block && data.status === "SCHEDULED") throw new UserError(await blockWithHint(block, home, data.kickoff ? dayOf(data.kickoff) : null));
     Object.assign(data, { stadiumId: sd?.id ?? null, city: data.city ?? sd?.city ?? null });
     if (id) {
       const [old] = await db.select().from(matches).where(eq(matches.id, id));
+      // مباراة معتمدة النتيجة: لا يتغير طرفاها ولا مسابقتها ولا حالتها (يؤثر على الترتيب والإيقافات)
+      if (old.reportStatus === "APPROVED" && (old.homeClubId !== home || old.awayClubId !== away || old.competitionId !== compId || old.status !== data.status))
+        throw new UserError("المباراة معتمدة النتيجة — لا يمكن تغيير الفريقين أو المسابقة أو الحالة");
       await db.update(matches).set(data).where(eq(matches.id, id));
       if (old.kickoff?.getTime() !== data.kickoff?.getTime() && data.kickoff && data.kickoff.getTime() - Date.now() < 48 * 3600e3 && data.kickoff.getTime() > Date.now())
         late48 = " — ⚠ تنبيه: التعديل قبل أقل من 48 ساعة من الموعد (م48 تشترط إخطار الناديين قبل 48 ساعة إلا للضرورة القصوى)";
@@ -352,10 +355,10 @@ export async function bulkSchedule(f: FormData) {
       const k = fromLocalInput(str(f, `k_${id}`));
       const v = str(f, `v_${id}`);
       const sd = await resolveStadium(v);
-      const block = stadiumBlock(sd, k ? k.toISOString().slice(0, 10) : null);
+      const block = stadiumBlock(sd, k ? dayOf(k) : null);
       if (block) {
         const [mm] = await db.select({ h: matches.homeClubId }).from(matches).where(eq(matches.id, id));
-        throw new UserError(`مباراة #${id}: ${await blockWithHint(block, mm.h, k ? k.toISOString().slice(0, 10) : null)}`);
+        throw new UserError(`مباراة #${id}: ${await blockWithHint(block, mm.h, k ? dayOf(k) : null)}`);
       }
       await db.update(matches).set({ kickoff: k, venue: v, stadiumId: sd?.id ?? null }).where(and(eq(matches.id, id), eq(matches.competitionId, compId)));
       n++;
@@ -398,9 +401,24 @@ export async function addEvent(f: FormData) {
     guard(await inScopeMatch(u, matchId));
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
     if (m.reportStatus === "APPROVED") throw new UserError("التقرير معتمد");
-    const clubId = int(f, "clubId")!;
-    if (clubId !== m.homeClubId && clubId !== m.awayClubId) throw new UserError("النادي غير صحيح");
+    let clubId = int(f, "clubId")!;
     const type = str(f, "type") as "GOAL" | "SUB_IN", playerId = int(f, "playerId");
+    // عند اختيار لاعب من القائمة يُؤخذ فريقه من القائمة نفسها (يمنع تسجيل الحدث للفريق الخطأ)
+    if (playerId) {
+      const [own] = await db.select({ c: matchSquads.clubId }).from(matchSquads).where(and(eq(matchSquads.matchId, matchId), eq(matchSquads.playerId, playerId)));
+      if (own) clubId = own.c;
+    }
+    if (clubId !== m.homeClubId && clubId !== m.awayClubId) throw new UserError("النادي غير صحيح");
+    if (playerId) {
+      // اللاعب يجب أن يكون من قائمة النادي في المباراة، أو مقيدًا لديه إن لم تُدخل القائمة
+      const [sq] = await db.select({ id: matchSquads.id }).from(matchSquads).where(and(eq(matchSquads.matchId, matchId), eq(matchSquads.clubId, clubId), eq(matchSquads.playerId, playerId)));
+      if (!sq) {
+        const [anySq] = await db.select({ id: matchSquads.id }).from(matchSquads).where(and(eq(matchSquads.matchId, matchId), eq(matchSquads.clubId, clubId))).limit(1);
+        const [c] = await db.select({ s: competitions.seasonId }).from(competitions).where(eq(competitions.id, m.competitionId));
+        const [rg] = anySq ? [] : await db.select({ id: registrations.id }).from(registrations).where(and(eq(registrations.playerId, playerId), eq(registrations.clubId, clubId), eq(registrations.seasonId, c.s), eq(registrations.status, "APPROVED")));
+        if (!rg) throw new UserError(anySq ? "اللاعب ليس في قائمة هذا النادي في المباراة" : "اللاعب غير مقيد لدى هذا النادي");
+      }
+    }
     if (type === "SUB_IN") await subsLimitCheck(matchId, clubId, int(f, "minute"));
     if (type === "SUB_IN" && playerId) await foreignOnPitchCheck(matchId, clubId, playerId);
     await db.insert(matchEvents).values({ matchId, clubId, playerId, type, minute: int(f, "minute"), note: str(f, "note") });
@@ -429,7 +447,9 @@ export async function setResult(f: FormData) {
     guard(await inScopeMatch(u, matchId));
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
     if (m.reportStatus === "APPROVED") throw new UserError("التقرير معتمد");
-    await db.update(matches).set({ homeScore: int(f, "homeScore"), awayScore: int(f, "awayScore"), attendance: int(f, "attendance") }).where(eq(matches.id, matchId));
+    const hs = int(f, "homeScore"), as_ = int(f, "awayScore"), att = int(f, "attendance");
+    if ((hs != null && hs < 0) || (as_ != null && as_ < 0) || (att != null && att < 0)) throw new UserError("القيم لا تكون سالبة");
+    await db.update(matches).set({ homeScore: hs, awayScore: as_, attendance: att }).where(eq(matches.id, matchId));
     await audit(u, "إدخال نتيجة", "Match", matchId);
     return "تم حفظ النتيجة";
   });
@@ -500,6 +520,8 @@ export async function saveSquadList(f: FormData) {
     if (!u.isClub) guard((await inScopeComp(u, competitionId)) && (await inScopeClub(u, clubId)));
     const [c] = await db.select().from(competitions).where(eq(competitions.id, competitionId));
     if (c.squadListMax == null) throw new UserError("هذه المسابقة لا تتطلب قائمة موسم");
+    const [team] = await db.select({ id: competitionTeams.id }).from(competitionTeams).where(and(eq(competitionTeams.competitionId, competitionId), eq(competitionTeams.clubId, clubId)));
+    if (!team) throw new UserError("النادي ليس من فرق هذه المسابقة");
     const ids = ints(f, "player");
     if (ids.length > c.squadListMax) throw new UserError(`الحد الأقصى لقائمة الموسم ${c.squadListMax} لاعبًا`);
     const valid = await db.select({ pid: registrations.playerId }).from(registrations)

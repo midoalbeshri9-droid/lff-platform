@@ -3,13 +3,13 @@ import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { matches, matchSquads, competitions, ageCategories } from "@/db/schema";
 import { clubEligibility } from "./eligibility";
-import { int, UserError } from "./util";
+import { int, UserError, dayOf } from "./util";
 
 /** منطق مشترك لحفظ القائمة (النادي ولجنة المسابقات) */
 export async function saveLineup(matchId: number, clubId: number, f: FormData) {
   const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
   const [c] = await db.select().from(competitions).where(eq(competitions.id, m.competitionId));
-  const on = (m.kickoff ?? new Date()).toISOString().slice(0, 10);
+  const on = dayOf(m.kickoff ?? new Date());
   const elig = await clubEligibility(clubId, m.competitionId, on);
   const chosen = f.getAll("player").map(Number);
   const starters = new Set(f.getAll("starter").map(Number));
@@ -45,9 +45,9 @@ export async function saveLineup(matchId: number, clubId: number, f: FormData) {
   }
   // م77: لا يشارك اللاعب في أكثر من مباراة رسمية في اليوم نفسه
   if (m.kickoff && rows.length) {
-    const day = m.kickoff.toISOString().slice(0, 10);
+    const day = dayOf(m.kickoff);
     const other = await db.select({ pid: matchSquads.playerId, mid: matches.id }).from(matchSquads).innerJoin(matches, eq(matches.id, matchSquads.matchId))
-      .where(and(inArray(matchSquads.playerId, rows.map((r) => r.e.playerId)), ne(matches.id, matchId), sql`date(${matches.kickoff}) = ${day}`, ne(matches.status, "CANCELLED")));
+      .where(and(inArray(matchSquads.playerId, rows.map((r) => r.e.playerId)), ne(matches.id, matchId), sql`date(${matches.kickoff} at time zone 'Africa/Tripoli') = ${day}`, ne(matches.status, "CANCELLED")));
     if (other.length) {
       const e = rows.find((r) => r.e.playerId === other[0].pid)!.e;
       throw new UserError(`${e.fullName}: مدرج في قائمة مباراة أخرى في اليوم نفسه (م77 من لائحة المسابقات)`);

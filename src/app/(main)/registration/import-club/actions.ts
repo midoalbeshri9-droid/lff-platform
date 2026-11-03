@@ -1,5 +1,5 @@
 "use server";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql, desc } from "drizzle-orm";
 import { db } from "@/db";
 import { players, registrations, clubs, seasons, registrationEvents, divisions } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
@@ -66,10 +66,14 @@ export async function importClubChunk(input: { clubId?: number; newClub?: { name
           notes: r.approx ? "تاريخ الميلاد تقريبي (السنة من رقم البطاقة) — يُستكمل" : null,
         }).returning();
       }
+      // آخر نادٍ قُيّد له اللاعب: إن اختلف فالقيد انتقال منه
+      const [last] = await db.select({ c: registrations.clubId }).from(registrations)
+        .where(and(eq(registrations.playerId, p.id), inArray(registrations.status, ["APPROVED", "EXPIRED", "TRANSFERRED"]))).orderBy(desc(registrations.id)).limit(1);
+      const fromClubId = last && last.c !== clubId ? last.c : null;
       const cat = await categoryFor(r.dob, season.startDate);
       const free = card ? !(await db.select({ id: registrations.id }).from(registrations).where(eq(registrations.number, card))).length : false;
       const [reg] = await db.insert(registrations).values({
-        playerId: p.id, clubId, seasonId: season.id, type: "RENEWAL", status: "APPROVED", number: free ? card : null,
+        playerId: p.id, clubId, seasonId: season.id, type: fromClubId ? "TRANSFER" : last ? "RENEWAL" : "NEW", fromClubId, status: "APPROVED", number: free ? card : null,
         categoryId: cat?.id ?? null, shirtNumber: r.shirt, notes: "مستورد من ملف Excel للنادي",
         submittedAt: new Date(), submittedBy: u.fullName, decidedAt: new Date(), decidedBy: `${u.fullName} (${BY})`,
       }).returning();

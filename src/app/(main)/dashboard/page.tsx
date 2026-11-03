@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { and, eq, sql, gte, lte, isNull, asc, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -16,6 +17,9 @@ const one = async (q: Promise<{ n: number }[]>) => (await q)[0]?.n ?? 0;
 
 export default async function Dashboard() {
   const u = await requireUser();
+  // حسابات الأندية والحكام لها صفحاتها الخاصة
+  if (u.isClub) redirect("/club");
+  if (u.isOfficial) redirect("/portal");
   const season = await getCurrentSeason();
   const sid = season?.id ?? 0;
   const t = today();

@@ -18,6 +18,11 @@ async function applyPayment(chargeId: number, amount: number, by: string, extra:
   if (amount > remaining + 0.001) throw new UserError(`المبلغ أكبر من المتبقي (${remaining.toFixed(2)})`);
   let receiptNo = "";
   await db.transaction(async (tx) => {
+    // إعادة القراءة داخل المعاملة مع قفل السطر: يمنع تسجيل دفعتين متزامنتين تتجاوزان المتبقي
+    const [cur] = await tx.select().from(charges).where(eq(charges.id, chargeId)).for("update");
+    if (!cur || ["PAID", "WAIVED", "CANCELLED"].includes(cur.status)) throw new UserError("المستحق مدفوع أو ملغى");
+    if (amount > Number(cur.amount) - Number(cur.paidAmount) + 0.001) throw new UserError(`المبلغ أكبر من المتبقي (${(Number(cur.amount) - Number(cur.paidAmount)).toFixed(2)})`);
+    c.paidAmount = cur.paidAmount;
     receiptNo = await nextReceiptNo(tx, c.direction === "IN" ? "R" : "P");
     await tx.insert(payments).values({
       receiptNo, direction: c.direction, chargeId, clubId: c.clubId, officialId: c.officialId, amount: amount.toFixed(2),

@@ -1,3 +1,4 @@
+import { dayOf } from "./util";
 import "server-only";
 import { and, eq, ne, desc, inArray, or } from "drizzle-orm";
 import { db } from "@/db";
@@ -10,7 +11,7 @@ export async function checkAssignment(matchId: number, officialId: number, role:
   const [o] = await db.select().from(officials).where(eq(officials.id, officialId));
   const errors: string[] = [], warnings: string[] = [];
   if (!m || !o) return { errors: ["بيانات غير صحيحة"], warnings };
-  const day = (m.kickoff ?? new Date()).toISOString().slice(0, 10);
+  const day = dayOf(m.kickoff ?? new Date());
   if (!ROLE_FITS[role]?.includes(o.type)) errors.push(`${OFFICIAL_TYPE[o.type]} لا يصلح لدور ${ASSIGN_ROLE[role]}`);
   if (o.status !== "ACTIVE") {
     if (!(o.status === "SUSPENDED" && o.suspendedUntil && o.suspendedUntil < day)) errors.push(`الحالة: ${o.status === "SUSPENDED" ? "موقوف" : o.status === "INJURED" ? "مصاب" : "معتزل"}`);
@@ -20,7 +21,7 @@ export async function checkAssignment(matchId: number, officialId: number, role:
   // نفس اليوم
   const sameDay = await db.select({ a: assignments, k: matches.kickoff }).from(assignments).innerJoin(matches, eq(matches.id, assignments.matchId))
     .where(and(eq(assignments.officialId, officialId), ne(assignments.matchId, matchId), ne(assignments.status, "DECLINED")));
-  if (sameDay.some((x) => x.k && x.k.toISOString().slice(0, 10) === day)) errors.push("معيّن في مباراة أخرى في نفس اليوم");
+  if (sameDay.some((x) => x.k && dayOf(x.k) === day)) errors.push("معيّن في مباراة أخرى في نفس اليوم");
   const inMatch = await db.select().from(assignments).where(and(eq(assignments.matchId, matchId), eq(assignments.officialId, officialId), ne(assignments.role, role as "REFEREE")));
   if (inMatch.length) errors.push("معيّن في دور آخر في نفس المباراة");
   // نفس مدينة أحد الفريقين

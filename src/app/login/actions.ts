@@ -20,7 +20,6 @@ export async function login(form: FormData) {
     await bcrypt.compare(password, "$2a$10$abcdefghijklmnopqrstuuJ5bQe1QbYgGZ7W0h3e3Hn6p7r3s2K6"); // توحيد زمن الاستجابة
     redirect("/login?error=1");
   }
-  if (!u.isVerified) redirect("/login?error=unverified");
   if (u.lockedUntil && u.lockedUntil > new Date()) {
     const m = Math.ceil((u.lockedUntil.getTime() - Date.now()) / 60000);
     redirect(`/login?error=locked&m=${m}`);
@@ -35,9 +34,12 @@ export async function login(form: FormData) {
     if (fails >= MAX_FAILS) await audit({ id: u.id, fullName: u.fullName }, "قفل الحساب", "User", u.id, "محاولات دخول فاشلة متكررة");
     redirect("/login?error=1");
   }
+  // لا يُكشف أن الحساب غير مفعّل إلا بعد صحة كلمة المرور
+  if (!u.isVerified) redirect("/login?error=unverified");
   await db.update(users).set({ failedLogins: 0, lockedUntil: null, lastLoginAt: new Date() }).where(eq(users.id, u.id));
   await createSession(u.id, u.sessionVersion);
   await audit({ id: u.id, fullName: u.fullName }, "تسجيل دخول", "User", u.id);
   const home = homeFor({ isClub: isClubRole(u.role), isOfficial: isOfficialRole(u.role), mustChangePassword: u.mustChangePassword });
-  redirect(next.startsWith("/") && !next.startsWith("//") && !u.mustChangePassword ? next : home);
+  const safeNext = /^\/(?![\/\\])/.test(next) && !/[\r\n]/.test(next);
+  redirect(safeNext && !u.mustChangePassword ? next : home);
 }

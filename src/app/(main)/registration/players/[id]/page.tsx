@@ -61,7 +61,7 @@ export default async function PlayerFile({ params, searchParams }: { params: Pro
               </div>
             </div>
           </div>
-          <div className="card table-wrap" id="docs">
+          {u.canAny("reg.review", "reg.edit") && <div className="card table-wrap" id="docs">
             <h2>📁 مستندات اللاعب ({docs.length})</h2>
             {docs.length === 0 ? <p className="muted">لا توجد مستندات بعد{u.can("reg.edit") ? " — أضفها من النموذج أدناه" : ""}</p> : (
               <table className="t"><thead><tr><th>المستند</th><th>الملف</th><th>القيد</th><th>الحالة</th><th>أُضيف</th><th></th></tr></thead>
@@ -90,7 +90,7 @@ export default async function PlayerFile({ params, searchParams }: { params: Pro
                 </form>
               </details>
             )}
-          </div>
+          </div>}
           <div className="card table-wrap">
             <h2>سجل القيد والانتقالات</h2>
             <table className="t"><thead><tr><th>الموسم</th><th>النادي</th><th>النوع</th><th>من</th><th>رقم القيد</th><th>الحالة</th><th>البطاقة</th><th></th></tr></thead>

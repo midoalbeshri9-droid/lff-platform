@@ -2,7 +2,7 @@ import "server-only";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db, type Tx } from "@/db";
 import { competitions, matches, matchEvents, suspensions, clubs, registrations, stageTeams } from "@/db/schema";
-import { UserError } from "./util";
+import { UserError, dayOf } from "./util";
 import { roundRobin, lffRank, type StandingRow } from "./competitionPure";
 import { ensureStages, generateStageFixtures } from "./stages";
 import { pointsDeducted } from "./sanctions";
@@ -90,6 +90,9 @@ export async function approveMatch(tx: Tx, matchId: number, by: string) {
   const [m] = await tx.select().from(matches).where(eq(matches.id, matchId));
   if (!m) throw new UserError("المباراة غير موجودة");
   if (m.reportStatus === "APPROVED") throw new UserError("التقرير معتمد مسبقًا");
+  if (m.status === "POSTPONED" || m.status === "CANCELLED") throw new UserError("المباراة مؤجلة أو ملغاة — عدّل حالتها أولًا");
+  if (m.kickoff && m.kickoff.getTime() > Date.now() && m.homeScore == null)
+    throw new UserError("لم يحن موعد المباراة بعد — لا يمكن اعتماد نتيجتها");
   const [c] = await tx.select().from(competitions).where(eq(competitions.id, m.competitionId));
   const evs = await tx.select().from(matchEvents).where(eq(matchEvents.matchId, matchId));
 
@@ -109,8 +112,15 @@ export async function approveMatch(tx: Tx, matchId: number, by: string) {
       .select()
       .from(suspensions)
       .where(and(inArray(suspensions.playerId, pids), eq(suspensions.kind, "MATCHES"), eq(suspensions.isLifted, false)));
+    // لا تُحتسب المباراة إلا لإيقاف بدأ قبلها (مهم عند اعتماد مباراة متأخرًا بعد صدور إيقافات لاحقة)
+    const matchDay = m.kickoff ? dayOf(m.kickoff) : null;
+    const srcIds = [...new Set(open.map((s) => s.sourceMatchId).filter((x): x is number => !!x))];
+    const srcKick = new Map((srcIds.length ? await tx.select({ id: matches.id, k: matches.kickoff }).from(matches).where(inArray(matches.id, srcIds)) : []).map((x) => [x.id, x.k]));
     for (const s of open) {
       if (s.sourceMatchId === matchId) continue;
+      const sk = s.sourceMatchId ? srcKick.get(s.sourceMatchId) : null;
+      if (m.kickoff && sk && sk.getTime() >= m.kickoff.getTime()) continue;
+      if (matchDay && !s.sourceMatchId && s.startDate && s.startDate > matchDay) continue;
       if (s.competitionId && s.competitionId !== m.competitionId) continue;
       if ((s.matchesTotal ?? 0) <= s.matchesServed) continue;
       await tx.update(suspensions).set({ matchesServed: s.matchesServed + 1 }).where(eq(suspensions.id, s.id));

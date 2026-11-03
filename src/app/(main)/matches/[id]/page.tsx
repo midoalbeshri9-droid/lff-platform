@@ -9,7 +9,7 @@ import { clubEligibility } from "@/lib/eligibility";
 import { MATCH_STATUS, REPORT_STATUS, EVENT_TYPE, ASSIGN_ROLE, ASSIGN_STATUS, SANCTION_TYPE, SANCTION_STATUS, OBSERVER_ROLES } from "@/lib/labels";
 import { sanctions } from "@/db/schema";
 import { matchNotices } from "@/lib/sanctions";
-import { fmtDateTime, toLocalInput } from "@/lib/util";
+import { fmtDateTime, toLocalInput, dayOf } from "@/lib/util";
 import { PageHead, Flash, Badge, Empty, Field, Options, type SP } from "@/components/ui";
 import { Submit } from "@/components/Client";
 import { LineupForm } from "@/components/LineupForm";
@@ -147,7 +147,7 @@ async function Report({ m, u, name }: { m: typeof matches.$inferSelect; u: Await
 }
 
 async function Lineups({ m, c, canEdit, clubsList }: { m: typeof matches.$inferSelect; c: typeof competitions.$inferSelect; canEdit: boolean; clubsList: { id: number; name: string }[] }) {
-  const on = (m.kickoff ?? new Date()).toISOString().slice(0, 10);
+  const on = dayOf(m.kickoff ?? new Date());
   const data = await Promise.all(clubsList.map(async (cl) => ({
     cl, elig: await clubEligibility(cl.id, m.competitionId, on),
     squad: await db.select().from(matchSquads).where(and(eq(matchSquads.matchId, m.id), eq(matchSquads.clubId, cl.id))),

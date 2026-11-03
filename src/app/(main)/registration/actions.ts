@@ -59,6 +59,8 @@ export async function decide(f: FormData) {
     const [p] = await db.select().from(players).where(eq(players.id, r.playerId));
     if (decision === "approve") {
       const override = bool(f, "override");
+      // تجاوز الشروط (المستندات، رد النادي السابق، حصة الأجانب) قرار لا يملكه إلا من له صلاحية تعديل بيانات اللاعبين
+      if (override && !u.can("reg.edit")) throw new UserError("تجاوز الشروط يحتاج صلاحية رئيس اللجنة (تعديل بيانات اللاعبين)");
       const pending = await db.select({ id: registrationDocuments.id }).from(registrationDocuments)
         .where(and(eq(registrationDocuments.registrationId, id), ne(registrationDocuments.status, "APPROVED"), ne(registrationDocuments.status, "REJECTED")));
       const miss = await missingDocs(id);
