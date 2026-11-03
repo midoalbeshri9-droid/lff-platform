@@ -10,7 +10,7 @@ import { requireUser } from "@/lib/auth";
 import { audit, notifyClub, notifyOfficial } from "@/lib/audit";
 import { approveMatch, standings } from "@/lib/competition";
 import {
-  ensureStages, templateStages, addToFirstStage, removeFromStages, generateStageFixtures, clearStageFixtures, drawGroups, setGroups,
+  ensureStages, templateStages, addToFirstStage, removeFromStages, generateStageFixtures, clearStageFixtures, drawGroups, setGroups, groupsByRegion,
   nextKnockoutRound, qualifyToNext, getStage,
 } from "@/lib/stages";
 import { saveLineup } from "@/lib/lineup";
@@ -225,6 +225,18 @@ export async function stageDraw(f: FormData) {
     await drawGroups(stageId, count, seeded);
     await audit(u, "قرعة المجموعات", "Competition", s.competitionId, { stage: s.name, count, seeded: !!seeded });
     return `تمت القرعة على ${count} مجموعات`;
+  });
+}
+
+export async function stageRegionGroups(f: FormData) {
+  const u = await requireUser("comp.manage");
+  const stageId = int(f, "stageId")!;
+  const s = await getStage(stageId);
+  await attempt(stageBack(s.competitionId, stageId), async () => {
+    guard(await inScopeStage(u, stageId));
+    const map = await groupsByRegion(stageId);
+    await audit(u, "توزيع المجموعات حسب المنطقة", "Competition", s.competitionId, { stage: s.name, map });
+    return `تم التوزيع حسب المنطقة — ${map.join(" | ")}`;
   });
 }
 

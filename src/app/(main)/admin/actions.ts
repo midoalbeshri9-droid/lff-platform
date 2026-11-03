@@ -211,9 +211,14 @@ export async function saveClubDivisions(f: FormData) {
   await attempt("/admin/divisions", async () => {
     let n = 0;
     const moves: string[] = [];
-    const all = await db.select({ id: clubs.id, name: clubs.name, d: clubs.divisionId }).from(clubs);
+    const all = await db.select({ id: clubs.id, name: clubs.name, d: clubs.divisionId, r: clubs.region }).from(clubs);
     const divs = await db.select().from(divisions);
+    let nr = 0;
     for (const c of all) {
+      if (f.has(`r_${c.id}`)) {
+        const r = str(f, `r_${c.id}`) ?? null;
+        if (r !== (c.r ?? null)) { await db.update(clubs).set({ region: r }).where(eq(clubs.id, c.id)); moves.push(`${c.name}: المنطقة ${c.r ?? "—"} ← ${r ?? "—"}`); nr++; }
+      }
       if (!f.has(`d_${c.id}`)) continue;
       const d = int(f, `d_${c.id}`);
       if ((d ?? null) === (c.d ?? null)) continue;
@@ -222,6 +227,6 @@ export async function saveClubDivisions(f: FormData) {
       n++;
     }
     await audit(u, "توزيع الأندية على الدرجات", "Division", null, moves);
-    return n ? `تم نقل ${n} نادٍ` : "لا تغييرات";
+    return n || nr ? [n && `نُقل ${n} نادٍ بين الدرجات`, nr && `عُدّلت منطقة ${nr} نادٍ`].filter(Boolean).join(" — ") : "لا تغييرات";
   });
 }

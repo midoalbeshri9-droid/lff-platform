@@ -93,6 +93,24 @@ export async function drawGroups(stageId: number, count: number, seededOrder?: n
   await db.update(competitionStages).set({ groupsCount: count }).where(eq(competitionStages.id, stageId));
 }
 
+/** كل منطقة مجموعة (للدرجات الأدنى المقسمة حسب المناطق) */
+export async function groupsByRegion(stageId: number) {
+  const s = await getStage(stageId);
+  if (s.format !== "GROUPS") throw new UserError("التوزيع لمراحل المجموعات فقط");
+  if (await stageHasMatches(stageId)) throw new UserError("المرحلة مجدولة — احذف جدولها أولًا");
+  const teams = await db.select({ clubId: stageTeams.clubId, name: clubs.name, region: clubs.region }).from(stageTeams).innerJoin(clubs, eq(clubs.id, stageTeams.clubId)).where(eq(stageTeams.stageId, stageId));
+  const missing = teams.filter((t) => !t.region?.trim());
+  if (missing.length) throw new UserError(`حدّد منطقة هذه الأندية أولًا (الإدارة ← الأندية): ${missing.map((t) => t.name).join("، ")}`);
+  const regions = [...new Set(teams.map((t) => t.region!.trim()))].sort();
+  if (regions.length < 2) throw new UserError("كل الفرق في منطقة واحدة — استخدم القرعة أو التوزيع اليدوي");
+  if (regions.length > GROUP_LETTERS.length) throw new UserError("عدد المناطق أكبر من الحد الأقصى للمجموعات");
+  const small = regions.filter((r) => teams.filter((t) => t.region!.trim() === r).length < 2);
+  if (small.length) throw new UserError(`لا يكفي فريق واحد لتكوين مجموعة: ${small.join("، ")}`);
+  for (const t of teams) await db.update(stageTeams).set({ groupName: GROUP_LETTERS[regions.indexOf(t.region!.trim())] }).where(and(eq(stageTeams.stageId, stageId), eq(stageTeams.clubId, t.clubId)));
+  await db.update(competitionStages).set({ groupsCount: regions.length }).where(eq(competitionStages.id, stageId));
+  return regions.map((r, i) => `${GROUP_LETTERS[i]}: ${r}`);
+}
+
 export async function setGroups(stageId: number, groups: Map<number, string | null>) {
   if (await stageHasMatches(stageId)) throw new UserError("المرحلة مجدولة — احذف جدولها أولًا");
   for (const [clubId, g] of groups) await db.update(stageTeams).set({ groupName: g }).where(and(eq(stageTeams.stageId, stageId), eq(stageTeams.clubId, clubId)));

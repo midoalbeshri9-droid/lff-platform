@@ -16,7 +16,8 @@ export default async function Divisions({ searchParams }: { searchParams: SP }) 
     db.select({ d: col, n: sql<number>`count(*)::int` }).from(t).groupBy(col);
   const [cc, cm, co] = await Promise.all([cnt(clubs, clubs.divisionId), cnt(competitions, competitions.divisionId), cnt(officials, officials.divisionId)]);
   const mgrs = await db.select({ name: users.fullName, role: users.role, d: users.divisionId, active: users.isActive }).from(users).where(sql`${users.divisionId} is not null`);
-  const cl = await db.select({ id: clubs.id, name: clubs.name, city: clubs.city, d: clubs.divisionId, active: clubs.isActive }).from(clubs).orderBy(clubs.name);
+  const cl = await db.select({ id: clubs.id, name: clubs.name, city: clubs.city, region: clubs.region, d: clubs.divisionId, active: clubs.isActive }).from(clubs).orderBy(clubs.region, clubs.name);
+  const regions = [...new Set(["المنطقة الشرقية", "المنطقة الغربية", "المنطقة الجنوبية", "المنطقة الوسطى", ...cl.map((c) => c.region).filter((x): x is string => !!x)])];
   const n = (rows: { d: number | null; n: number }[], id: number | null) => rows.find((x) => x.d === id)?.n ?? 0;
   return (
     <>
@@ -50,11 +51,13 @@ export default async function Divisions({ searchParams }: { searchParams: SP }) 
         </details>
       </div>
 
+      <datalist id="regions">{regions.map((r) => <option key={r} value={r} />)}</datalist>
       <form action={saveClubDivisions} className="card table-wrap">
-        <div className="card-head"><h3>توزيع الأندية على الدرجات (الصعود والهبوط)</h3><Submit>💾 حفظ التوزيع</Submit></div>
-        <table className="t"><thead><tr><th>النادي</th><th>المدينة</th><th>الدرجة</th></tr></thead>
+        <div className="card-head"><h3>توزيع الأندية على الدرجات والمناطق (الصعود والهبوط)</h3><Submit>💾 حفظ التوزيع</Submit></div>
+        <table className="t"><thead><tr><th>النادي</th><th>المدينة</th><th>المنطقة</th><th>الدرجة</th></tr></thead>
           <tbody>{cl.map((c) => (
             <tr key={c.id} className={c.active ? "" : "muted"}><td><strong>{c.name}</strong></td><td>{c.city}</td>
+              <td><input type="text" name={`r_${c.id}`} list="regions" defaultValue={c.region ?? ""} style={{ width: 160 }} /></td>
               <td><select name={`d_${c.id}`} defaultValue={c.d ?? ""} style={{ width: "auto" }}><option value="">— غير مصنف —</option>{dv.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></td></tr>
           ))}</tbody></table>
       </form>

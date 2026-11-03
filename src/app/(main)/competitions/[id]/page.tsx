@@ -19,12 +19,13 @@ import { PageHead, Flash, Badge, Empty, Field, Options, type SP } from "@/compon
 import { Submit, CheckAll } from "@/components/Client";
 import {
   saveCompetition, setCompetitionStatus, addTeams, removeTeam, makeFixtures, clearFixtures, saveMatch, bulkSchedule,
-  addStage, saveStage, deleteStage, stageAddTeams, stageRemoveTeam, stageDraw, stageSaveGroups, stageQualify, stageNextRound,
+  addStage, saveStage, deleteStage, stageAddTeams, stageRemoveTeam, stageDraw, stageRegionGroups, stageSaveGroups, stageQualify, stageNextRound,
 } from "../actions";
 
 export default async function Competition({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const u = await requireUser("comp.view");
   const id = Number((await params).id);
+  if (!Number.isInteger(id)) notFound();
   const sp = await searchParams;
   const tab = sp.tab ?? "fixtures";
   const [c] = await db.select().from(competitions).where(eq(competitions.id, id));
@@ -215,7 +216,7 @@ async function Bracket({ stage }: { stage: Stage }) {
 }
 
 async function Stages({ id, manage, stages, stage, teams }: { id: number; manage: boolean; stages: Stage[]; stage: Stage; teams: { club: { id: number; name: string } }[] }) {
-  const st = await db.select({ t: stageTeams, name: clubs.name }).from(stageTeams).innerJoin(clubs, eq(clubs.id, stageTeams.clubId)).where(eq(stageTeams.stageId, stage.id)).orderBy(stageTeams.groupName, stageTeams.fromGroup, stageTeams.seed, clubs.name);
+  const st = await db.select({ t: stageTeams, name: clubs.name, region: clubs.region }).from(stageTeams).innerJoin(clubs, eq(clubs.id, stageTeams.clubId)).where(eq(stageTeams.stageId, stage.id)).orderBy(stageTeams.groupName, stageTeams.fromGroup, stageTeams.seed, clubs.name);
   const counts = await db.select({ stageId: matches.stageId, n: sql<number>`count(*)::int`, done: sql<number>`sum(case when ${matches.status} in ('PLAYED','FORFEIT') then 1 else 0 end)::int` })
     .from(matches).where(eq(matches.competitionId, id)).groupBy(matches.stageId);
   const tcounts = await db.select({ stageId: stageTeams.stageId, n: sql<number>`count(*)::int` }).from(stageTeams)
@@ -261,9 +262,9 @@ async function Stages({ id, manage, stages, stage, teams }: { id: number; manage
           {st.length === 0 ? <Empty>{stage.seq > 1 ? "تُضاف الفرق تلقائيًا عند تأهيلها من المرحلة السابقة، أو أضفها يدويًا" : "أضف الفرق من تبويب «الفرق»"}</Empty> : (
             <form action={stageSaveGroups}>
               <input type="hidden" name="stageId" value={stage.id} />
-              <table className="t"><tbody>{st.map(({ t, name }) => (
+              <table className="t"><tbody>{st.map(({ t, name, region }) => (
                 <tr key={t.clubId}>
-                  <td><strong>{name}</strong>{t.seed != null && <span className="b b-gray" style={{ marginInlineStart: 6 }}>{t.fromGroup ? `${t.fromGroup}${t.seed}` : `#${t.seed}`}</span>}</td>
+                  <td><strong>{name}</strong>{region && <span className="muted" style={{ fontSize: ".8rem", marginInlineStart: 6 }}>{region}</span>}{t.seed != null && <span className="b b-gray" style={{ marginInlineStart: 6 }}>{t.fromGroup ? `${t.fromGroup}${t.seed}` : `#${t.seed}`}</span>}</td>
                   <td>{stage.format === "GROUPS" && (manage && !scheduled ? (
                     <><input type="hidden" name="team" value={t.clubId} />
                       <select name={`g_${t.clubId}`} defaultValue={t.groupName ?? ""} style={{ width: "auto" }}><option value="">— المجموعة —</option>{letters.map((g) => <option key={g} value={g}>المجموعة {g}</option>)}</select></>
@@ -295,6 +296,13 @@ async function Stages({ id, manage, stages, stage, teams }: { id: number; manage
                   <input type="hidden" name="stageId" value={stage.id} />
                   <Field label="عدد المجموعات"><input type="number" name="groupsCount" min={2} max={12} defaultValue={stage.groupsCount ?? 2} style={{ width: 90 }} /></Field>
                   <Submit className="btn btn-light" confirm="قرعة عشوائية لتوزيع الفرق على المجموعات؟ (يلغي التوزيع الحالي)">🎲 قرعة المجموعات</Submit>
+                </form>
+              )}
+              {stage.format === "GROUPS" && !scheduled && (
+                <form action={stageRegionGroups} className="row mt">
+                  <input type="hidden" name="stageId" value={stage.id} />
+                  <Submit className="btn btn-light" confirm="توزيع الفرق على المجموعات بحيث تكون كل منطقة مجموعة؟ (يلغي التوزيع الحالي)">🗺 مجموعة لكل منطقة</Submit>
+                  <span className="muted" style={{ fontSize: ".8rem" }}>تُحدَّد منطقة النادي من الإدارة ← الأندية</span>
                 </form>
               )}
               <div className="row mt">
