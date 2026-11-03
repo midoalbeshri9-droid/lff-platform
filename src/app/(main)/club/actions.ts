@@ -6,7 +6,7 @@ import {
   players, registrations, registrationDocuments, documentTypes, matches, users, seasons, contracts, staff, matchRequests,
 } from "@/db/schema";
 import { requireClubUser } from "@/lib/auth";
-import { audit, notifyRoles, notifyClub } from "@/lib/audit";
+import { audit, notifyRoles, notifyClub, notifyStaff } from "@/lib/audit";
 import {
   getCurrentSeason, openWindow, categoryFor, findDuplicates, activeRegistration, lastApproved, logEvent, missingDocs, getSetting,
   assertForeignQuota, needsContract, photoDuplicates,
@@ -229,7 +229,7 @@ export async function submitRequest(f: FormData) {
     await db.transaction(async (tx) => {
       await tx.update(registrations).set({ status: "SUBMITTED", submittedAt: new Date(), submittedBy: u.fullName, updatedAt: new Date() }).where(eq(registrations.id, id));
       await logEvent(tx, id, u.fullName, r.status === "NEEDS_CORRECTION" ? "إعادة إرسال بعد الاستكمال" : "إرسال إلى لجنة القيد", w.label);
-      await notifyRoles([...REG_ROLES], `طلب قيد جديد — ${u.clubName}`, p.fullName, `/registration/requests/${id}`, undefined, tx);
+      await notifyStaff([...REG_ROLES], `طلب قيد جديد — ${u.clubName}`, p.fullName, `/registration/requests/${id}`, { clubId: u.clubId }, tx);
       if (r.originResponse === "PENDING" && r.fromClubId)
         await notifyClub(r.fromClubId, "طلب انتقال أحد لاعبيكم", `${p.fullName} — إلى ${u.clubName}`, "/club/origin", tx);
       await audit(u, "إرسال طلب", "Registration", id, null, tx);
@@ -289,7 +289,7 @@ export async function respondOrigin(f: FormData) {
     if (!agree && !reason) throw new UserError("سبب الاعتراض مطلوب");
     await db.update(registrations).set({ originResponse: agree ? "AGREED" : "OBJECTED", originReason: reason, originRespondedAt: new Date() }).where(eq(registrations.id, id));
     await logEvent(db, id, `${u.fullName} (${u.clubName})`, agree ? "موافقة النادي السابق" : "اعتراض النادي السابق", reason);
-    await notifyRoles([...REG_ROLES], agree ? "موافقة نادٍ على انتقال لاعب" : "اعتراض نادٍ على انتقال لاعب", u.clubName, `/registration/requests/${id}`);
+    await notifyStaff([...REG_ROLES], agree ? "موافقة نادٍ على انتقال لاعب" : "اعتراض نادٍ على انتقال لاعب", u.clubName, `/registration/requests/${id}`, { clubId: r.clubId });
     await notifyClub(r.clubId, agree ? "وافق النادي السابق على الانتقال" : "اعترض النادي السابق على الانتقال", reason, `/club/registrations/${id}`);
     await audit(u, agree ? "موافقة على انتقال" : "اعتراض على انتقال", "Registration", id, reason);
     return agree ? "تم تسجيل الموافقة" : "تم تسجيل الاعتراض وإبلاغ لجنة القيد";
@@ -379,7 +379,7 @@ export async function submitStaff(f: FormData) {
     const block = await clubBlockReason(u.clubId);
     if (block) throw new UserError(block);
     await db.update(staff).set({ status: "SUBMITTED", submittedAt: new Date() }).where(eq(staff.id, id));
-    await notifyRoles([...REG_ROLES], `طلب قيد إداري — ${u.clubName}`, ex.fullName, "/registration/staff");
+    await notifyStaff([...REG_ROLES], `طلب قيد إداري — ${u.clubName}`, ex.fullName, "/registration/staff", { clubId: u.clubId });
     await audit(u, "إرسال قيد إداري", "Staff", id);
     return "أُرسل للجنة القيد";
   });
@@ -475,7 +475,7 @@ export async function requestPostpone(f: FormData) {
     const documentKey = doc && doc.size ? (await saveUpload(doc, `docs/${u.clubId}`)).key : null;
     const pd = str(f, "proposedDate");
     await db.insert(matchRequests).values({ matchId, clubId: u.clubId, reason: req(f, "reason", "السبب"), proposedDate: pd ? new Date(pd + ":00+02:00") : null, documentKey, createdBy: u.fullName });
-    await notifyRoles(["COMP_HEAD", "COMP_STAFF"], `طلب تأجيل مباراة — ${u.clubName}`, null, "/competitions/requests");
+    await notifyStaff(["COMP_HEAD", "COMP_STAFF"], `طلب تأجيل مباراة — ${u.clubName}`, null, "/competitions/requests", { matchId });
     await audit(u, "طلب تأجيل مباراة", "Match", matchId);
     return "أُرسل طلب التأجيل إلى لجنة المسابقات";
   });

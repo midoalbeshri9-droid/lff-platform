@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { competitions, competitionTeams, matches, matchEvents, assignments, matchRequests, competitionSquads, registrations, clubs, competitionStages, stageTeams, settings } from "@/db/schema";
 import { addCharge } from "@/lib/finance";
 import { resolveStadium, stadiumBlock, blockWithHint } from "@/lib/stadiums";
+import { guard, inScopeClub, inScopeComp, inScopeMatch, inScopeStage, scopeOf } from "@/lib/scope";
 import { foreignOnPitchCheck, subsLimitCheck } from "@/lib/competition";
 import { requireUser } from "@/lib/auth";
 import { audit, notifyClub, notifyOfficial } from "@/lib/audit";
@@ -19,6 +20,7 @@ export async function saveCompetition(f: FormData) {
   const u = await requireUser("comp.manage");
   const id = int(f, "id");
   await attempt(id ? `/competitions/${id}?tab=settings` : "/competitions", async () => {
+    if (id) guard(await inScopeComp(u, id));
     const data = {
       seasonId: int(f, "seasonId")!, name: req(f, "name", "اسم المسابقة"), type: (str(f, "type") ?? "LEAGUE") as "LEAGUE",
       categoryId: int(f, "categoryId"), legs: int(f, "legs") ?? 2, pointsWin: int(f, "pointsWin") ?? 3, pointsDraw: int(f, "pointsDraw") ?? 1,
@@ -26,6 +28,8 @@ export async function saveCompetition(f: FormData) {
       maxForeignOnPitch: int(f, "maxForeignOnPitch"), squadListMax: int(f, "squadListMax"), yellowRules: str(f, "yellowRules"), entryFee: num(f, "entryFee"),
       yellowThreshold: int(f, "yellowThreshold") ?? 3, redBanMatches: int(f, "redBanMatches") ?? 1, startDate: str(f, "startDate"), notes: str(f, "notes"),
       tiebreak: ["H2H", "GD"].includes(str(f, "tiebreak") ?? "") ? str(f, "tiebreak")! : "LFF",
+      // مدير الدرجة: مسابقاته في درجته دائمًا
+      divisionId: u.divisionId ?? int(f, "divisionId"),
       maxSubs: int(f, "maxSubs") ?? 3, maxSubsExtra: int(f, "maxSubsExtra") ?? 1, maxLowerCategory: int(f, "maxLowerCategory"),
       noForeignGK: f.has("noForeignGK") ? f.get("noForeignGK") === "1" : true, forfeitGoals: int(f, "forfeitGoals") ?? 2,
     };
@@ -44,6 +48,7 @@ export async function setCompetitionStatus(f: FormData) {
   const u = await requireUser("comp.manage");
   const id = int(f, "id")!;
   await attempt(`/competitions/${id}`, async () => {
+    guard(await inScopeComp(u, id));
     const status = str(f, "status") as "DRAFT" | "ACTIVE" | "FINISHED";
     await db.update(competitions).set({ status }).where(eq(competitions.id, id));
     await audit(u, "تغيير حالة مسابقة", "Competition", id, status);
@@ -55,6 +60,8 @@ export async function addTeams(f: FormData) {
   const u = await requireUser("comp.manage");
   const id = int(f, "id")!;
   await attempt(`/competitions/${id}?tab=teams`, async () => {
+    guard(await inScopeComp(u, id));
+    for (const c of ints(f, "club")) guard(await inScopeClub(u, c));
     const clubIds = ints(f, "club");
     if (!clubIds.length) throw new UserError("اختر ناديًا واحدًا على الأقل");
     const group = str(f, "groupName");
@@ -71,6 +78,7 @@ export async function removeTeam(f: FormData) {
   const u = await requireUser("comp.manage");
   const id = int(f, "id")!;
   await attempt(`/competitions/${id}?tab=teams`, async () => {
+    guard(await inScopeComp(u, id));
     const clubId = int(f, "clubId")!;
     const [m] = await db.select({ id: matches.id }).from(matches).where(and(eq(matches.competitionId, id), or(eq(matches.homeClubId, clubId), eq(matches.awayClubId, clubId)))).limit(1);
     if (m) throw new UserError("للفريق مباريات مجدولة — احذف الجدول أولًا");
@@ -88,6 +96,8 @@ export async function makeFixtures(f: FormData) {
   const id = int(f, "id")!;
   const stageId = int(f, "stageId");
   await attempt(stageId ? stageBack(id, stageId) : `/competitions/${id}?tab=fixtures`, async () => {
+    guard(await inScopeComp(u, id));
+    if (stageId) guard(await inScopeStage(u, stageId));
     const st = await ensureStages(id);
     const target = stageId ?? (st.find((x) => x.status !== "DONE") ?? st[0]).id;
     const n = await generateStageFixtures(target);
@@ -101,6 +111,8 @@ export async function clearFixtures(f: FormData) {
   const id = int(f, "id")!;
   const stageId = int(f, "stageId");
   await attempt(stageId ? stageBack(id, stageId) : `/competitions/${id}?tab=fixtures`, async () => {
+    guard(await inScopeComp(u, id));
+    if (stageId) guard(await inScopeStage(u, stageId));
     if (stageId) await clearStageFixtures(stageId);
     else {
       const played = await db.select({ id: matches.id }).from(matches).where(and(eq(matches.competitionId, id), ne(matches.reportStatus, "NONE"))).limit(1);
@@ -128,6 +140,7 @@ export async function addStage(f: FormData) {
   const u = await requireUser("comp.manage");
   const id = int(f, "id")!;
   await attempt(`/competitions/${id}?tab=stages`, async () => {
+    guard(await inScopeComp(u, id));
     const st = await ensureStages(id);
     const data = stageData(f);
     const [s] = await db.insert(competitionStages).values({ ...data, competitionId: id, seq: (st[st.length - 1]?.seq ?? 0) + 1 }).returning();
@@ -141,6 +154,7 @@ export async function saveStage(f: FormData) {
   const stageId = int(f, "stageId")!;
   const s = await getStage(stageId);
   await attempt(stageBack(s.competitionId, stageId), async () => {
+    guard(await inScopeStage(u, stageId));
     const data = stageData(f);
     const [m] = await db.select({ id: matches.id }).from(matches).where(eq(matches.stageId, stageId)).limit(1);
     if (m && data.format !== s.format) throw new UserError("لا يمكن تغيير نظام مرحلة مجدولة — احذف جدولها أولًا");
@@ -155,6 +169,7 @@ export async function deleteStage(f: FormData) {
   const stageId = int(f, "stageId")!;
   const s = await getStage(stageId);
   await attempt(`/competitions/${s.competitionId}?tab=stages`, async () => {
+    guard(await inScopeStage(u, stageId));
     const [m] = await db.select({ id: matches.id }).from(matches).where(eq(matches.stageId, stageId)).limit(1);
     if (m) throw new UserError("للمرحلة مباريات — احذف جدولها أولًا");
     const st = await ensureStages(s.competitionId);
@@ -173,6 +188,8 @@ export async function stageAddTeams(f: FormData) {
   const stageId = int(f, "stageId")!;
   const s = await getStage(stageId);
   await attempt(stageBack(s.competitionId, stageId), async () => {
+    guard(await inScopeStage(u, stageId));
+    for (const c of ints(f, "club")) guard(await inScopeClub(u, c));
     const ids = ints(f, "club");
     if (!ids.length) throw new UserError("اختر فريقًا");
     const [m] = await db.select({ id: matches.id }).from(matches).where(eq(matches.stageId, stageId)).limit(1);
@@ -188,6 +205,7 @@ export async function stageRemoveTeam(f: FormData) {
   const stageId = int(f, "stageId")!;
   const s = await getStage(stageId);
   await attempt(stageBack(s.competitionId, stageId), async () => {
+    guard(await inScopeStage(u, stageId));
     const [m] = await db.select({ id: matches.id }).from(matches).where(eq(matches.stageId, stageId)).limit(1);
     if (m) throw new UserError("المرحلة مجدولة — احذف جدولها أولًا");
     await db.delete(stageTeams).where(and(eq(stageTeams.stageId, stageId), eq(stageTeams.clubId, int(f, "clubId")!)));
@@ -201,6 +219,7 @@ export async function stageDraw(f: FormData) {
   const stageId = int(f, "stageId")!;
   const s = await getStage(stageId);
   await attempt(stageBack(s.competitionId, stageId), async () => {
+    guard(await inScopeStage(u, stageId));
     const count = int(f, "groupsCount") ?? s.groupsCount ?? 2;
     const seeded = f.get("mode") === "seeded" ? ints(f, "seedOrder") : undefined;
     await drawGroups(stageId, count, seeded);
@@ -214,6 +233,7 @@ export async function stageSaveGroups(f: FormData) {
   const stageId = int(f, "stageId")!;
   const s = await getStage(stageId);
   await attempt(stageBack(s.competitionId, stageId), async () => {
+    guard(await inScopeStage(u, stageId));
     const map = new Map<number, string | null>();
     for (const clubId of ints(f, "team")) map.set(clubId, str(f, `g_${clubId}`));
     await setGroups(stageId, map);
@@ -227,6 +247,7 @@ export async function stageQualify(f: FormData) {
   const stageId = int(f, "stageId")!;
   const s = await getStage(stageId);
   await attempt(stageBack(s.competitionId, stageId), async () => {
+    guard(await inScopeStage(u, stageId));
     const per = int(f, "perGroup") ?? s.qualifyPerGroup ?? 2;
     const r = await qualifyToNext(stageId, per, (cid, sid) => standings(cid, sid));
     for (const t of await db.select().from(stageTeams).where(eq(stageTeams.stageId, r.next.id))) await notifyClub(t.clubId, "تأهل إلى المرحلة التالية", r.next.name, "/club/matches");
@@ -240,6 +261,7 @@ export async function stageNextRound(f: FormData) {
   const stageId = int(f, "stageId")!;
   const s = await getStage(stageId);
   await attempt(stageBack(s.competitionId, stageId), async () => {
+    guard(await inScopeStage(u, stageId));
     const r = await nextKnockoutRound(stageId);
     if (r.champion) {
       const [cl] = await db.select({ n: clubs.name }).from(clubs).where(eq(clubs.id, r.champion));
@@ -256,6 +278,7 @@ export async function setPenalties(f: FormData) {
   const u = await requireUser("comp.reports");
   const matchId = int(f, "matchId")!;
   await attempt(`/matches/${matchId}?tab=report`, async () => {
+    guard(await inScopeMatch(u, matchId));
     const hp = int(f, "homePens"), ap = int(f, "awayPens");
     if (hp != null && ap != null && hp === ap) throw new UserError("ركلات الترجيح لا تنتهي بالتعادل");
     await db.update(matches).set({ homePens: hp, awayPens: ap }).where(eq(matches.id, matchId));
@@ -269,6 +292,9 @@ export async function saveMatch(f: FormData) {
   const id = int(f, "id");
   const compId = int(f, "competitionId")!;
   await attempt(id ? `/matches/${id}` : `/competitions/${compId}?tab=fixtures`, async () => {
+    guard(await inScopeComp(u, compId));
+    if (id) guard(await inScopeMatch(u, id));
+    guard((await inScopeClub(u, int(f, "homeClubId"))) && (await inScopeClub(u, int(f, "awayClubId"))));
     const home = int(f, "homeClubId")!, away = int(f, "awayClubId")!;
     if (home === away) throw new UserError("لا يمكن أن يلعب الفريق ضد نفسه");
     let late48 = "";
@@ -307,6 +333,7 @@ export async function bulkSchedule(f: FormData) {
   const u = await requireUser("comp.manage");
   const compId = int(f, "competitionId")!;
   await attempt(`/competitions/${compId}?tab=fixtures`, async () => {
+    guard(await inScopeComp(u, compId));
     const ids = ints(f, "mid");
     let n = 0;
     for (const id of ids) {
@@ -331,6 +358,7 @@ export async function deleteMatch(f: FormData) {
   const id = int(f, "id")!;
   const [m] = await db.select().from(matches).where(eq(matches.id, id));
   await attempt(`/competitions/${m?.competitionId}?tab=fixtures`, async () => {
+    guard(await inScopeMatch(u, id));
     if (m.reportStatus !== "NONE") throw new UserError("للمباراة تقرير — لا يمكن حذفها");
     await db.delete(matches).where(eq(matches.id, id));
     await audit(u, "حذف مباراة", "Match", id);
@@ -342,6 +370,7 @@ export async function committeeLineup(f: FormData) {
   const u = await requireUser("comp.lineups");
   const matchId = int(f, "matchId")!, clubId = int(f, "clubId")!;
   await attempt(`/matches/${matchId}?tab=lineups`, async () => {
+    guard(await inScopeMatch(u, matchId));
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
     if (m.reportStatus === "APPROVED") throw new UserError("التقرير معتمد — لا يمكن تعديل القائمة");
     await saveLineup(matchId, clubId, f);
@@ -354,6 +383,7 @@ export async function addEvent(f: FormData) {
   const u = await requireUser("comp.reports");
   const matchId = int(f, "matchId")!;
   await attempt(`/matches/${matchId}?tab=report`, async () => {
+    guard(await inScopeMatch(u, matchId));
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
     if (m.reportStatus === "APPROVED") throw new UserError("التقرير معتمد");
     const clubId = int(f, "clubId")!;
@@ -371,6 +401,7 @@ export async function deleteEvent(f: FormData) {
   const u = await requireUser("comp.reports");
   const matchId = int(f, "matchId")!;
   await attempt(`/matches/${matchId}?tab=report`, async () => {
+    guard(await inScopeMatch(u, matchId));
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
     if (m.reportStatus === "APPROVED") throw new UserError("التقرير معتمد");
     await db.delete(matchEvents).where(and(eq(matchEvents.id, int(f, "eventId")!), eq(matchEvents.matchId, matchId)));
@@ -383,6 +414,7 @@ export async function setResult(f: FormData) {
   const u = await requireUser("comp.reports");
   const matchId = int(f, "matchId")!;
   await attempt(`/matches/${matchId}?tab=report`, async () => {
+    guard(await inScopeMatch(u, matchId));
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
     if (m.reportStatus === "APPROVED") throw new UserError("التقرير معتمد");
     await db.update(matches).set({ homeScore: int(f, "homeScore"), awayScore: int(f, "awayScore"), attendance: int(f, "attendance") }).where(eq(matches.id, matchId));
@@ -395,6 +427,7 @@ export async function approveReport(f: FormData) {
   const u = await requireUser("comp.reports");
   const matchId = int(f, "matchId")!;
   await attempt(`/matches/${matchId}?tab=report`, async () => {
+    guard(await inScopeMatch(u, matchId));
     let res = { home: 0, away: 0, suspensions: 0 };
     await db.transaction(async (tx) => {
       res = await approveMatch(tx, matchId, u.fullName);
@@ -410,6 +443,7 @@ export async function returnReport(f: FormData) {
   const u = await requireUser("comp.reports");
   const matchId = int(f, "matchId")!;
   await attempt(`/matches/${matchId}?tab=report`, async () => {
+    guard(await inScopeMatch(u, matchId));
     const reason = req(f, "reason", "سبب الإعادة");
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
     if (m.reportStatus !== "SUBMITTED") throw new UserError("لا يوجد تقرير مرسل");
@@ -429,6 +463,7 @@ export async function decideMatchRequest(f: FormData) {
     const decision = str(f, "decision_text");
     const [r] = await db.select().from(matchRequests).where(eq(matchRequests.id, id));
     if (!r || r.status !== "PENDING") throw new UserError("الطلب غير متاح");
+    guard(await inScopeMatch(u, r.matchId));
     if (!ok && !decision) throw new UserError("اكتب سبب الرفض");
     const newDate = fromLocalInput(str(f, "newDate"));
     await db.transaction(async (tx) => {
@@ -450,6 +485,7 @@ export async function saveSquadList(f: FormData) {
   const clubId = u.isClub ? u.clubId! : int(f, "clubId")!;
   const back = u.isClub ? `/club/competitions/${competitionId}` : `/competitions/${competitionId}?tab=squads&club=${clubId}`;
   await attempt(back, async () => {
+    if (!u.isClub) guard((await inScopeComp(u, competitionId)) && (await inScopeClub(u, clubId)));
     const [c] = await db.select().from(competitions).where(eq(competitions.id, competitionId));
     if (c.squadListMax == null) throw new UserError("هذه المسابقة لا تتطلب قائمة موسم");
     const ids = ints(f, "player");
@@ -471,6 +507,7 @@ export async function saveSquadList(f: FormData) {
 export async function saveRestHours(f: FormData) {
   const u = await requireUser("comp.manage");
   await attempt("/competitions/calendar", async () => {
+    guard(!u.divisionId);
     const v = String(Math.max(12, int(f, "hours") ?? 48));
     await db.insert(settings).values({ key: "min_rest_hours", value: v }).onConflictDoUpdate({ target: settings.key, set: { value: v } });
     await audit(u, "تعديل الحد الأدنى للراحة", "Setting", null, v);

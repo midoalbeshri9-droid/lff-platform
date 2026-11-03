@@ -2,13 +2,14 @@ import Link from "next/link";
 import { desc, eq, sql, and } from "drizzle-orm";
 import { db } from "@/db";
 import { officials, evaluations, seasons, matches, competitions } from "@/db/schema";
+import { scopeOf, compIn, officialIn, guard, guardPage, inScopeOfficial, inScopeMatch } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { getCurrentSeason } from "@/lib/registration";
 import { OFFICIAL_TYPE, OFFICIAL_GRADE } from "@/lib/labels";
 import { PageHead, Empty, type SP } from "@/components/ui";
 
 export default async function Evaluations({ searchParams }: { searchParams: SP }) {
-  await requireUser("ref.evals");
+  const u = await requireUser("ref.evals");
   const sp = await searchParams;
   const cur = await getCurrentSeason();
   const ss = await db.select().from(seasons).orderBy(desc(seasons.startDate));
@@ -18,7 +19,7 @@ export default async function Evaluations({ searchParams }: { searchParams: SP }
     min: sql<number>`min(${evaluations.score})`, max: sql<number>`max(${evaluations.score})`,
   }).from(evaluations).innerJoin(officials, eq(officials.id, evaluations.officialId)).innerJoin(matches, eq(matches.id, evaluations.matchId))
     .innerJoin(competitions, eq(competitions.id, matches.competitionId))
-    .where(and(eq(evaluations.isSubmitted, true), eq(competitions.seasonId, seasonId)))
+    .where(and(compIn(await scopeOf(u), competitions.id), eq(evaluations.isSubmitted, true), eq(competitions.seasonId, seasonId)))
     .groupBy(officials.id).orderBy(sql`avg(${evaluations.score}) desc`);
   return (
     <>

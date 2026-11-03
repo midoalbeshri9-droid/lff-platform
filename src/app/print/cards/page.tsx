@@ -4,6 +4,7 @@ import { eq, inArray, desc } from "drizzle-orm";
 import QRCode from "qrcode";
 import { db } from "@/db";
 import { registrations, players, clubs, seasons, ageCategories, cardTemplates, settings } from "@/db/schema";
+import { scopeOf } from "@/lib/scope";
 import { getCurrentUser } from "@/lib/auth";
 import { POSITION, PRO_LEVEL, REG_TYPE } from "@/lib/labels";
 import { fmtDate } from "@/lib/util";
@@ -30,7 +31,8 @@ export default async function PrintCards({ searchParams }: { searchParams: Promi
     .from(registrations).innerJoin(players, eq(players.id, registrations.playerId)).innerJoin(clubs, eq(clubs.id, registrations.clubId))
     .innerJoin(seasons, eq(seasons.id, registrations.seasonId)).leftJoin(ageCategories, eq(ageCategories.id, registrations.categoryId))
     .where(inArray(registrations.id, ids));
-  const ok = rows.filter((x) => x.r.status === "APPROVED");
+  const sc = await scopeOf(u);
+  const ok = rows.filter((x) => x.r.status === "APPROVED" && (!sc || sc.clubIds.includes(x.r.clubId)));
   const base = appUrl();
   const cards = await Promise.all(ok.map(async ({ r, p, club, season, cat }) => ({
     id: r.id,

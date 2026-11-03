@@ -3,7 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { assignments, matches, matchEvents, matchSquads, evaluations, commissionerReports } from "@/db/schema";
 import { requireOfficialUser } from "@/lib/auth";
-import { audit, notifyRoles } from "@/lib/audit";
+import { audit, notifyRoles, notifyStaff } from "@/lib/audit";
 import { attempt, str, req, int, UserError } from "@/lib/util";
 import { foreignOnPitchCheck, subsLimitCheck } from "@/lib/competition";
 
@@ -69,7 +69,7 @@ export async function refSaveReport(f: FormData) {
       ...(submit ? { reportStatus: "SUBMITTED" as const, reportSubmittedAt: new Date(), reportReturn: null } : {}),
     }).where(eq(matches.id, matchId));
     if (submit) {
-      await notifyRoles(["COMP_HEAD", "COMP_STAFF"], "تقرير مباراة جديد", `من الحكم ${u.fullName}`, `/matches/${matchId}`);
+      await notifyStaff(["COMP_HEAD", "COMP_STAFF"], "تقرير مباراة جديد", `من الحكم ${u.fullName}`, `/matches/${matchId}`, { matchId });
       await audit(u, "إرسال تقرير الحكم", "Match", matchId);
     }
     return submit ? "تم إرسال التقرير إلى لجنة المسابقات" : "تم حفظ المسودة";
@@ -99,7 +99,7 @@ export async function saveEvaluation(f: FormData) {
       await db.insert(evaluations).values(row).onConflictDoUpdate({ target: [evaluations.matchId, evaluations.officialId], set: row });
     }
     if (submit) {
-      await notifyRoles(["REF_HEAD", "COMP_HEAD"], "تقييم الحكام من مراقب المباراة", u.fullName, `/matches/${matchId}?tab=officials`);
+      await notifyStaff(["REF_HEAD", "COMP_HEAD"], "تقييم الحكام من مراقب المباراة", u.fullName, `/matches/${matchId}?tab=officials`, { matchId });
       await audit(u, "إرسال تقييم الحكام", "Match", matchId);
     }
     return submit ? "تم إرسال التقييم إلى لجنة الحكام" : "تم حفظ المسودة";
@@ -122,7 +122,7 @@ export async function saveCommissionerReport(f: FormData) {
     };
     await db.insert(commissionerReports).values(row).onConflictDoUpdate({ target: commissionerReports.matchId, set: row });
     if (submit) {
-      await notifyRoles(["COMP_HEAD", "COMP_STAFF"], "تقرير مراقب مباراة", u.fullName, `/matches/${matchId}?tab=officials`);
+      await notifyStaff(["COMP_HEAD", "COMP_STAFF"], "تقرير مراقب مباراة", u.fullName, `/matches/${matchId}?tab=officials`, { matchId });
       await audit(u, "إرسال تقرير مراقب المباراة", "Match", matchId);
     }
     return submit ? "تم إرسال التقرير" : "تم حفظ المسودة";
@@ -142,7 +142,7 @@ export async function declineAssignment(f: FormData) {
     const reason = req(f, "reason", "سبب الاعتذار");
     await db.update(assignments).set({ status: "DECLINED", declineReason: reason }).where(eq(assignments.id, id));
     const obs = a.role === "COMMISSIONER" || a.role === "REF_OBSERVER";
-    await notifyRoles(obs ? ["COMP_HEAD", "COMP_STAFF"] : ["REF_HEAD", "REF_STAFF"], `اعتذار عن تعيين${obs ? " مراقب مباراة" : ""} — ${u.fullName}`, reason, obs ? `/matches/${matchId}?tab=officials` : `/referees/assignments/${matchId}`);
+    await notifyStaff(obs ? ["COMP_HEAD", "COMP_STAFF"] : ["REF_HEAD", "REF_STAFF"], `اعتذار عن تعيين${obs ? " مراقب مباراة" : ""} — ${u.fullName}`, reason, obs ? `/matches/${matchId}?tab=officials` : `/referees/assignments/${matchId}`, { matchId });
     await audit(u, "اعتذار عن تعيين", "Match", matchId, reason);
     return obs ? "تم تسجيل اعتذارك وإبلاغ لجنة المسابقات" : "تم تسجيل اعتذارك وإبلاغ لجنة الحكام";
   });

@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { and, eq, ilike, or, desc, sql } from "drizzle-orm";
+import { and, eq, ilike, or, desc, sql, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { players, registrations, clubs } from "@/db/schema";
+import { scopeOf, clubIn, regIn, guardPage, inScopeReg, inScopePlayer } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { PLAYER_STATUS, POSITION } from "@/lib/labels";
 import { fmtDate } from "@/lib/util";
@@ -9,10 +10,11 @@ import { fileUrl } from "@/lib/storage";
 import { PageHead, Badge, Empty, type SP } from "@/components/ui";
 
 export default async function PlayersList({ searchParams }: { searchParams: SP }) {
-  await requireUser("reg.view");
+  const u = await requireUser("reg.view");
+  const sc = await scopeOf(u);
   const sp = await searchParams;
   const q = sp.q?.trim();
-  const allClubs = await db.select({ id: clubs.id, name: clubs.name }).from(clubs).orderBy(clubs.name);
+  const allClubs = await db.select({ id: clubs.id, name: clubs.name }).from(clubs).where(clubIn(sc, clubs.id)).orderBy(clubs.name);
   const rows = await db
     .select({
       p: players,
@@ -20,6 +22,7 @@ export default async function PlayersList({ searchParams }: { searchParams: SP }
     })
     .from(players)
     .where(and(
+      sc ? or(inArray(players.id, db.select({ id: registrations.playerId }).from(registrations).where(regIn(sc))), clubIn(sc, players.createdByClubId)) : undefined,
       q ? or(ilike(players.fullName, `%${q}%`), ilike(players.nationalId, `%${q}%`), ilike(players.passportNo, `%${q}%`), ilike(players.fullNameEn, `%${q}%`)) : undefined,
       sp.status ? eq(players.status, sp.status as "ACTIVE") : undefined,
       sp.foreign === "1" ? eq(players.isForeign, true) : undefined,

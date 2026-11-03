@@ -4,6 +4,7 @@ import { eq, desc, and } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { players, registrations, clubs, seasons, suspensions, matchEvents, matches, competitions } from "@/db/schema";
+import { scopeOf, clubIn, regIn, guardPage, inScopeReg, inScopePlayer } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { REG_STATUS, REG_TYPE, PLAYER_STATUS, EVENT_TYPE } from "@/lib/labels";
 import { fmtDate, fmtDateTime, today } from "@/lib/util";
@@ -19,6 +20,7 @@ export default async function PlayerFile({ params, searchParams }: { params: Pro
   const sp = await searchParams;
   const [p] = await db.select().from(players).where(eq(players.id, id));
   if (!p) notFound();
+  guardPage(await inScopePlayer(u, id));
   const fc = alias(clubs, "fc");
   const [regs, susp, evs] = await Promise.all([
     db.select({ r: registrations, club: clubs.name, from: fc.name, season: seasons.name }).from(registrations)

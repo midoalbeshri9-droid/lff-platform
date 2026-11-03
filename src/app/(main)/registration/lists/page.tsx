@@ -1,6 +1,7 @@
 import { desc, eq, and, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { seasons, clubs, ageCategories, listTemplates, registrations } from "@/db/schema";
+import { scopeOf, clubIn, regIn, guardPage, inScopeReg, inScopePlayer } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { getCurrentSeason } from "@/lib/registration";
 import { ROSTER_COLUMNS, DEFAULT_COLUMNS } from "@/lib/roster";
@@ -9,13 +10,14 @@ import { Submit, CheckAll } from "@/components/Client";
 import { saveListTemplate, deleteListTemplate } from "../actions";
 
 export default async function Lists({ searchParams }: { searchParams: SP }) {
-  await requireUser("reg.lists");
+  const u = await requireUser("reg.lists");
+  const sc = await scopeOf(u);
   const sp = await searchParams;
   const cur = await getCurrentSeason();
   const [ss, cl, cats, tpls] = await Promise.all([
     db.select().from(seasons).orderBy(desc(seasons.startDate)),
     db.select({ id: clubs.id, name: clubs.name, n: sql<number>`(select count(*)::int from ${registrations} r where r.club_id = "clubs"."id" and r.season_id = ${cur?.id ?? 0} and r.status = 'APPROVED')` })
-      .from(clubs).where(eq(clubs.isActive, true)).orderBy(clubs.name),
+      .from(clubs).where(and(eq(clubs.isActive, true), clubIn(sc, clubs.id))).orderBy(clubs.name),
     db.select().from(ageCategories).where(and(eq(ageCategories.isActive, true))).orderBy(ageCategories.sortOrder),
     db.select().from(listTemplates).orderBy(listTemplates.name),
   ]);

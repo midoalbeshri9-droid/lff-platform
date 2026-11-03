@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { and, eq, sql, gte, lte, isNull, asc } from "drizzle-orm";
+import { and, eq, sql, gte, lte, isNull, asc, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { registrations, matches, assignments, suspensions, registrationWindows, clubs, competitions, contracts, players, charges, appeals, sanctions } from "@/db/schema";
 import { money } from "@/lib/util";
+import { scopeOf, regIn, compIn, clubIn } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { getCurrentSeason } from "@/lib/registration";
 import { ROLE_LABEL } from "@/lib/labels";
@@ -21,33 +22,35 @@ export default async function Dashboard() {
   const week = new Date(Date.now() + 7 * 864e5);
   const windows = await db.select().from(registrationWindows).where(and(eq(registrationWindows.seasonId, sid), isNull(registrationWindows.clubId), eq(registrationWindows.isClosed, false), gte(registrationWindows.endDate, t))).orderBy(asc(registrationWindows.startDate)).limit(2);
   const h = alias(clubs, "h"), a = alias(clubs, "a");
+  const sc = await scopeOf(u);
+  const R = regIn(sc), C = compIn(sc, matches.competitionId);
   const [submitted, approved, correction, origin, reports, upcoming, unassigned, drafts, susp] = await Promise.all([
-    one(db.select({ n }).from(registrations).where(eq(registrations.status, "SUBMITTED"))),
-    one(db.select({ n }).from(registrations).where(and(eq(registrations.seasonId, sid), eq(registrations.status, "APPROVED")))),
-    one(db.select({ n }).from(registrations).where(eq(registrations.status, "NEEDS_CORRECTION"))),
-    one(db.select({ n }).from(registrations).where(and(eq(registrations.status, "SUBMITTED"), eq(registrations.originResponse, "OBJECTED")))),
-    one(db.select({ n }).from(matches).where(eq(matches.reportStatus, "SUBMITTED"))),
+    one(db.select({ n }).from(registrations).where(and(R, eq(registrations.status, "SUBMITTED")))),
+    one(db.select({ n }).from(registrations).where(and(R, eq(registrations.seasonId, sid), eq(registrations.status, "APPROVED")))),
+    one(db.select({ n }).from(registrations).where(and(R, eq(registrations.status, "NEEDS_CORRECTION")))),
+    one(db.select({ n }).from(registrations).where(and(R, eq(registrations.status, "SUBMITTED"), eq(registrations.originResponse, "OBJECTED")))),
+    one(db.select({ n }).from(matches).where(and(C, eq(matches.reportStatus, "SUBMITTED")))),
     db.select({ m: matches, home: h.name, away: a.name, comp: competitions.name,
       crew: sql<number>`(select count(*)::int from ${assignments} x where x.match_id = "matches"."id" and x.status = 'APPROVED')` })
       .from(matches).innerJoin(h, eq(h.id, matches.homeClubId)).innerJoin(a, eq(a.id, matches.awayClubId)).innerJoin(competitions, eq(competitions.id, matches.competitionId))
-      .where(and(gte(matches.kickoff, new Date()), lte(matches.kickoff, week), eq(matches.status, "SCHEDULED"))).orderBy(asc(matches.kickoff)).limit(10),
-    one(db.select({ n }).from(matches).where(and(gte(matches.kickoff, new Date()), eq(matches.status, "SCHEDULED"), sql`not exists (select 1 from ${assignments} x where x.match_id = "matches"."id" and x.role = 'REFEREE')`))),
-    one(db.select({ n }).from(assignments).where(eq(assignments.status, "DRAFT"))),
-    one(db.select({ n }).from(suspensions).where(and(eq(suspensions.isLifted, false), sql`(${suspensions.kind} = 'MATCHES' and ${suspensions.matchesTotal} > ${suspensions.matchesServed}) or (${suspensions.kind} = 'ADMIN' and (${suspensions.endDate} is null or ${suspensions.endDate} >= ${t}))`))),
+      .where(and(C, gte(matches.kickoff, new Date()), lte(matches.kickoff, week), eq(matches.status, "SCHEDULED"))).orderBy(asc(matches.kickoff)).limit(10),
+    one(db.select({ n }).from(matches).where(and(C, gte(matches.kickoff, new Date()), eq(matches.status, "SCHEDULED"), sql`not exists (select 1 from ${assignments} x where x.match_id = "matches"."id" and x.role = 'REFEREE')`))),
+    one(db.select({ n }).from(assignments).innerJoin(matches, eq(matches.id, assignments.matchId)).where(and(C, eq(assignments.status, "DRAFT")))),
+    one(db.select({ n }).from(suspensions).where(and(sc ? inArray(suspensions.playerId, db.select({ id: registrations.playerId }).from(registrations).where(R)) : undefined, eq(suspensions.isLifted, false), sql`(${suspensions.kind} = 'MATCHES' and ${suspensions.matchesTotal} > ${suspensions.matchesServed}) or (${suspensions.kind} = 'ADMIN' and (${suspensions.endDate} is null or ${suspensions.endDate} >= ${t}))`))),
   ]);
   const soon = new Date(Date.now() + 60 * 864e5).toISOString().slice(0, 10);
   const ending = u.can("reg.view") ? await db.select({ c: contracts, name: players.fullName, club: clubs.name }).from(contracts)
     .innerJoin(players, eq(players.id, contracts.playerId)).innerJoin(clubs, eq(clubs.id, contracts.clubId))
-    .where(and(eq(contracts.status, "ACTIVE"), lte(contracts.endDate, soon))).orderBy(contracts.endDate).limit(10) : [];
+    .where(and(clubIn(sc, contracts.clubId), eq(contracts.status, "ACTIVE"), lte(contracts.endDate, soon))).orderBy(contracts.endDate).limit(10) : [];
   const fin = u.can("fin.view") ? (await db.select({
     recv: sql<string>`coalesce(sum(${charges.amount} - ${charges.paidAmount}) filter (where ${charges.direction} = 'IN' and ${charges.status} in ('OPEN','PARTIAL')), 0)`,
     pay: sql<string>`coalesce(sum(${charges.amount} - ${charges.paidAmount}) filter (where ${charges.direction} = 'OUT' and ${charges.status} in ('OPEN','PARTIAL')), 0)`,
   }).from(charges))[0] : null;
-  const pendingAppeals = u.can("comp.view") ? await one(db.select({ n }).from(appeals).where(eq(appeals.status, "PENDING"))) : 0;
-  const activeSanctions = u.can("comp.view") ? await one(db.select({ n }).from(sanctions).where(eq(sanctions.status, "ACTIVE"))) : 0;
+  const pendingAppeals = u.can("comp.view") ? await one(db.select({ n }).from(appeals).innerJoin(sanctions, eq(sanctions.id, appeals.sanctionId)).where(and(clubIn(sc, sanctions.clubId), eq(appeals.status, "PENDING")))) : 0;
+  const activeSanctions = u.can("comp.view") ? await one(db.select({ n }).from(sanctions).where(and(clubIn(sc, sanctions.clubId), eq(sanctions.status, "ACTIVE")))) : 0;
   return (
     <>
-      <PageHead title={`مرحبًا، ${u.fullName}`} sub={`${ROLE_LABEL[u.role]} — الموسم ${season?.name ?? "—"}`} />
+      <PageHead title={`مرحبًا، ${u.fullName}`} sub={`${ROLE_LABEL[u.role]}${sc ? ` — ${sc.divisionName}` : ""} — الموسم ${season?.name ?? "—"}`} />
       {u.can("reg.view") && (
         <>
           <h2>لجنة القيد وأوضاع اللاعبين</h2>

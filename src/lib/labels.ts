@@ -1,5 +1,7 @@
 // التسميات العربية لكل القيم الثابتة
 export const ROLE_LABEL: Record<string, string> = {
+  DIV_MANAGER: "مدير درجة / مسابقة",
+  DIV_STAFF: "موظف درجة",
   SEC_STAFF: "موظف الأمانة العامة",
   ADMIN: "مدير المنظومة",
   PRESIDENT: "رئيس الاتحاد",

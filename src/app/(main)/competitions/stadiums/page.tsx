@@ -3,6 +3,7 @@ import { eq, sql, gte, and } from "drizzle-orm";
 import { db } from "@/db";
 import { stadiums, clubs, matches } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
+import { scopeOf, clubIn } from "@/lib/scope";
 import { stadiumBlock } from "@/lib/stadiums";
 import { STADIUM_STATUS } from "@/lib/labels";
 import { fmtDate, today } from "@/lib/util";
@@ -16,7 +17,7 @@ export default async function Stadiums({ searchParams }: { searchParams: SP }) {
   const rows = (await db.select().from(stadiums).orderBy(stadiums.city, stadiums.name)).map((s) => ({ s }));
   const upcoming = await db.select({ id: matches.stadiumId, n: sql<number>`count(*)::int` }).from(matches)
     .where(and(eq(matches.status, "SCHEDULED"), gte(matches.kickoff, new Date()))).groupBy(matches.stadiumId);
-  const cl = await db.select({ id: clubs.id, name: clubs.name, city: clubs.city, main: clubs.mainStadiumId, backup: clubs.backupStadiumId }).from(clubs).where(eq(clubs.isActive, true)).orderBy(clubs.name);
+  const cl = await db.select({ id: clubs.id, name: clubs.name, city: clubs.city, main: clubs.mainStadiumId, backup: clubs.backupStadiumId }).from(clubs).where(and(eq(clubs.isActive, true), clubIn(await scopeOf(u), clubs.id))).orderBy(clubs.name);
   const usedBy = (id: number) => cl.filter((c) => c.main === id || c.backup === id).map((c) => `${c.name}${c.main === id ? "" : " (احتياطي)"}`);
   const t = today();
   const soon = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);

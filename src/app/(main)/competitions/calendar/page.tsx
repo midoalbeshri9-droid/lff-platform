@@ -2,6 +2,7 @@ import Link from "next/link";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { competitions, clubs, matches, settings } from "@/db/schema";
+import { scopeOf, compIn, clubIn } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { calendarMatches, findConflicts, type Conflict } from "@/lib/calendar";
 import { PageHead, Flash, Field, type SP } from "@/components/ui";
@@ -21,13 +22,14 @@ export default async function Calendar({ searchParams }: { searchParams: SP }) {
   const [y, mo] = (sp.m ?? `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}`).split("-").map(Number);
   const from = new Date(Date.UTC(y, mo - 1, 1, -2)), to = new Date(Date.UTC(y, mo, 1, -2) - 1);
   const compId = sp.comp ? Number(sp.comp) : undefined, clubId = sp.club ? Number(sp.club) : undefined;
-  const ms = await calendarMatches(from, to, { compId, clubId });
-  const conflicts = (await findConflicts(from, to)).filter((c) => !compId && !clubId ? true : c.matchIds.some((id) => ms.some((m) => m.id === id)));
+  const sc = await scopeOf(u);
+  const ms = (await calendarMatches(from, to, { compId, clubId })).filter((m) => !sc || sc.compIds.includes(m.compId));
+  const conflicts = (await findConflicts(from, to)).filter((c) => (!compId && !clubId && !sc) ? true : c.matchIds.some((id) => ms.some((m) => m.id === id)));
   const bad = new Set(conflicts.flatMap((c) => c.matchIds));
   const [{ n: unscheduled }] = await db.select({ n: sql<number>`count(*)::int` }).from(matches)
-    .where(and(isNull(matches.kickoff), ne(matches.status, "CANCELLED"), compId ? eq(matches.competitionId, compId) : undefined));
-  const comps = await db.select({ id: competitions.id, name: competitions.name }).from(competitions).where(ne(competitions.status, "FINISHED"));
-  const cl = await db.select({ id: clubs.id, name: clubs.name }).from(clubs).where(eq(clubs.isActive, true)).orderBy(clubs.name);
+    .where(and(isNull(matches.kickoff), ne(matches.status, "CANCELLED"), compId ? eq(matches.competitionId, compId) : undefined, compIn(sc, matches.competitionId)));
+  const comps = await db.select({ id: competitions.id, name: competitions.name }).from(competitions).where(and(ne(competitions.status, "FINISHED"), compIn(sc, competitions.id)));
+  const cl = await db.select({ id: clubs.id, name: clubs.name }).from(clubs).where(and(eq(clubs.isActive, true), clubIn(sc, clubs.id))).orderBy(clubs.name);
   const [rest] = await db.select().from(settings).where(eq(settings.key, "min_rest_hours"));
 
   // شبكة الشهر تبدأ بالسبت
@@ -89,7 +91,7 @@ export default async function Calendar({ searchParams }: { searchParams: SP }) {
             ))}</tbody></table>
           )}
         </div>
-        {u.can("comp.manage") && (
+        {u.can("comp.manage") && !sc && (
           <form action={saveRestHours} className="card form">
             <h3>قواعد الكشف</h3>
             <Field label="أقل فاصل بين مباراتين للنادي (ساعة)" hint="م49 تمنح 3-4 أيام راحة بعد المباريات الخارجية"><input type="number" name="hours" min={12} defaultValue={rest?.value ?? "48"} /></Field>

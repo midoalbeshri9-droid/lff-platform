@@ -3,6 +3,7 @@ import { and, eq, desc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { sanctions, clubs, players, staff, competitions } from "@/db/schema";
+import { scopeOf, clubIn, compIn, officialIn, regIn, guardPage, inScopeClub, inScopeComp, inScopeMatch, inScopePlayer, inScopeReg, inScopeOfficial, inScopeSanction, inScopeStaff } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { SANCTION_TYPE, SANCTION_TARGET, SANCTION_STATUS } from "@/lib/labels";
 import { fmtDate, money } from "@/lib/util";
@@ -11,11 +12,12 @@ import { PageHead, Flash, Badge, Empty, Options, type SP } from "@/components/ui
 export default async function Sanctions({ searchParams }: { searchParams: SP }) {
   const u = await requireUser("comp.view", "comp.sanctions");
   const sp = await searchParams;
-  const cl = await db.select({ id: clubs.id, name: clubs.name }).from(clubs).orderBy(clubs.name);
+  const sc = await scopeOf(u);
+  const cl = await db.select({ id: clubs.id, name: clubs.name }).from(clubs).where(clubIn(sc, clubs.id)).orderBy(clubs.name);
   const rows = await db.select({ s: sanctions, club: clubs.name, player: players.fullName, staffName: staff.fullName, comp: competitions.name })
     .from(sanctions).innerJoin(clubs, eq(clubs.id, sanctions.clubId)).leftJoin(players, eq(players.id, sanctions.playerId))
     .leftJoin(staff, eq(staff.id, sanctions.staffId)).leftJoin(competitions, eq(competitions.id, sanctions.competitionId))
-    .where(and(sp.club ? eq(sanctions.clubId, Number(sp.club)) : undefined, sp.type ? eq(sanctions.type, sp.type as "FINE") : undefined,
+    .where(and(clubIn(sc, sanctions.clubId), sp.club ? eq(sanctions.clubId, Number(sp.club)) : undefined, sp.type ? eq(sanctions.type, sp.type as "FINE") : undefined,
       sp.target ? eq(sanctions.targetType, sp.target as "CLUB") : undefined, sp.status ? eq(sanctions.status, sp.status as "ACTIVE") : undefined))
     .orderBy(desc(sanctions.id)).limit(400);
   void alias;

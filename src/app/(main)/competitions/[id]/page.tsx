@@ -3,10 +3,11 @@ import { notFound } from "next/navigation";
 import { and, eq, desc, asc, notInArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { competitions, competitionTeams, clubs, matches, seasons, ageCategories, suspensions, players, matchEvents, registrations, competitionSquads, stageTeams } from "@/db/schema";
+import { competitions, competitionTeams, clubs, matches, seasons, ageCategories, suspensions, players, matchEvents, registrations, competitionSquads, stageTeams, divisions } from "@/db/schema";
 import { sql } from "drizzle-orm";
 import { SquadListForm } from "@/components/SquadList";
 import { POSITION } from "@/lib/labels";
+import { scopeOf, clubIn, compIn, officialIn, regIn, guardPage, inScopeClub, inScopeComp, inScopeMatch, inScopePlayer, inScopeReg, inScopeOfficial, inScopeSanction, inScopeStaff } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { standings, topScorers } from "@/lib/competition";
 import { allStadiums } from "@/lib/stadiums";
@@ -28,6 +29,8 @@ export default async function Competition({ params, searchParams }: { params: Pr
   const tab = sp.tab ?? "fixtures";
   const [c] = await db.select().from(competitions).where(eq(competitions.id, id));
   if (!c) notFound();
+  guardPage(await inScopeComp(u, id));
+  const sc = await scopeOf(u);
   const [season] = await db.select().from(seasons).where(eq(seasons.id, c.seasonId));
   const teams = await db.select({ t: competitionTeams, club: clubs }).from(competitionTeams).innerJoin(clubs, eq(clubs.id, competitionTeams.clubId))
     .where(eq(competitionTeams.competitionId, id)).orderBy(competitionTeams.groupName, clubs.name);
@@ -57,8 +60,8 @@ export default async function Competition({ params, searchParams }: { params: Pr
       {tab === "discipline" && <Discipline id={id} />}
       {tab === "fairplay" && <FairPlay id={id} />}
       {tab === "squads" && c.squadListMax != null && <Squads c={c} teams={teams} clubId={sp.club ? Number(sp.club) : teams[0]?.club.id} canEdit={u.can("comp.lineups")} />}
-      {tab === "teams" && <Teams id={id} manage={manage} teams={teams} groups={stages[0]?.format === "GROUPS"} />}
-      {tab === "settings" && <Settings c={c} manage={manage} />}
+      {tab === "teams" && <Teams id={id} manage={manage} teams={teams} groups={stages[0]?.format === "GROUPS"} divisionId={sc?.divisionId ?? null} />}
+      {tab === "settings" && <Settings c={c} manage={manage} federation={!sc} />}
     </>
   );
 }
@@ -380,9 +383,10 @@ async function Discipline({ id }: { id: number }) {
   );
 }
 
-async function Teams({ id, manage, teams, groups }: { id: number; manage: boolean; teams: { t: { groupName: string | null }; club: { id: number; name: string; city: string | null } }[]; groups: boolean }) {
+async function Teams({ id, manage, teams, groups, divisionId }: { id: number; manage: boolean; teams: { t: { groupName: string | null }; club: { id: number; name: string; city: string | null } }[]; groups: boolean; divisionId: number | null }) {
   const ids = teams.map((t) => t.club.id);
-  const others = await db.select({ id: clubs.id, name: clubs.name }).from(clubs).where(and(eq(clubs.isActive, true), ids.length ? notInArray(clubs.id, ids) : undefined)).orderBy(clubs.name);
+  // مدير الدرجة: أندية درجته فقط
+  const others = await db.select({ id: clubs.id, name: clubs.name }).from(clubs).where(and(eq(clubs.isActive, true), divisionId ? eq(clubs.divisionId, divisionId) : undefined, ids.length ? notInArray(clubs.id, ids) : undefined)).orderBy(clubs.name);
   return (
     <div className="grid g2">
       <div className="card table-wrap">
@@ -406,13 +410,15 @@ async function Teams({ id, manage, teams, groups }: { id: number; manage: boolea
   );
 }
 
-async function Settings({ c, manage }: { c: typeof competitions.$inferSelect; manage: boolean }) {
+async function Settings({ c, manage, federation }: { c: typeof competitions.$inferSelect; manage: boolean; federation: boolean }) {
+  const dv = federation ? await db.select().from(divisions).orderBy(divisions.level) : [];
   const ss = await db.select().from(seasons).orderBy(desc(seasons.startDate));
   const cats = await db.select().from(ageCategories).orderBy(ageCategories.sortOrder);
   return (
     <form action={saveCompetition} className="card form f3">
       <input type="hidden" name="id" value={c.id} />
       <Field label="الاسم"><input type="text" name="name" defaultValue={c.name} required /></Field>
+      {federation ? <Field label="الدرجة" hint="فارغ = مسابقة اتحادية"><select name="divisionId" defaultValue={c.divisionId ?? ""}><option value="">— اتحادية —</option>{dv.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field> : null}
       <Field label="الموسم"><select name="seasonId" defaultValue={c.seasonId}>{ss.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
       <Field label="النظام عند الإنشاء" hint="المراحل تُدار من تبويب «المراحل»"><select name="type" defaultValue={c.type}><Options map={COMP_TYPE} /></select></Field>
       <Field label="كسر التعادل في الترتيب"><select name="tiebreak" defaultValue={c.tiebreak}><Options map={TIEBREAK} /></select></Field>

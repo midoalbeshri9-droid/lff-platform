@@ -6,6 +6,7 @@ import {
   registrations, registrationDocuments, players, suspensions, seasons, registrationWindows, ageCategories, documentTypes,
   listTemplates, cardTemplates, cardPrints, settings, staff, type CardElement,
 } from "@/db/schema";
+import { guard, scopeOf, inScopeReg, inScopePlayer, inScopeComp, inScopeStaff } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { audit, notifyClub } from "@/lib/audit";
 import { approveRegistration, logEvent, missingDocs, categoryFor, assertForeignQuota } from "@/lib/registration";
@@ -19,6 +20,7 @@ export async function reviewDoc(f: FormData) {
   const id = int(f, "id")!, docId = int(f, "docId")!;
   const ok = f.get("decision") === "approve";
   await attempt(`/registration/requests/${id}`, async () => {
+    guard(await inScopeReg(u, id));
     const reason = str(f, "reason");
     if (!ok && !reason) throw new UserError("اكتب سبب رفض المستند ليظهر للنادي");
     const [d] = await db.select().from(registrationDocuments).where(and(eq(registrationDocuments.id, docId), eq(registrationDocuments.registrationId, id)));
@@ -36,6 +38,7 @@ export async function approveAllDocs(f: FormData) {
   const u = await requireUser("reg.review");
   const id = int(f, "id")!;
   await attempt(`/registration/requests/${id}`, async () => {
+    guard(await inScopeReg(u, id));
     await db.update(registrationDocuments)
       .set({ status: "APPROVED", reviewedAt: new Date(), reviewedBy: u.fullName, rejectionReason: null })
       .where(and(eq(registrationDocuments.registrationId, id), eq(registrationDocuments.status, "PENDING")));
@@ -49,6 +52,7 @@ export async function decide(f: FormData) {
   const id = int(f, "id")!;
   const decision = String(f.get("decision"));
   await attempt(`/registration/requests/${id}`, async () => {
+    guard(await inScopeReg(u, id));
     const reason = str(f, "reason");
     const [r] = await db.select().from(registrations).where(eq(registrations.id, id));
     if (!r) throw new UserError("الطلب غير موجود");
@@ -94,6 +98,7 @@ export async function editPlayer(f: FormData) {
   const u = await requireUser("reg.edit");
   const id = int(f, "playerId")!;
   await attempt(`/registration/players/${id}`, async () => {
+    guard(await inScopePlayer(u, id));
     const [before] = await db.select().from(players).where(eq(players.id, id));
     const nid = str(f, "nationalId");
     if (nid && !/^[0-9]{12}$/.test(nid)) throw new UserError("الرقم الوطني 12 رقمًا");
@@ -127,6 +132,7 @@ export async function setPlayerStatus(f: FormData) {
   const u = await requireUser("reg.edit");
   const id = int(f, "playerId")!;
   await attempt(`/registration/players/${id}`, async () => {
+    guard(await inScopePlayer(u, id));
     const status = str(f, "status") as "ACTIVE" | "RETIRED" | "BLOCKED";
     await db.update(players).set({ status, notes: str(f, "notes") }).where(eq(players.id, id));
     await audit(u, "تغيير حالة لاعب", "Player", id, status);
@@ -138,6 +144,7 @@ export async function updateRegistrationMeta(f: FormData) {
   const u = await requireUser("reg.edit");
   const id = int(f, "id")!;
   await attempt(`/registration/requests/${id}`, async () => {
+    guard(await inScopeReg(u, id));
     await db.update(registrations).set({
       shirtNumber: int(f, "shirtNumber"),
       loanEndDate: str(f, "loanEndDate"), categoryId: int(f, "categoryId"), updatedAt: new Date(),
@@ -153,6 +160,7 @@ export async function endRegistration(f: FormData) {
   const u = await requireUser("reg.edit");
   const id = int(f, "id")!;
   await attempt(`/registration/requests/${id}`, async () => {
+    guard(await inScopeReg(u, id));
     const reason = req(f, "reason", "السبب");
     const [r] = await db.select().from(registrations).where(eq(registrations.id, id));
     if (r.status !== "APPROVED") throw new UserError("القيد غير ساري");
@@ -172,6 +180,8 @@ export async function addSuspension(f: FormData) {
   await attempt(back, async () => {
     const playerId = int(f, "playerId");
     if (!playerId) throw new UserError("اختر اللاعب");
+    guard(await inScopePlayer(u, playerId));
+    if (int(f, "competitionId")) guard(await inScopeComp(u, int(f, "competitionId")));
     const reason = req(f, "reason", "السبب");
     const matchesTotal = kind === "MATCHES" ? int(f, "matchesTotal") : null;
     if (kind === "MATCHES" && (!matchesTotal || matchesTotal < 1)) throw new UserError("عدد المباريات مطلوب");
@@ -193,6 +203,7 @@ export async function liftSuspension(f: FormData) {
   await attempt(back, async () => {
     const [s] = await db.select().from(suspensions).where(eq(suspensions.id, id));
     if (!s) throw new UserError("غير موجود");
+    guard(await inScopePlayer(u, s.playerId));
     if (!u.can(s.kind === "ADMIN" ? "reg.suspend" : "comp.suspend")) throw new UserError("لا تملك صلاحية رفع هذا النوع من الإيقاف");
     await db.update(suspensions).set({ isLifted: true, liftedAt: new Date(), liftedBy: u.fullName }).where(eq(suspensions.id, id));
     await audit(u, "رفع إيقاف", "Suspension", id);
@@ -323,6 +334,7 @@ export async function saveRegSettings(f: FormData) {
 export async function saveListTemplate(f: FormData) {
   const u = await requireUser("reg.lists");
   await attempt("/registration/lists", async () => {
+    guard(!u.divisionId);
     const id = int(f, "id");
     const columns = f.getAll("col").map(String);
     if (!columns.length) throw new UserError("اختر عمودًا واحدًا على الأقل");
@@ -340,6 +352,7 @@ export async function saveListTemplate(f: FormData) {
 export async function deleteListTemplate(f: FormData) {
   const u = await requireUser("reg.lists");
   await attempt("/registration/lists", async () => {
+    guard(!u.divisionId);
     await db.delete(listTemplates).where(eq(listTemplates.id, int(f, "id")!));
     await audit(u, "حذف قالب قائمة", "ListTemplate", int(f, "id"));
     return "تم الحذف";
@@ -386,7 +399,9 @@ export async function deleteCardTemplate(f: FormData) {
 /** تسجيل طباعة البطاقات (يُستدعى من صفحة الطباعة بعد الطباعة) */
 export async function recordPrints(regIds: number[], templateId: number | null, isReplacement: boolean, reason: string | null) {
   const u = await requireUser("cards.print");
-  const ids = regIds.filter((n) => Number.isInteger(n));
+  const sc = await scopeOf(u);
+  let ids = regIds.filter((n) => Number.isInteger(n));
+  if (sc && ids.length) ids = (await db.select({ id: registrations.id }).from(registrations).where(and(inArray(registrations.id, ids), inArray(registrations.clubId, sc.clubIds.length ? sc.clubIds : [-1])))).map((x) => x.id);
   if (!ids.length) return { count: 0 };
   const fee = isReplacement ? await feeAmount("CARD_REPLACEMENT") : 0;
   await db.transaction(async (tx) => {
@@ -410,6 +425,7 @@ export async function decideStaff(f: FormData) {
   const u = await requireUser("reg.staff");
   await attempt("/registration/staff", async () => {
     const id = int(f, "id")!;
+    guard(await inScopeStaff(u, id));
     const decision = String(f.get("decision"));
     const reason = str(f, "reason");
     const [s] = await db.select().from(staff).where(eq(staff.id, id));

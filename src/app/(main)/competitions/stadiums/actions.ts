@@ -3,7 +3,7 @@ import { and, eq, gte, or } from "drizzle-orm";
 import { db } from "@/db";
 import { stadiums, stadiumInspections, matches, clubs } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { audit, notifyClub, notifyRoles } from "@/lib/audit";
+import { audit, notifyClub, notifyRoles, notifyStaff } from "@/lib/audit";
 import { stadiumBlock } from "@/lib/stadiums";
 import { saveUpload } from "@/lib/storage";
 import { attempt, str, req, int, bool, UserError, today } from "@/lib/util";
@@ -90,7 +90,7 @@ export async function setClubStadiums(f: FormData) {
     }
     await db.update(clubs).set({ mainStadiumId: main, backupStadiumId: backup ?? null, stadium: st.find((x) => x.id === main)?.name ?? null }).where(eq(clubs.id, clubId));
     const [c] = await db.select({ n: clubs.name }).from(clubs).where(eq(clubs.id, clubId));
-    if (u.isClub) await notifyRoles(["COMP_HEAD", "COMP_STAFF"], `تحديد ملاعب نادي ${c?.n}`, `الأساسي: ${st.find((x) => x.id === main)?.name} — الاحتياطي: ${st.find((x) => x.id === backup)?.name ?? "—"}`, "/competitions/stadiums#clubs");
+    if (u.isClub) await notifyStaff(["COMP_HEAD", "COMP_STAFF"], `تحديد ملاعب نادي ${c?.n}`, `الأساسي: ${st.find((x) => x.id === main)?.name} — الاحتياطي: ${st.find((x) => x.id === backup)?.name ?? "—"}`, "/competitions/stadiums#clubs", { clubId });
     else await notifyClub(clubId, "اعتمدت لجنة المسابقات ملاعب النادي", `الأساسي: ${st.find((x) => x.id === main)?.name} — الاحتياطي: ${st.find((x) => x.id === backup)?.name ?? "—"}`, "/club/stadiums");
     await audit(u, "تحديد ملاعب النادي", "Club", clubId, { main, backup });
     return "تم حفظ الملعب الأساسي والاحتياطي — تُجدول مباريات النادي على ملعبه الأساسي";

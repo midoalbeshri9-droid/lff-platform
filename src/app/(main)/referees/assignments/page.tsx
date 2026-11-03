@@ -3,6 +3,7 @@ import { and, eq, gte, asc, desc, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { matches, clubs, competitions, assignments } from "@/db/schema";
+import { scopeOf, compIn, officialIn, guard, guardPage, inScopeOfficial, inScopeMatch } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { fmtDateTime } from "@/lib/util";
 import { PageHead, Flash, Empty, type SP } from "@/components/ui";
@@ -13,14 +14,15 @@ export default async function Assignments({ searchParams }: { searchParams: SP }
   const u = await requireUser("ref.view");
   const sp = await searchParams;
   const h = alias(clubs, "h"), a = alias(clubs, "a");
-  const comps = await db.select({ id: competitions.id, name: competitions.name }).from(competitions).orderBy(desc(competitions.id));
+  const sc = await scopeOf(u);
+  const comps = await db.select({ id: competitions.id, name: competitions.name }).from(competitions).where(compIn(sc, competitions.id)).orderBy(desc(competitions.id));
   const rows = await db.select({
     m: matches, home: h.name, away: a.name, comp: competitions.name,
     total: sql<number>`(select count(*)::int from ${assignments} x where x.match_id = "matches"."id")`,
     drafts: sql<number>`(select count(*)::int from ${assignments} x where x.match_id = "matches"."id" and x.status = 'DRAFT')`,
     ref: sql<string | null>`(select o.full_name from ${assignments} x join officials o on o.id = x.official_id where x.match_id = "matches"."id" and x.role = 'REFEREE')`,
   }).from(matches).innerJoin(h, eq(h.id, matches.homeClubId)).innerJoin(a, eq(a.id, matches.awayClubId)).innerJoin(competitions, eq(competitions.id, matches.competitionId))
-    .where(and(sp.all ? undefined : gte(matches.kickoff, new Date(Date.now() - 864e5)), eq(matches.status, "SCHEDULED"), sp.comp ? eq(matches.competitionId, Number(sp.comp)) : undefined))
+    .where(and(compIn(sc, matches.competitionId), sp.all ? undefined : gte(matches.kickoff, new Date(Date.now() - 864e5)), eq(matches.status, "SCHEDULED"), sp.comp ? eq(matches.competitionId, Number(sp.comp)) : undefined))
     .orderBy(asc(matches.kickoff)).limit(300);
   return (
     <>

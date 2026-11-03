@@ -13,7 +13,7 @@ const d = (n: string) => date(n, { mode: "string" });
 export const roleEnum = pgEnum("role", [
   "ADMIN", "PRESIDENT", "SECRETARY_GENERAL",
   "REG_HEAD", "REG_STAFF", "COMP_HEAD", "COMP_STAFF", "REF_HEAD", "REF_STAFF",
-  "CLUB_MANAGER", "CLUB_EMPLOYEE", "CLUB_VIEWER", "REFEREE", "OBSERVER", "FIN_HEAD", "FIN_STAFF", "SEC_STAFF",
+  "CLUB_MANAGER", "CLUB_EMPLOYEE", "CLUB_VIEWER", "REFEREE", "OBSERVER", "FIN_HEAD", "FIN_STAFF", "SEC_STAFF", "DIV_MANAGER", "DIV_STAFF",
 ]);
 
 export const users = pgTable("users", {
@@ -26,6 +26,7 @@ export const users = pgTable("users", {
   role: roleEnum("role").notNull(),
   clubId: integer("club_id").references(() => clubs.id),
   officialId: integer("official_id").unique().references(() => officials.id),
+  divisionId: integer("division_id").references((): AnyPgColumn => divisions.id), // مدير/موظف درجة: صلاحياته محصورة في هذه الدرجة
   isActive: boolean("is_active").notNull().default(true),
   mustChangePassword: boolean("must_change_password").notNull().default(false),
   isVerified: boolean("is_verified").notNull().default(false),
@@ -103,8 +104,18 @@ export const ageCategories = pgTable("age_categories", {
   isActive: boolean("is_active").notNull().default(true),
 });
 
+// درجات المسابقات (الدوري الممتاز، الدرجة الأولى، الثانية ...) — لكل درجة أنديتها ومسابقاتها وحكامها ومديرها
+export const divisions = pgTable("divisions", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  level: integer("level").notNull().default(1), // 1 = الأعلى
+  notes: text("notes"),
+  isActive: boolean("is_active").notNull().default(true),
+});
+
 export const clubs = pgTable("clubs", {
   id: serial("id").primaryKey(),
+  divisionId: integer("division_id").references(() => divisions.id, { onDelete: "set null" }),
   code: text("code").unique(),
   name: text("name").notNull().unique(),
   nameEn: text("name_en"),
@@ -299,6 +310,7 @@ export const compStatusEnum = pgEnum("competition_status", ["DRAFT", "ACTIVE", "
 
 export const competitions = pgTable("competitions", {
   id: serial("id").primaryKey(),
+  divisionId: integer("division_id").references(() => divisions.id, { onDelete: "set null" }), // null = مسابقة اتحادية (الكأس مثلًا)
   seasonId: integer("season_id").notNull().references(() => seasons.id),
   name: text("name").notNull(),
   type: compTypeEnum("type").notNull().default("LEAGUE"),
@@ -424,6 +436,7 @@ export const officialStatusEnum = pgEnum("official_status", ["ACTIVE", "SUSPENDE
 
 export const officials = pgTable("officials", {
   id: serial("id").primaryKey(),
+  divisionId: integer("division_id").references(() => divisions.id, { onDelete: "set null" }), // null = القائمة الاتحادية (متاح لكل الدرجات)
   fullName: text("full_name").notNull(),
   type: officialTypeEnum("type").notNull(),
   grade: officialGradeEnum("grade").notNull().default("THIRD"),

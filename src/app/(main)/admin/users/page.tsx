@@ -1,6 +1,6 @@
 import { and, eq, ilike, or, desc } from "drizzle-orm";
 import { db } from "@/db";
-import { users, clubs, officials } from "@/db/schema";
+import { users, clubs, officials, divisions } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { ROLE_LABEL } from "@/lib/labels";
 import { fmtDateTime } from "@/lib/util";
@@ -18,6 +18,7 @@ export default async function Users({ searchParams }: { searchParams: SP }) {
     db.select({ id: clubs.id, name: clubs.name }).from(clubs).orderBy(clubs.name),
     db.select({ id: officials.id, name: officials.fullName }).from(officials).orderBy(officials.fullName),
   ]);
+  const dv = await db.select().from(divisions).orderBy(divisions.level);
   const form = (x?: (typeof rows)[number]["u"]) => (
     <form action={saveUser} className="form f3 mt">
       {x && <input type="hidden" name="id" value={x.id} />}
@@ -25,6 +26,7 @@ export default async function Users({ searchParams }: { searchParams: SP }) {
       {!x && <Field label="اسم المستخدم"><input type="text" name="username" dir="ltr" required /></Field>}
       <Field label="الدور"><select name="role" defaultValue={x?.role ?? "REG_STAFF"}><Options map={ROLE_LABEL} /></select></Field>
       <Field label="النادي (لحسابات الأندية)"><select name="clubId" defaultValue={x?.clubId ?? ""}><option value="">—</option>{cl.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
+      <Field label="الدرجة" hint="إلزامية لمدير/موظف الدرجة — ولأي دور اتحادي تحصر صلاحياته في هذه الدرجة"><select name="divisionId" defaultValue={x?.divisionId ?? ""}><option value="">— كل الدرجات (اتحادي) —</option>{dv.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>
       <Field label="سجل الحكم/المراقب"><select name="officialId" defaultValue={x?.officialId ?? ""}><option value="">—</option>{of.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></Field>
       <Field label="رقم الهاتف *"><input type="tel" name="phone" dir="ltr" defaultValue={x?.phone ?? ""} required placeholder="0912345678" /></Field>
       <Field label="البريد الإلكتروني *" hint="يصله رابط التفعيل"><input type="email" name="email" dir="ltr" defaultValue={x?.email ?? ""} required placeholder="name@gmail.com" /></Field>
@@ -46,7 +48,7 @@ export default async function Users({ searchParams }: { searchParams: SP }) {
         <table className="t"><thead><tr><th>الاسم</th><th>اسم المستخدم</th><th>الدور</th><th>مرتبط بـ</th><th>التواصل</th><th>آخر دخول</th><th>الحالة</th><th></th></tr></thead>
           <tbody>{rows.map(({ u, club, off }) => (
             <tr key={u.id} className={u.isActive ? "" : "danger"}>
-              <td><strong>{u.fullName}</strong></td><td className="kbd">{u.username}</td><td>{ROLE_LABEL[u.role]}</td><td>{club ?? off ?? "—"}</td>
+              <td><strong>{u.fullName}</strong></td><td className="kbd">{u.username}</td><td>{ROLE_LABEL[u.role]}{u.divisionId && <div className="b b-blue" style={{ fontSize: ".72rem" }}>{dv.find((d) => d.id === u.divisionId)?.name}</div>}</td><td>{club ?? off ?? "—"}</td>
               <td className="kbd" style={{ fontSize: ".8rem" }}>{u.email ?? <span className="danger-text">بلا بريد</span>}<br />{u.phone ?? <span className="danger-text">بلا هاتف</span>}</td>
               <td>{fmtDateTime(u.lastLoginAt)}</td>
               <td>{!u.isVerified ? <span className="b b-amber">بانتظار التفعيل</span> : u.isActive ? <span className="b b-green">نشط</span> : <span className="b b-gray">معطّل</span>}{u.lockedUntil && u.lockedUntil > new Date() && <span className="b b-red">مقفل</span>}</td>

@@ -6,7 +6,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { users, rolePermissions, clubs, officials, type Role } from "@/db/schema";
-import { DEFAULT_PERMISSIONS, isClubRole, isOfficialRole } from "./permissions";
+import { DEFAULT_PERMISSIONS, isClubRole, isOfficialRole, SCOPEABLE, DIVISION_ROLES } from "./permissions";
 
 export const SESSION_COOKIE = "lff_session";
 const SESSION_HOURS = 12;
@@ -45,6 +45,8 @@ export type CurrentUser = {
   clubName: string | null;
   officialId: number | null;
   officialType: string | null;
+  /** مستخدم محصور في درجة (مدير/موظف درجة): لا يرى ولا يدير إلا ما يخصها */
+  divisionId: number | null;
   mustChangePassword: boolean;
   perms: Set<string>;
   isClub: boolean;
@@ -84,7 +86,11 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     .limit(1);
   if (!row || !row.u.isActive || row.u.sessionVersion !== v) return null;
   const u = row.u;
-  const perms = await getPermissionsFor(u.role);
+  const base = await getPermissionsFor(u.role);
+  // المستخدم المحصور في درجة يفقد كل صلاحية غير قابلة للحصر
+  const scoped = !!u.divisionId && !isClubRole(u.role) && !isOfficialRole(u.role) && u.role !== "ADMIN";
+  // دور الدرجة بلا درجة محددة لا يملك أي صلاحية (حماية من الخطأ في الإعداد)
+  const perms = DIVISION_ROLES.includes(u.role) && !u.divisionId ? new Set<string>() : scoped ? new Set([...base].filter((p) => SCOPEABLE.has(p))) : new Set(base);
   if (u.role === "ADMIN") {
     // مدير المنظومة لا يفقد صلاحيات الإدارة أبدًا
     ["admin.users", "admin.permissions"].forEach((p) => perms.add(p));
@@ -98,6 +104,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     clubName: row.clubName,
     officialId: u.officialId,
     officialType: row.officialType,
+    divisionId: scoped ? u.divisionId : null,
     mustChangePassword: u.mustChangePassword,
     perms,
     isClub: isClubRole(u.role),

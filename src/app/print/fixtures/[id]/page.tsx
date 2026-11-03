@@ -4,6 +4,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { matches, clubs, competitions } from "@/db/schema";
 import { ensureStages } from "@/lib/stages";
+import { inScopeComp, inScopeMatch } from "@/lib/scope";
 import { getCurrentUser } from "@/lib/auth";
 import { fmtDateTime } from "@/lib/util";
 import { PrintButton } from "@/components/Client";
@@ -13,6 +14,7 @@ export default async function Fixtures({ params }: { params: Promise<{ id: strin
   const u = await getCurrentUser();
   if (!u?.can("comp.view")) redirect("/denied");
   const id = Number((await params).id);
+  if (!u.isOfficial && !(await inScopeComp(u, id))) redirect("/denied");
   const [c] = await db.select().from(competitions).where(eq(competitions.id, id));
   const h = alias(clubs, "h"), a = alias(clubs, "a");
   const ms = await db.select({ m: matches, home: h.name, away: a.name }).from(matches).innerJoin(h, eq(h.id, matches.homeClubId)).innerJoin(a, eq(a.id, matches.awayClubId))

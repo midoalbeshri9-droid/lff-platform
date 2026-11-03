@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { and, eq, ne, desc } from "drizzle-orm";
 import { db } from "@/db";
 import { registrations, clubs, seasons, ageCategories } from "@/db/schema";
+import { scopeOf, clubIn, regIn, guardPage, inScopeReg, inScopePlayer } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { loadRegistration } from "@/lib/regview";
 import { REG_STATUS, REG_TYPE } from "@/lib/labels";
@@ -20,6 +21,7 @@ export default async function Review({ params, searchParams }: { params: Promise
   const sp = await searchParams;
   const x = await loadRegistration(id);
   if (!x) notFound();
+  guardPage(await inScopeReg(u, id));
   const { r, p } = x;
   const canReview = u.can("reg.review") && ["SUBMITTED", "NEEDS_CORRECTION"].includes(r.status);
   const missing = docMissing(x);

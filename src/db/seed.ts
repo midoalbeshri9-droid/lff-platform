@@ -4,7 +4,7 @@ import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { promises as fs } from "fs";
 import path from "path";
-import { sql, eq } from "drizzle-orm";
+import { sql, eq, inArray } from "drizzle-orm";
 import * as s from "./schema";
 import { db } from "./index";
 import { DEFAULT_PERMISSIONS } from "../lib/permissions";
@@ -193,6 +193,27 @@ async function demo() {
     { matchId: m1.id, officialId: offs[4].id, role: "AR2", status: "APPROVED", assignedBy: "رئيس لجنة الحكام", approvedBy: "رئيس لجنة الحكام", approvedAt: new Date() },
     { matchId: m1.id, officialId: offs[6].id, role: "COMMISSIONER", status: "APPROVED", assignedBy: "رئيس لجنة الحكام", approvedBy: "رئيس لجنة الحكام", approvedAt: new Date() },
   ]);
+  // درجات: الأندية الثمانية في الممتاز + دوري درجة أولى تجريبي بمديره
+  await db.insert(s.divisions).values([
+    { name: "الدوري الممتاز", level: 1 }, { name: "الدرجة الأولى", level: 2 }, { name: "الدرجة الثانية", level: 3 }, { name: "الدرجة الثالثة", level: 4 },
+  ]).onConflictDoNothing();
+  const divs = await db.select().from(s.divisions);
+  const prem = divs.find((d) => d.level === 1)!, d1 = divs.find((d) => d.level === 2)!;
+  await db.update(s.clubs).set({ divisionId: prem.id }).where(inArray(s.clubs.id, clubs.map((c) => c.id)));
+  await db.update(s.competitions).set({ divisionId: prem.id }).where(eq(s.competitions.id, comp.id));
+  const D1: [string, string, string][] = [["نادي الشرارة", "Sharara", "سبها"], ["نادي الوحدة", "Wahda", "طرابلس"], ["نادي الجزيرة", "Jazira", "زوارة"], ["نادي المروج", "Murooj", "المرج"]];
+  const c1 = await db.insert(s.clubs).values(D1.map(([name, nameEn, city], i) => ({ name, nameEn, city, stadium: `ملعب ${city}`, code: `D${String(i + 1).padStart(2, "0")}`, divisionId: d1.id }))).returning();
+  await db.insert(s.users).values(c1.map((c, i) => ({ username: `d1club${i + 1}`, fullName: `مدير حساب ${c.name}`, role: "CLUB_MANAGER" as const, clubId: c.id, passwordHash: pw, email: `d1club${i + 1}@lff-demo.ly`, phone: `09400000${String(i + 10)}`, ...V })));
+  const [comp1] = await db.insert(s.competitions).values({ seasonId: season.id, name: "دوري الدرجة الأولى", type: "LEAGUE", legs: 2, status: "ACTIVE", maxForeign: 2, maxForeignOnPitch: 2, yellowRules: "3:1,5:1,7:2", startDate: new Date().toISOString().slice(0, 10), divisionId: d1.id }).returning();
+  await db.insert(s.competitionTeams).values(c1.map((c) => ({ competitionId: comp1.id, clubId: c.id })));
+  const fx1 = roundRobin(c1.map((c) => c.id), 2);
+  const ms1 = await db.insert(s.matches).values(fx1.map((m) => {
+    const h = c1.find((c) => c.id === m.home)!;
+    return { competitionId: comp1.id, round: m.round, homeClubId: m.home, awayClubId: m.away, kickoff: new Date(base.getTime() + (m.round - 1) * 7 * 864e5 + 3600e3), venue: h.stadium, city: h.city };
+  })).returning();
+  await db.insert(s.officials).values({ fullName: "حكم الدرجة الأولى التجريبي", type: "REFEREE", grade: "SECOND", city: "سبها", divisionId: d1.id });
+  await db.insert(s.users).values({ username: "div1", fullName: "مدير دوري الدرجة الأولى", role: "DIV_MANAGER", divisionId: d1.id, passwordHash: pw, email: "div1@lff-demo.ly", phone: "0950000010", ...V });
+  console.log(`✓ الدرجة الأولى: ${c1.length} أندية، ${ms1.length} مباراة — مدير الدرجة: div1`);
   console.log(`✓ بيانات تجريبية: ${clubs.length} أندية، ${seq} لاعب، ${ms.length} مباراة — كلمة مرور الحسابات التجريبية: Test@12345`);
 }
 

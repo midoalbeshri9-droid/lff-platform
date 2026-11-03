@@ -1,6 +1,7 @@
 import { and, eq, desc } from "drizzle-orm";
 import { db } from "@/db";
 import { staff, clubs, seasons } from "@/db/schema";
+import { scopeOf, clubIn, regIn, guardPage, inScopeReg, inScopePlayer } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { getCurrentSeason } from "@/lib/registration";
 import { REG_STATUS, STAFF_ROLE } from "@/lib/labels";
@@ -18,7 +19,7 @@ export default async function StaffReview({ searchParams }: { searchParams: SP }
   const seasonId = Number(sp.season ?? cur?.id ?? 0);
   const status = (sp.status ?? "SUBMITTED") as "SUBMITTED";
   const rows = await db.select({ s: staff, club: clubs.name }).from(staff).innerJoin(clubs, eq(clubs.id, staff.clubId))
-    .where(and(eq(staff.seasonId, seasonId), sp.status === "ALL" ? undefined : eq(staff.status, status))).orderBy(clubs.name, staff.role);
+    .where(and(clubIn(await scopeOf(u), staff.clubId), eq(staff.seasonId, seasonId), sp.status === "ALL" ? undefined : eq(staff.status, status))).orderBy(clubs.name, staff.role);
   return (
     <>
       <PageHead title="قيد الإداريين والجهاز الفني" />

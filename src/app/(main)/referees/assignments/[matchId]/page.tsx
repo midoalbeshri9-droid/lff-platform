@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { matches, clubs, competitions, assignments, officials } from "@/db/schema";
+import { scopeOf, compIn, officialIn, guard, guardPage, inScopeOfficial, inScopeMatch } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { checkAssignment } from "@/lib/assign";
 import { ASSIGN_ROLE, ASSIGN_ROLE_INPUT, ASSIGN_STATUS, ROLE_FITS, OFFICIAL_GRADE, OBSERVER_ROLES } from "@/lib/labels";
@@ -17,10 +18,12 @@ export default async function AssignMatch({ params, searchParams }: { params: Pr
   const sp = await searchParams;
   const [m] = await db.select().from(matches).where(eq(matches.id, id));
   if (!m) notFound();
+  guardPage(await inScopeMatch(u, id));
+  const sc = await scopeOf(u);
   const [c] = await db.select().from(competitions).where(eq(competitions.id, m.competitionId));
   const cl = await db.select().from(clubs).where(inArray(clubs.id, [m.homeClubId, m.awayClubId]));
   const cur = await db.select({ a: assignments, name: officials.fullName }).from(assignments).innerJoin(officials, eq(officials.id, assignments.officialId)).where(eq(assignments.matchId, id));
-  const all = await db.select().from(officials).where(eq(officials.status, "ACTIVE")).orderBy(officials.grade, officials.fullName);
+  const all = await db.select().from(officials).where(and(eq(officials.status, "ACTIVE"), officialIn(sc, officials.id))).orderBy(officials.grade, officials.fullName);
   const open = m.reportStatus !== "APPROVED";
   const canRole = (role: string) => open && (OBSERVER_ROLES.includes(role) ? u.can("comp.observers") : u.can("ref.assign"));
   const can = open && u.canAny("ref.assign", "comp.observers");

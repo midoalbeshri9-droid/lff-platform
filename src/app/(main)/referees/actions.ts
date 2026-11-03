@@ -2,6 +2,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { officials, officialTests, assignments, matches, clubs, users } from "@/db/schema";
+import { scopeOf, compIn, officialIn, guard, guardPage, inScopeOfficial, inScopeMatch } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { audit, notifyOfficial } from "@/lib/audit";
 import { ASSIGN_ROLE, OBSERVER_ROLES } from "@/lib/labels";
@@ -15,10 +16,13 @@ export async function saveOfficial(f: FormData) {
   const id = int(f, "id");
   let newId = 0;
   await attempt(id ? `/referees/${id}` : "/referees", async () => {
+    if (id) guard(await inScopeOfficial(u, id, true));
     const data = {
       fullName: req(f, "fullName", "الاسم"), type: str(f, "type") as "REFEREE", grade: (str(f, "grade") ?? "THIRD") as "THIRD",
       city: str(f, "city"), phone: str(f, "phone"), email: str(f, "email"), dateOfBirth: str(f, "dateOfBirth"),
       licenseNo: str(f, "licenseNo"), licenseExpiry: str(f, "licenseExpiry"), notes: str(f, "notes"),
+      // مدير الدرجة يسجل حكام درجته فقط؛ والاتحاد يحدد الدرجة أو يتركها للقائمة الاتحادية
+      divisionId: u.divisionId ?? int(f, "divisionId"),
     };
     if (id) await db.update(officials).set(data).where(eq(officials.id, id));
     else newId = (await db.insert(officials).values(data).returning())[0].id;
@@ -31,6 +35,7 @@ export async function setOfficialStatus(f: FormData) {
   const u = await requireUser("ref.manage");
   const id = int(f, "id")!;
   await attempt(`/referees/${id}`, async () => {
+    guard(await inScopeOfficial(u, id, true));
     const status = str(f, "status") as "ACTIVE" | "SUSPENDED" | "INJURED" | "RETIRED";
     const until = str(f, "suspendedUntil");
     await db.update(officials).set({ status, suspendedUntil: status === "SUSPENDED" ? until : null, notes: str(f, "notes") }).where(eq(officials.id, id));
@@ -43,6 +48,7 @@ export async function addTest(f: FormData) {
   const u = await requireUser("ref.manage");
   const id = int(f, "officialId")!;
   await attempt(`/referees/${id}`, async () => {
+    guard(await inScopeOfficial(u, id, true));
     const kind = req(f, "kind", "النوع");
     const passed = f.get("passed") === "1";
     const date = req(f, "date", "التاريخ");
@@ -58,6 +64,7 @@ export async function createOfficialAccount(f: FormData) {
   const u = await requireUser("ref.manage");
   const id = int(f, "officialId")!;
   await attempt(`/referees/${id}`, async () => {
+    guard(await inScopeOfficial(u, id, true));
     const [o] = await db.select().from(officials).where(eq(officials.id, id));
     const [ex] = await db.select().from(users).where(eq(users.officialId, id));
     if (ex) throw new UserError("للحكم حساب مسبقًا: " + ex.username);
@@ -82,6 +89,8 @@ export async function assignOfficial(f: FormData) {
   const u = await requireUser(observer ? "comp.observers" : "ref.assign");
   const matchId = int(f, "matchId")!;
   await attempt(str(f, "back") ?? `/referees/assignments/${matchId}`, async () => {
+    guard(await inScopeMatch(u, matchId));
+    if (int(f, "officialId")) guard(await inScopeOfficial(u, int(f, "officialId")));
     const officialId = int(f, "officialId");
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
     if (m.reportStatus === "APPROVED") throw new UserError("المباراة معتمدة");
@@ -115,6 +124,7 @@ export async function approveAssignments(f: FormData) {
   const matchId = int(f, "matchId")!;
   const back = str(f, "back") ?? `/referees/assignments/${matchId}`;
   await attempt(back, async () => {
+    guard(await inScopeMatch(u, matchId));
     const drafts = (await db.select().from(assignments).where(and(eq(assignments.matchId, matchId), eq(assignments.status, "DRAFT")))).filter((a) => !OBSERVER_ROLES.includes(a.role));
     if (!drafts.length) throw new UserError("لا توجد تعيينات مسودة");
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId));

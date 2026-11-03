@@ -3,20 +3,23 @@ import { and, eq, desc, asc, gte, lte } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { matches, clubs, competitions } from "@/db/schema";
+import { scopeOf, clubIn, compIn, officialIn, regIn, guardPage, inScopeClub, inScopeComp, inScopeMatch, inScopePlayer, inScopeReg, inScopeOfficial, inScopeSanction, inScopeStaff } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { MATCH_STATUS, REPORT_STATUS } from "@/lib/labels";
 import { fmtDateTime, fromLocalInput } from "@/lib/util";
 import { PageHead, Badge, Empty, Options, type SP } from "@/components/ui";
 
 export default async function Matches({ searchParams }: { searchParams: SP }) {
-  await requireUser("comp.view", "ref.view");
+  const u = await requireUser("comp.view", "ref.view");
+  const sc = await scopeOf(u);
   const sp = await searchParams;
   const h = alias(clubs, "h"), a = alias(clubs, "a");
-  const comps = await db.select({ id: competitions.id, name: competitions.name }).from(competitions).orderBy(desc(competitions.id));
+  const comps = await db.select({ id: competitions.id, name: competitions.name }).from(competitions).where(compIn(sc, competitions.id)).orderBy(desc(competitions.id));
   const from = fromLocalInput(sp.from ? sp.from + "T00:00" : null), to = fromLocalInput(sp.to ? sp.to + "T23:59" : null);
   const rows = await db.select({ m: matches, home: h.name, away: a.name, comp: competitions.name }).from(matches)
     .innerJoin(h, eq(h.id, matches.homeClubId)).innerJoin(a, eq(a.id, matches.awayClubId)).innerJoin(competitions, eq(competitions.id, matches.competitionId))
     .where(and(
+      compIn(sc, matches.competitionId),
       sp.comp ? eq(matches.competitionId, Number(sp.comp)) : undefined,
       sp.status ? eq(matches.status, sp.status as "PLAYED") : undefined,
       sp.report ? eq(matches.reportStatus, sp.report as "SUBMITTED") : undefined,

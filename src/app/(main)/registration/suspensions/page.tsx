@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { suspensions, players, competitions } from "@/db/schema";
+import { suspensions, players, competitions, registrations } from "@/db/schema";
+import { scopeOf, clubIn, regIn, guardPage, inScopeReg, inScopePlayer } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { fmtDate, today } from "@/lib/util";
 import { PageHead, Flash, Empty, Field, type SP } from "@/components/ui";
@@ -11,11 +12,12 @@ import { addSuspension, liftSuspension } from "../actions";
 export default async function Suspensions({ searchParams }: { searchParams: SP }) {
   const u = await requireUser("reg.view", "comp.view");
   const sp = await searchParams;
+  const sc = await scopeOf(u);
   const kind = sp.kind === "MATCHES" ? "MATCHES" : sp.kind === "ADMIN" ? "ADMIN" : undefined;
   const rows = await db
     .select({ s: suspensions, name: players.fullName, comp: competitions.name })
     .from(suspensions).innerJoin(players, eq(players.id, suspensions.playerId)).leftJoin(competitions, eq(competitions.id, suspensions.competitionId))
-    .where(and(kind ? eq(suspensions.kind, kind) : undefined, sp.all ? undefined : eq(suspensions.isLifted, false)))
+    .where(and(sc ? inArray(suspensions.playerId, db.select({ id: registrations.playerId }).from(registrations).where(regIn(sc))) : undefined, kind ? eq(suspensions.kind, kind) : undefined, sp.all ? undefined : eq(suspensions.isLifted, false)))
     .orderBy(desc(suspensions.id)).limit(400);
   const t = today();
   const active = rows.filter(({ s }) => s.kind === "ADMIN" ? !s.endDate || s.endDate >= t : (s.matchesTotal ?? 0) > s.matchesServed);

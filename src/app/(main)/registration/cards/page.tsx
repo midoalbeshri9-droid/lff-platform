@@ -2,6 +2,7 @@ import Link from "next/link";
 import { and, eq, desc, ilike, or, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { registrations, players, clubs, seasons, ageCategories, cardTemplates } from "@/db/schema";
+import { scopeOf, clubIn, regIn, guardPage, inScopeReg, inScopePlayer } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { getCurrentSeason } from "@/lib/registration";
 import { fmtDateTime } from "@/lib/util";
@@ -11,6 +12,7 @@ import { CheckAll } from "@/components/Client";
 
 export default async function CardsQueue({ searchParams }: { searchParams: SP }) {
   const u = await requireUser("cards.print");
+  const sc = await scopeOf(u);
   const sp = await searchParams;
   const cur = await getCurrentSeason();
   const seasonId = Number(sp.season ?? cur?.id ?? 0);
@@ -18,7 +20,7 @@ export default async function CardsQueue({ searchParams }: { searchParams: SP })
   const ids = (sp.ids ?? "").split(",").map(Number).filter(Boolean);
   const [ss, cl, cats, tpls] = await Promise.all([
     db.select().from(seasons).orderBy(desc(seasons.startDate)),
-    db.select({ id: clubs.id, name: clubs.name }).from(clubs).orderBy(clubs.name),
+    db.select({ id: clubs.id, name: clubs.name }).from(clubs).where(clubIn(sc, clubs.id)).orderBy(clubs.name),
     db.select().from(ageCategories).orderBy(ageCategories.sortOrder),
     db.select().from(cardTemplates).orderBy(desc(cardTemplates.isDefault), cardTemplates.name),
   ]);
@@ -26,13 +28,13 @@ export default async function CardsQueue({ searchParams }: { searchParams: SP })
     .select({ r: registrations, p: players, club: clubs.name, cat: ageCategories.name })
     .from(registrations).innerJoin(players, eq(players.id, registrations.playerId)).innerJoin(clubs, eq(clubs.id, registrations.clubId))
     .leftJoin(ageCategories, eq(ageCategories.id, registrations.categoryId))
-    .where(ids.length ? inArray(registrations.id, ids) : and(
+    .where(and(clubIn(sc, registrations.clubId), ids.length ? inArray(registrations.id, ids) : and(
       eq(registrations.seasonId, seasonId), eq(registrations.status, "APPROVED"),
       sp.club ? eq(registrations.clubId, Number(sp.club)) : undefined,
       sp.category ? eq(registrations.categoryId, Number(sp.category)) : undefined,
       only === "no" ? eq(registrations.cardPrintCount, 0) : only === "yes" ? undefined : undefined,
       sp.q ? or(ilike(players.fullName, `%${sp.q}%`), ilike(registrations.number, `%${sp.q}%`)) : undefined,
-    ))
+    )))
     .orderBy(clubs.name, ageCategories.sortOrder, players.fullName).limit(500);
   return (
     <>

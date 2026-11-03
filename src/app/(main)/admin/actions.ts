@@ -1,10 +1,10 @@
 "use server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { users, rolePermissions, clubs, settings, roleEnum, type Role } from "@/db/schema";
+import { users, rolePermissions, clubs, settings, roleEnum, divisions, type Role } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-import { ALL_PERMISSIONS, DEFAULT_PERMISSIONS, isClubRole, isOfficialRole } from "@/lib/permissions";
+import { ALL_PERMISSIONS, DEFAULT_PERMISSIONS, isClubRole, isOfficialRole, DIVISION_ROLES } from "@/lib/permissions";
 import { saveUpload, ALLOWED_IMG } from "@/lib/storage";
 import { attempt, str, req, int, bool, UserError, reqPhone, reqEmail } from "@/lib/util";
 import { sendActivation, sendReset, unusableHash } from "@/lib/tokens";
@@ -23,7 +23,10 @@ export async function saveUser(f: FormData) {
     if (isOfficialRole(role) && !officialId) throw new UserError("حساب الحكم/المراقب يجب ربطه بسجله في لجنة الحكام");
     const email = reqEmail(f), phone = reqPhone(f);
     await ensureUniqueContact(email, phone, id);
-    const data = { fullName: req(f, "fullName", "الاسم"), phone, email, role, clubId, officialId };
+    // الدرجة: إلزامية لأدوار الدرجة، واختيارية لأدوار الاتحاد (تحصر صلاحياتها في الدرجة)
+    const divisionId = isClubRole(role) || isOfficialRole(role) || role === "ADMIN" ? null : int(f, "divisionId");
+    if (DIVISION_ROLES.includes(role) && !divisionId) throw new UserError("حدد الدرجة التي يديرها هذا المستخدم");
+    const data = { fullName: req(f, "fullName", "الاسم"), phone, email, role, clubId, officialId, divisionId };
     if (id) {
       if (id === u.id && role !== "ADMIN" && u.role === "ADMIN") throw new UserError("لا يمكنك إزالة صلاحية المدير عن حسابك");
       await db.update(users).set(data).where(eq(users.id, id));
@@ -114,6 +117,7 @@ export async function saveClub(f: FormData) {
     const data = {
       name: req(f, "name", "اسم النادي"), nameEn: str(f, "nameEn"), shortName: str(f, "shortName"), code: str(f, "code"),
       city: str(f, "city"), region: str(f, "region"), stadium: str(f, "stadium"), phone: str(f, "phone"), email: str(f, "email"),
+      divisionId: int(f, "divisionId"),
       isActive: f.has("isActive") ? bool(f, "isActive") : true,
     };
     const logo = f.get("logo") as File | null;
@@ -185,5 +189,39 @@ export async function sendTestMail(f: FormData) {
     await audit(u, "رسالة بريد تجريبية", "Setting", null, { to, sent: r.sent });
     if (!r.sent) throw new UserError(`لم تُرسل الرسالة: ${"error" in r ? r.error : "تحقق من الإعدادات"}`);
     return `✓ أُرسلت رسالة تجريبية إلى ${to} — تحقق من صندوق الوارد (أو البريد غير الهام)`;
+  });
+}
+
+// ---------------- الدرجات ----------------
+export async function saveDivision(f: FormData) {
+  const u = await requireUser("admin.clubs");
+  const id = int(f, "id");
+  await attempt("/admin/divisions", async () => {
+    const data = { name: req(f, "name", "اسم الدرجة"), level: int(f, "level") ?? 1, notes: str(f, "notes"), isActive: f.has("isActive") ? bool(f, "isActive") : true };
+    if (id) await db.update(divisions).set(data).where(eq(divisions.id, id));
+    else await db.insert(divisions).values(data);
+    await audit(u, id ? "تعديل درجة" : "إضافة درجة", "Division", id, data.name);
+    return "تم حفظ الدرجة";
+  });
+}
+
+/** توزيع الأندية على الدرجات (الصعود والهبوط) */
+export async function saveClubDivisions(f: FormData) {
+  const u = await requireUser("admin.clubs");
+  await attempt("/admin/divisions", async () => {
+    let n = 0;
+    const moves: string[] = [];
+    const all = await db.select({ id: clubs.id, name: clubs.name, d: clubs.divisionId }).from(clubs);
+    const divs = await db.select().from(divisions);
+    for (const c of all) {
+      if (!f.has(`d_${c.id}`)) continue;
+      const d = int(f, `d_${c.id}`);
+      if ((d ?? null) === (c.d ?? null)) continue;
+      await db.update(clubs).set({ divisionId: d }).where(eq(clubs.id, c.id));
+      moves.push(`${c.name}: ${divs.find((x) => x.id === c.d)?.name ?? "—"} ← ${divs.find((x) => x.id === d)?.name ?? "—"}`);
+      n++;
+    }
+    await audit(u, "توزيع الأندية على الدرجات", "Division", null, moves);
+    return n ? `تم نقل ${n} نادٍ` : "لا تغييرات";
   });
 }

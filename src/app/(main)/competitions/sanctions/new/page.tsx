@@ -2,6 +2,7 @@ import { and, eq, desc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { clubs, players, registrations, staff, competitions, matches, sanctionArticles } from "@/db/schema";
+import { scopeOf, clubIn, compIn, officialIn, regIn, guardPage, inScopeClub, inScopeComp, inScopeMatch, inScopePlayer, inScopeReg, inScopeOfficial, inScopeSanction, inScopeStaff } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { getCurrentSeason } from "@/lib/registration";
 import { SANCTION_TYPE, SANCTION_TARGET, SANCTION_FOR, STAFF_ROLE } from "@/lib/labels";
@@ -11,7 +12,8 @@ import { Submit, AutoSubmitSelect } from "@/components/Client";
 import { createSanction } from "../actions";
 
 export default async function NewSanction({ searchParams }: { searchParams: SP }) {
-  await requireUser("comp.sanctions");
+  const u = await requireUser("comp.sanctions");
+  const sc = await scopeOf(u);
   const sp = await searchParams;
   const season = await getCurrentSeason();
   const target = (sp.target ?? "PLAYER") as "PLAYER" | "STAFF" | "CLUB";
@@ -19,14 +21,16 @@ export default async function NewSanction({ searchParams }: { searchParams: SP }
   const matchId = sp.match ? Number(sp.match) : null;
   const h = alias(clubs, "h"), a = alias(clubs, "a");
   const [m] = matchId ? await db.select({ m: matches, home: h.name, away: a.name }).from(matches).innerJoin(h, eq(h.id, matches.homeClubId)).innerJoin(a, eq(a.id, matches.awayClubId)).where(eq(matches.id, matchId)) : [];
-  const allClubs = await db.select({ id: clubs.id, name: clubs.name }).from(clubs).orderBy(clubs.name);
+  if (matchId) guardPage(await inScopeMatch(u, matchId));
+  const allClubs = await db.select({ id: clubs.id, name: clubs.name }).from(clubs).where(clubIn(sc, clubs.id)).orderBy(clubs.name);
   const clubOpts = m ? allClubs.filter((c) => c.id === m.m.homeClubId || c.id === m.m.awayClubId) : allClubs;
   const clubId = sp.club ? Number(sp.club) : clubOpts[0]?.id;
+  if (clubId) guardPage(await inScopeClub(u, clubId));
   const [plist, slist, comps, arts] = await Promise.all([
     clubId && target === "PLAYER" ? db.select({ id: players.id, name: players.fullName, num: registrations.number }).from(registrations).innerJoin(players, eq(players.id, registrations.playerId))
       .where(and(eq(registrations.clubId, clubId), eq(registrations.seasonId, season?.id ?? 0), eq(registrations.status, "APPROVED"))).orderBy(players.fullName) : [],
     clubId && target === "STAFF" ? db.select().from(staff).where(and(eq(staff.clubId, clubId), eq(staff.seasonId, season?.id ?? 0))).orderBy(staff.fullName) : [],
-    db.select({ id: competitions.id, name: competitions.name }).from(competitions).orderBy(desc(competitions.id)),
+    db.select({ id: competitions.id, name: competitions.name }).from(competitions).where(compIn(sc, competitions.id)).orderBy(desc(competitions.id)),
     db.select().from(sanctionArticles).where(eq(sanctionArticles.isActive, true)).orderBy(sanctionArticles.code),
   ]);
   const types = SANCTION_FOR[target];

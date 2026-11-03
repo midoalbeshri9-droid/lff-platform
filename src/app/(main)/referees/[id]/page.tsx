@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { eq, desc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { officials, officialTests, assignments, matches, clubs, evaluations, users } from "@/db/schema";
+import { officials, officialTests, assignments, matches, clubs, evaluations, users , divisions } from "@/db/schema";
+import { scopeOf, compIn, officialIn, guard, guardPage, inScopeOfficial, inScopeMatch } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { OFFICIAL_TYPE, OFFICIAL_TYPE_INPUT, OFFICIAL_GRADE, FITNESS, OFFICIAL_STATUS, ASSIGN_ROLE, ASSIGN_STATUS } from "@/lib/labels";
 import { fmtDate, fmtDateTime, today } from "@/lib/util";
@@ -17,6 +18,7 @@ export default async function Official({ params, searchParams }: { params: Promi
   const sp = await searchParams;
   const [o] = await db.select().from(officials).where(eq(officials.id, id));
   if (!o) notFound();
+  guardPage(await inScopeOfficial(u, id));
   const h = alias(clubs, "h"), a = alias(clubs, "a");
   const [tests, asg, evs, acct] = await Promise.all([
     db.select().from(officialTests).where(eq(officialTests.officialId, id)).orderBy(desc(officialTests.date)),
@@ -27,7 +29,9 @@ export default async function Official({ params, searchParams }: { params: Promi
   ]);
   const sub = evs.filter((e) => e.isSubmitted);
   const avg = sub.length ? sub.reduce((s, e) => s + e.score, 0) / sub.length : null;
-  const can = u.can("ref.manage");
+  // مدير الدرجة يعدّل حكام درجته فقط، ويطّلع على القائمة الاتحادية دون تعديل
+  const can = u.can("ref.manage") && (await inScopeOfficial(u, id, true));
+  const dv = u.divisionId ? [] : await db.select().from(divisions).orderBy(divisions.level);
   return (
     <>
       <PageHead title={o.fullName} sub={<>{OFFICIAL_TYPE[o.type]} — {OFFICIAL_GRADE[o.grade]} — <Badge v={OFFICIAL_STATUS[o.status]} /> <Badge v={FITNESS[o.fitness]} /></>} crumbs={[["الحكام والمراقبون", "/referees"], [o.fullName]]} />
@@ -96,6 +100,7 @@ export default async function Official({ params, searchParams }: { params: Promi
                 <Field label="الاسم"><input type="text" name="fullName" defaultValue={o.fullName} required /></Field>
                 <Field label="النوع"><select name="type" defaultValue={o.type === "REF_OBSERVER" ? "COMMISSIONER" : o.type}><Options map={OFFICIAL_TYPE_INPUT} /></select></Field>
                 <Field label="الدرجة"><select name="grade" defaultValue={o.grade}><Options map={OFFICIAL_GRADE} /></select></Field>
+                {!u.divisionId && <Field label="قائمة الدوري" hint="فارغ = القائمة الاتحادية (متاح لكل الدرجات)"><select name="divisionId" defaultValue={o.divisionId ?? ""}><option value="">— الاتحادية —</option>{dv.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>}
                 <Field label="المدينة"><input type="text" name="city" defaultValue={o.city ?? ""} /></Field>
                 <Field label="الهاتف"><input type="text" name="phone" defaultValue={o.phone ?? ""} dir="ltr" /></Field>
                 <Field label="البريد"><input type="email" name="email" defaultValue={o.email ?? ""} dir="ltr" /></Field>

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { eq, desc } from "drizzle-orm";
 import { db } from "@/db";
 import { sanctions, clubs, players, staff, competitions, matches, appeals, charges } from "@/db/schema";
+import { guardPage, inScopeSanction } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { SANCTION_TYPE, SANCTION_TARGET, SANCTION_STATUS, APPEAL_STATUS, CHARGE_STATUS } from "@/lib/labels";
 import { fmtDate, fmtDateTime, money } from "@/lib/util";
@@ -18,6 +19,7 @@ export default async function SanctionPage({ params, searchParams }: { params: P
   const [row] = await db.select({ s: sanctions, club: clubs.name, player: players.fullName, staffName: staff.fullName, comp: competitions.name })
     .from(sanctions).innerJoin(clubs, eq(clubs.id, sanctions.clubId)).leftJoin(players, eq(players.id, sanctions.playerId))
     .leftJoin(staff, eq(staff.id, sanctions.staffId)).leftJoin(competitions, eq(competitions.id, sanctions.competitionId)).where(eq(sanctions.id, id));
+  guardPage(await inScopeSanction(u, id));
   if (!row) notFound();
   const { s } = row;
   const [m] = s.matchId ? await db.select().from(matches).where(eq(matches.id, s.matchId)) : [];

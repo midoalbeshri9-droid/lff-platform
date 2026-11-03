@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { competitions, seasons, ageCategories, competitionTeams, matches } from "@/db/schema";
+import { competitions, seasons, ageCategories, competitionTeams, matches, divisions } from "@/db/schema";
+import { scopeOf, clubIn, compIn, officialIn, regIn, guardPage, inScopeClub, inScopeComp, inScopeMatch, inScopePlayer, inScopeReg, inScopeOfficial, inScopeSanction, inScopeStaff } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { getCurrentSeason } from "@/lib/registration";
 import { COMP_TYPE, COMP_STATUS } from "@/lib/labels";
@@ -13,25 +14,28 @@ export default async function Competitions({ searchParams }: { searchParams: SP 
   const u = await requireUser("comp.view");
   const sp = await searchParams;
   const cur = await getCurrentSeason();
+  const sc = await scopeOf(u);
+  const dv = await db.select().from(divisions).orderBy(divisions.level);
   const [rows, ss, cats] = await Promise.all([
     db.select({ c: competitions, season: seasons.name, cat: ageCategories.name,
       teams: sql<number>`(select count(*)::int from ${competitionTeams} t where t.competition_id = "competitions"."id")`,
       played: sql<number>`(select count(*)::int from ${matches} m where m.competition_id = "competitions"."id" and m.report_status = 'APPROVED')`,
       total: sql<number>`(select count(*)::int from ${matches} m where m.competition_id = "competitions"."id")` })
       .from(competitions).innerJoin(seasons, eq(seasons.id, competitions.seasonId)).leftJoin(ageCategories, eq(ageCategories.id, competitions.categoryId))
+      .where(compIn(sc, competitions.id))
       .orderBy(desc(seasons.startDate), competitions.name),
     db.select().from(seasons).orderBy(desc(seasons.startDate)),
     db.select().from(ageCategories).orderBy(ageCategories.sortOrder),
   ]);
   return (
     <>
-      <PageHead title="المسابقات" />
+      <PageHead title="المسابقات" sub={sc ? `مسابقات ${sc.divisionName}` : undefined} />
       <Flash sp={sp} />
       <div className="card table-wrap">
         {rows.length === 0 ? <Empty>لا توجد مسابقات</Empty> : (
-          <table className="t"><thead><tr><th>المسابقة</th><th>الموسم</th><th>النوع</th><th>الفئة</th><th>الفرق</th><th>المباريات</th><th>الحالة</th><th></th></tr></thead>
+          <table className="t"><thead><tr><th>المسابقة</th><th>الدرجة</th><th>الموسم</th><th>النوع</th><th>الفئة</th><th>الفرق</th><th>المباريات</th><th>الحالة</th><th></th></tr></thead>
             <tbody>{rows.map(({ c, season, cat, teams, played, total }) => (
-              <tr key={c.id}><td><strong>{c.name}</strong></td><td>{season}</td><td>{COMP_TYPE[c.type]}</td><td>{cat ?? "الفريق الأول"}</td>
+              <tr key={c.id}><td><strong>{c.name}</strong></td><td>{dv.find((d) => d.id === c.divisionId)?.name ?? <span className="muted">اتحادية</span>}</td><td>{season}</td><td>{COMP_TYPE[c.type]}</td><td>{cat ?? "الفريق الأول"}</td>
                 <td className="num">{teams}</td><td className="num">{played} / {total}</td><td><Badge v={COMP_STATUS[c.status]} /></td>
                 <td><Link className="btn btn-sm btn-light" href={`/competitions/${c.id}`}>فتح</Link></td></tr>
             ))}</tbody></table>
@@ -42,6 +46,7 @@ export default async function Competitions({ searchParams }: { searchParams: SP 
           <summary>+ مسابقة جديدة</summary>
           <form action={saveCompetition} className="form f3 mt">
             <Field label="الاسم"><input type="text" name="name" required placeholder="الدوري الليبي الممتاز" /></Field>
+            {!sc && <Field label="الدرجة" hint="فارغ = مسابقة اتحادية (الكأس مثلًا)"><select name="divisionId"><option value="">— اتحادية —</option>{dv.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>}
             <Field label="الموسم"><select name="seasonId" defaultValue={cur?.id}>{ss.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
             <Field label="النظام" hint="يمكن إضافة مراحل أخرى لاحقًا (مثل سداسي التتويج)"><select name="type"><Options map={COMP_TYPE} /></select></Field>
             <Field label="عدد المجموعات" hint="لأنظمة المجموعات"><input type="number" name="groupsCount" defaultValue={2} min={2} max={12} /></Field>

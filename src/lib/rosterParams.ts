@@ -2,6 +2,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { listTemplates, settings } from "@/db/schema";
+import { scopeOf } from "./scope";
 import { getCurrentUser } from "./auth";
 import { getCurrentSeason } from "./registration";
 import { DEFAULT_COLUMNS, ROSTER_COLUMNS } from "./roster";
@@ -15,6 +16,11 @@ export async function rosterParams(sp: URLSearchParams) {
     if (!u.can("club.view")) return null;
     clubIds = [u.clubId!];
   } else if (!u.can("reg.lists")) return null;
+  else {
+    // مدير الدرجة: أندية درجته فقط (وبلا تحديد = كل أندية درجته)
+    const sc = await scopeOf(u);
+    if (sc) clubIds = clubIds.length ? clubIds.filter((c) => sc.clubIds.includes(c)) : sc.clubIds.length ? sc.clubIds : [-1];
+  }
   const seasonId = Number(sp.get("season")) || (await getCurrentSeason())?.id || 0;
   const categoryId = Number(sp.get("category")) || null;
   const tplId = Number(sp.get("template")) || null;

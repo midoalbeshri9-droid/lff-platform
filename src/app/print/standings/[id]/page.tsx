@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { competitions, competitionStages } from "@/db/schema";
+import { inScopeComp, inScopeMatch } from "@/lib/scope";
 import { getCurrentUser } from "@/lib/auth";
 import { standings } from "@/lib/competition";
 import { fmtDate } from "@/lib/util";
@@ -12,6 +13,7 @@ export default async function Standings({ params, searchParams }: { params: Prom
   const u = await getCurrentUser();
   if (!u?.can("comp.view")) redirect("/denied");
   const id = Number((await params).id);
+  if (!u.isOfficial && !(await inScopeComp(u, id))) redirect("/denied");
   const [c] = await db.select().from(competitions).where(eq(competitions.id, id));
   const stageId = Number((await searchParams).stage) || undefined;
   const rows = await standings(id, stageId);

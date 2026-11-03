@@ -3,6 +3,7 @@ import { and, eq, desc, inArray, isNotNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { registrations, players, clubs, seasons } from "@/db/schema";
+import { scopeOf, clubIn, regIn, guardPage, inScopeReg, inScopePlayer } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { getCurrentSeason } from "@/lib/registration";
 import { REG_STATUS, REG_TYPE, ORIGIN } from "@/lib/labels";
@@ -10,7 +11,8 @@ import { fmtDate, today } from "@/lib/util";
 import { PageHead, Badge, Empty, type SP } from "@/components/ui";
 
 export default async function Transfers({ searchParams }: { searchParams: SP }) {
-  await requireUser("reg.view");
+  const u = await requireUser("reg.view");
+  const sc = await scopeOf(u);
   const sp = await searchParams;
   const cur = await getCurrentSeason();
   const ss = await db.select().from(seasons).orderBy(desc(seasons.startDate));
@@ -20,7 +22,7 @@ export default async function Transfers({ searchParams }: { searchParams: SP }) 
     .select({ r: registrations, name: players.fullName, to: clubs.name, from: fc.name })
     .from(registrations).innerJoin(players, eq(players.id, registrations.playerId)).innerJoin(clubs, eq(clubs.id, registrations.clubId))
     .leftJoin(fc, eq(fc.id, registrations.fromClubId))
-    .where(and(eq(registrations.seasonId, seasonId), inArray(registrations.type, ["TRANSFER", "LOAN", "LOAN_RETURN"]),
+    .where(and(regIn(sc), eq(registrations.seasonId, seasonId), inArray(registrations.type, ["TRANSFER", "LOAN", "LOAN_RETURN"]),
       sp.type ? eq(registrations.type, sp.type as "LOAN") : undefined, isNotNull(registrations.submittedAt)))
     .orderBy(desc(registrations.decidedAt), desc(registrations.id));
   const t = today();

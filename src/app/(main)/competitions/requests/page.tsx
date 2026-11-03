@@ -3,6 +3,7 @@ import { eq, desc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { matchRequests, matches, clubs, competitions } from "@/db/schema";
+import { scopeOf, clubIn, compIn, officialIn, regIn, guardPage, inScopeClub, inScopeComp, inScopeMatch, inScopePlayer, inScopeReg, inScopeOfficial, inScopeSanction, inScopeStaff } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { fmtDateTime, toLocalInput } from "@/lib/util";
 import { fileUrl } from "@/lib/storage";
@@ -17,6 +18,7 @@ export default async function Requests({ searchParams }: { searchParams: SP }) {
   const rows = await db.select({ r: matchRequests, m: matches, home: h.name, away: a.name, by: rc.name, comp: competitions.name }).from(matchRequests)
     .innerJoin(matches, eq(matches.id, matchRequests.matchId)).innerJoin(h, eq(h.id, matches.homeClubId)).innerJoin(a, eq(a.id, matches.awayClubId))
     .innerJoin(rc, eq(rc.id, matchRequests.clubId)).innerJoin(competitions, eq(competitions.id, matches.competitionId))
+    .where(compIn(await scopeOf(u), matches.competitionId))
     .orderBy(desc(matchRequests.id)).limit(200);
   return (
     <>

@@ -82,6 +82,11 @@ export async function migrate() {
 
   // 9) إعدادات البريد الافتراضية (فارغة حتى يضبطها المدير)
   await db.insert(s.settings).values({ key: "smtp_port", value: "465" }).onConflictDoNothing();
+  // 10) درجات الدوري الافتراضية (تُنشأ مرة واحدة فقط — لا تُسند الأندية تلقائيًا)
+  const [hasDiv] = await db.select({ id: s.divisions.id }).from(s.divisions).limit(1);
+  if (!hasDiv) await db.insert(s.divisions).values([
+    { name: "الدوري الممتاز", level: 1 }, { name: "الدرجة الأولى", level: 2 }, { name: "الدرجة الثانية", level: 3 }, { name: "الدرجة الثالثة", level: 4 },
+  ]).onConflictDoNothing();
   console.log("✓ اكتمل ترحيل البيانات");
 }
 

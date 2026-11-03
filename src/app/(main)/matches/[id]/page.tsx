@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { and, eq, asc, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { matches, clubs, competitions, matchSquads, matchEvents, players, assignments, officials, commissionerReports, evaluations } from "@/db/schema";
-import { requireUser } from "@/lib/auth";
+import { scopeOf, clubIn, compIn, officialIn, regIn, guardPage, inScopeClub, inScopeComp, inScopeMatch, inScopePlayer, inScopeReg, inScopeOfficial, inScopeSanction, inScopeStaff } from "@/lib/scope";
+import { requireUser, getCurrentUser } from "@/lib/auth";
 import { clubEligibility } from "@/lib/eligibility";
 import { MATCH_STATUS, REPORT_STATUS, EVENT_TYPE, ASSIGN_ROLE, ASSIGN_STATUS, SANCTION_TYPE, SANCTION_STATUS, OBSERVER_ROLES } from "@/lib/labels";
 import { sanctions } from "@/db/schema";
@@ -25,6 +26,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
   const tab = sp.tab ?? "report";
   const [m] = await db.select().from(matches).where(eq(matches.id, id));
   if (!m) notFound();
+  guardPage(await inScopeMatch(u, id));
   const [c] = await db.select().from(competitions).where(eq(competitions.id, m.competitionId));
   const [home] = await db.select().from(clubs).where(eq(clubs.id, m.homeClubId));
   const [away] = await db.select().from(clubs).where(eq(clubs.id, m.awayClubId));
@@ -213,7 +215,8 @@ async function Officials({ id, canObserver, canAssign, canEvals, canReport, canS
 
 /** تعيين مراقب المباراة — من صلاحية لجنة المسابقات */
 async function ObserverForm({ id, current }: { id: number; current: number | null }) {
-  const list = await db.select().from(officials).where(and(eq(officials.status, "ACTIVE"), inArray(officials.type, ["COMMISSIONER", "REF_OBSERVER"]))).orderBy(officials.fullName);
+  const sc = await scopeOf(await getCurrentUser());
+  const list = await db.select().from(officials).where(and(eq(officials.status, "ACTIVE"), inArray(officials.type, ["COMMISSIONER", "REF_OBSERVER"]), officialIn(sc, officials.id))).orderBy(officials.fullName);
   return (
     <form action={assignOfficial} className="row mt" style={{ borderTop: "1px solid var(--line)", paddingTop: ".6rem" }}>
       <input type="hidden" name="matchId" value={id} /><input type="hidden" name="role" value="COMMISSIONER" /><input type="hidden" name="back" value={`/matches/${id}?tab=officials`} />

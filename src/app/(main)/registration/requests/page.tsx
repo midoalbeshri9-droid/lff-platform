@@ -3,6 +3,7 @@ import { and, eq, desc, ilike, or, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { registrations, players, clubs, seasons } from "@/db/schema";
+import { scopeOf, clubIn, regIn, guardPage, inScopeReg, inScopePlayer } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { getCurrentSeason } from "@/lib/registration";
 import { REG_STATUS, REG_TYPE, ORIGIN } from "@/lib/labels";
@@ -10,15 +11,17 @@ import { fmtDateTime } from "@/lib/util";
 import { PageHead, Badge, Empty, Options, type SP } from "@/components/ui";
 
 export default async function Requests({ searchParams }: { searchParams: SP }) {
-  await requireUser("reg.view");
+  const u = await requireUser("reg.view");
+  const sc = await scopeOf(u);
   const sp = await searchParams;
   const cur = await getCurrentSeason();
-  const allClubs = await db.select({ id: clubs.id, name: clubs.name }).from(clubs).orderBy(clubs.name);
+  const allClubs = await db.select({ id: clubs.id, name: clubs.name }).from(clubs).where(clubIn(sc, clubs.id)).orderBy(clubs.name);
   const allSeasons = await db.select().from(seasons).orderBy(desc(seasons.startDate));
   const status = sp.status ?? "SUBMITTED";
   const seasonId = Number(sp.season ?? cur?.id ?? 0);
   const fc = alias(clubs, "fc");
   const where = and(
+    regIn(sc),
     status === "ALL" ? undefined : status === "OPEN" ? inArray(registrations.status, ["SUBMITTED", "NEEDS_CORRECTION"]) : eq(registrations.status, status as "SUBMITTED"),
     seasonId ? eq(registrations.seasonId, seasonId) : undefined,
     sp.club ? eq(registrations.clubId, Number(sp.club)) : undefined,

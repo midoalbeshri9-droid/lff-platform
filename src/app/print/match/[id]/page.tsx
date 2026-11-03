@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { eq, asc } from "drizzle-orm";
 import { db } from "@/db";
 import { matches, clubs, competitions, matchSquads, players, registrations, matchEvents, assignments, officials } from "@/db/schema";
+import { inScopeComp, inScopeMatch } from "@/lib/scope";
 import { getCurrentUser } from "@/lib/auth";
 import { ASSIGN_ROLE, EVENT_TYPE } from "@/lib/labels";
 import { fmtDateTime } from "@/lib/util";
@@ -12,6 +13,7 @@ export default async function MatchSheet({ params }: { params: Promise<{ id: str
   const u = await getCurrentUser();
   if (!u || !u.canAny("comp.view", "ref.view", "portal.referee", "portal.observer")) redirect("/denied");
   const id = Number((await params).id);
+  if (!u.isOfficial && !(await inScopeMatch(u, id))) redirect("/denied");
   const [m] = await db.select().from(matches).where(eq(matches.id, id));
   if (!m) notFound();
   if (u.isOfficial) {
