@@ -102,7 +102,13 @@ export async function editPlayer(f: FormData) {
     const [before] = await db.select().from(players).where(eq(players.id, id));
     const nid = str(f, "nationalId");
     if (nid && !/^[0-9]{12}$/.test(nid)) throw new UserError("الرقم الوطني 12 رقمًا");
+    const cardNo = str(f, "cardNo")?.replace(/\s+/g, "").toUpperCase() ?? null;
+    if (cardNo) {
+      const [dup] = await db.select({ id: players.id, n: players.fullName }).from(players).where(eq(players.cardNo, cardNo));
+      if (dup && dup.id !== id) throw new UserError(`رقم البطاقة مستخدم للاعب آخر: ${dup.n}`);
+    }
     const data = {
+      ...(f.has("cardNo") ? { cardNo } : {}),
       fullName: req(f, "fullName", "الاسم").replace(/\s+/g, " "), fullNameEn: str(f, "fullNameEn"), motherName: str(f, "motherName"),
       nationalId: nid, passportNo: str(f, "passportNo"), dateOfBirth: req(f, "dateOfBirth", "تاريخ الميلاد"),
       placeOfBirth: str(f, "placeOfBirth"), gender: (str(f, "gender") ?? "MALE") as "MALE", nationality: str(f, "nationality") ?? "ليبي",

@@ -144,6 +144,7 @@ export const players = pgTable("players", {
   fullNameEn: text("full_name_en"),
   motherName: text("mother_name"),
   nationalId: text("national_id").unique(),
+  cardNo: text("card_no"), // رقم بطاقة اللاعب لدى الاتحاد (مثل 000146M03) — ثابت للاعب
   passportNo: text("passport_no"),
   dateOfBirth: d("date_of_birth").notNull(),
   placeOfBirth: text("place_of_birth"),
@@ -161,7 +162,7 @@ export const players = pgTable("players", {
   notes: text("notes"),
   createdAt: ts("created_at").notNull().defaultNow(),
   createdByClubId: integer("created_by_club_id"),
-}, (t) => [index("players_name_idx").on(t.fullName), index("players_dob_idx").on(t.dateOfBirth)]);
+}, (t) => [index("players_name_idx").on(t.fullName), index("players_dob_idx").on(t.dateOfBirth), uniqueIndex("players_card_no_uq").on(t.cardNo)]);
 
 export const regTypeEnum = pgEnum("reg_type", ["NEW", "RENEWAL", "TRANSFER", "LOAN", "LOAN_RETURN"]);
 export const regStatusEnum = pgEnum("reg_status", [

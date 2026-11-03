@@ -36,7 +36,7 @@ export default async function PlayerFile({ params, searchParams }: { params: Pro
   const back = `/registration/players/${id}`;
   return (
     <>
-      <PageHead title={p.fullName} sub={<>الرقم الوطني <span className="kbd">{p.nationalId ?? "—"}</span> — مواليد {fmtDate(p.dateOfBirth)}</>} crumbs={[["سجل اللاعبين", "/registration/players"], [p.fullName]]}
+      <PageHead title={p.fullName} sub={<>{p.cardNo && <>رقم البطاقة <span className="kbd">{p.cardNo}</span> — </>}الرقم الوطني <span className="kbd">{p.nationalId ?? "—"}</span> — مواليد {fmtDate(p.dateOfBirth)}</>} crumbs={[["سجل اللاعبين", "/registration/players"], [p.fullName]]}
         actions={u.can("archive.view") ? <Link className="btn btn-light" href={`/archive?player=${p.id}`}>🗄 وثائق اللاعب في الأرشيف</Link> : undefined} />
       <Flash sp={sp} />
       <div className="grid g-side">
@@ -115,7 +115,7 @@ export default async function PlayerFile({ params, searchParams }: { params: Pro
               <summary>✎ تعديل بيانات اللاعب</summary>
               <form action={editPlayer} className="form f1 mt">
                 <input type="hidden" name="playerId" value={id} />
-                <PlayerFields p={p} />
+                <PlayerFields p={p} federation />
                 <Submit>حفظ التعديلات</Submit>
               </form>
             </details>

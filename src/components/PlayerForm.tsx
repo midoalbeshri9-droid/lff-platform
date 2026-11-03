@@ -2,13 +2,13 @@ import { Field, Options } from "./ui";
 import { POSITION, PRO_LEVEL, GENDER } from "@/lib/labels";
 
 type P = Partial<{
-  fullName: string; fullNameEn: string | null; motherName: string | null; nationalId: string | null; passportNo: string | null;
+  fullName: string; fullNameEn: string | null; cardNo: string | null; motherName: string | null; nationalId: string | null; passportNo: string | null;
   dateOfBirth: string; placeOfBirth: string | null; gender: string; nationality: string; isForeign: boolean; position: string;
   professionalLevel: string; phone: string | null; address: string | null; city: string | null;
 }>;
 
 /** حقول بيانات اللاعب — limited: النادي يعدّل بيانات الاتصال والمركز فقط بعد أول اعتماد */
-export function PlayerFields({ p = {}, limited = false, photoRequired = false }: { p?: P; limited?: boolean; photoRequired?: boolean }) {
+export function PlayerFields({ p = {}, limited = false, photoRequired = false, federation = false }: { p?: P; limited?: boolean; photoRequired?: boolean; federation?: boolean }) {
   const dis = limited ? { disabled: true } : {};
   return (
     <>
@@ -16,6 +16,7 @@ export function PlayerFields({ p = {}, limited = false, photoRequired = false }:
       <Field label="الاسم بالإنجليزية (كما في الجواز)"><input type="text" name="fullNameEn" dir="ltr" defaultValue={p.fullNameEn ?? ""} {...dis} /></Field>
       <Field label="اسم الأم"><input type="text" name="motherName" defaultValue={p.motherName ?? ""} {...dis} /></Field>
       <Field label="الرقم الوطني" hint="12 رقمًا — إلزامي لليبيين"><input type="text" name="nationalId" dir="ltr" inputMode="numeric" maxLength={12} defaultValue={p.nationalId ?? ""} {...dis} /></Field>
+      {federation && <Field label="رقم البطاقة (الاتحاد)"><input type="text" name="cardNo" dir="ltr" defaultValue={p.cardNo ?? ""} /></Field>}
       <Field label="رقم جواز السفر"><input type="text" name="passportNo" dir="ltr" defaultValue={p.passportNo ?? ""} {...dis} /></Field>
       <Field label="تاريخ الميلاد *"><input type="date" name="dateOfBirth" defaultValue={p.dateOfBirth ?? ""} required {...dis} /></Field>
       <Field label="مكان الميلاد"><input type="text" name="placeOfBirth" defaultValue={p.placeOfBirth ?? ""} {...dis} /></Field>
