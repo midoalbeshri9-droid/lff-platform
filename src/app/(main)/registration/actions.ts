@@ -115,6 +115,9 @@ export async function editPlayer(f: FormData) {
       isForeign: bool(f, "isForeign"), position: (str(f, "position") ?? "UNKNOWN") as "UNKNOWN",
       professionalLevel: (str(f, "professionalLevel") ?? "AMATEUR") as "AMATEUR", phone: str(f, "phone"), address: str(f, "address"), city: str(f, "city"),
     };
+    // تصحيح تاريخ الميلاد التقريبي يزيل علامة «يُستكمل»
+    const fixedApprox = before.dateOfBirth !== data.dateOfBirth && before.notes?.includes("تاريخ الميلاد تقريبي")
+      ? { notes: before.notes.replace(/\s*تاريخ الميلاد تقريبي \(السنة من رقم البطاقة\) — يُستكمل\s*/, "").trim() || null } : {};
     const photo = f.get("photo") as File | null;
     const saved = photo && photo.size ? await saveUpload(photo, "photos", ALLOWED_IMG) : null;
     // الفئات الجديدة تُحسب قبل المعاملة (قاعدة البيانات المدمجة اتصال واحد)
@@ -124,7 +127,7 @@ export async function editPlayer(f: FormData) {
       for (const { r, s } of regs) recat.push({ regId: r.id, catId: (await categoryFor(data.dateOfBirth, s.startDate))?.id ?? null });
     }
     await db.transaction(async (tx) => {
-      await tx.update(players).set(data).where(eq(players.id, id));
+      await tx.update(players).set({ ...data, ...fixedApprox }).where(eq(players.id, id));
       if (saved) await tx.update(players).set({ photoKey: saved.key, photoHash: saved.hash }).where(eq(players.id, id));
       for (const x of recat) await tx.update(registrations).set({ categoryId: x.catId }).where(eq(registrations.id, x.regId));
       const changed = Object.fromEntries(Object.entries(data).filter(([k, v]) => (before as Record<string, unknown>)[k] !== v).map(([k, v]) => [k, [(before as Record<string, unknown>)[k], v]]));

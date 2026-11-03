@@ -1,103 +1,24 @@
 "use client";
 import { useState } from "react";
-import JSZip from "jszip";
+import { readWorkbook, cardColumn, findCol, toJpeg } from "@/lib/xlsxClient";
 import { lookupCards, setPlayerPhoto, type CardMatch } from "./actions";
 
 type Row = { key: string; sheet: string; row: number; card: string; name: string; blob: Blob; url: string; match?: CardMatch; result?: { ok: boolean; msg: string } };
 
-const CARD_RE = /^\d{6}[MF]\d{2}$/i;
-const byLocal = (root: Element | Document, name: string) => Array.from(root.getElementsByTagName("*")).filter((e) => e.localName === name);
-const xml = async (zip: JSZip, path: string) => {
-  const f = zip.file(path);
-  return f ? new DOMParser().parseFromString(await f.async("text"), "application/xml") : null;
-};
-/** يحوّل مسارًا نسبيًا داخل الملف المضغوط (مثل ../media/image1.png) إلى مسار كامل */
-const resolve = (base: string, target: string) => {
-  if (target.startsWith("/")) return target.slice(1);
-  const parts = base.split("/").slice(0, -1);
-  for (const p of target.split("/")) p === ".." ? parts.pop() : p !== "." && parts.push(p);
-  return parts.join("/");
-};
-const rels = async (zip: JSZip, path: string) => {
-  const relPath = path.replace(/([^/]+)$/, "_rels/$1.rels");
-  const d = await xml(zip, relPath);
-  const m = new Map<string, { type: string; target: string }>();
-  if (d) for (const r of byLocal(d, "Relationship")) m.set(r.getAttribute("Id")!, { type: r.getAttribute("Type") ?? "", target: resolve(path, r.getAttribute("Target") ?? "") });
-  return m;
-};
-const colOf = (ref: string) => ref.replace(/\d+/g, "");
-const colIdx = (c: string) => c.split("").reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1;
-
-/** تصغير الصورة وتحويلها إلى JPEG (حجم أصغر وشكل موحد) */
-async function toJpeg(blob: Blob): Promise<Blob> {
-  const bmp = await createImageBitmap(blob);
-  const s = Math.min(1, 600 / Math.max(bmp.width, bmp.height));
-  const c = document.createElement("canvas");
-  c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
-  const g = c.getContext("2d")!;
-  g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
-  g.drawImage(bmp, 0, 0, c.width, c.height);
-  return new Promise((ok, no) => c.toBlob((b) => (b ? ok(b) : no(new Error("jpeg"))), "image/jpeg", 0.9));
-}
-
 async function parse(file: File): Promise<{ rows: Row[]; warnings: string[] }> {
   const tag = file.name.replace(/\.xlsx$/i, "");
-  const zip = await JSZip.loadAsync(file);
   const warnings: string[] = [];
-  const ss = await xml(zip, "xl/sharedStrings.xml");
-  const shared = ss ? byLocal(ss, "si").map((si) => byLocal(si, "t").map((t) => t.textContent ?? "").join("")) : [];
-  const wb = await xml(zip, "xl/workbook.xml");
-  const wbRels = await rels(zip, "xl/workbook.xml");
-  const sheets = wb ? byLocal(wb, "sheet").map((s) => ({ name: s.getAttribute("name") ?? "", path: wbRels.get(s.getAttribute("r:id") ?? Array.from(s.attributes).find((a) => a.localName === "id")?.value ?? "")?.target ?? "" })) : [];
   const rows: Row[] = [];
-  for (const sh of sheets.filter((s) => s.path)) {
-    const doc = await xml(zip, sh.path);
-    if (!doc) continue;
-    // القيم: صف ← عمود ← نص
-    const cells = new Map<number, Map<number, string>>();
-    for (const c of byLocal(doc, "c")) {
-      const ref = c.getAttribute("r") ?? "";
-      const r = Number(ref.replace(/\D+/g, "")), col = colIdx(colOf(ref));
-      const t = c.getAttribute("t");
-      const v = byLocal(c, "v")[0]?.textContent ?? byLocal(c, "t").map((x) => x.textContent).join("");
-      const text = (t === "s" ? shared[Number(v)] : v ?? "").toString().trim();
-      if (text) { if (!cells.has(r)) cells.set(r, new Map()); cells.get(r)!.set(col, text); }
-    }
-    // عمود رقم البطاقة: من العنوان، وإلا أول عمود قيمه بشكل رقم البطاقة
-    let cardCol = -1, nameCol = -1;
-    for (const [, m] of [...cells].slice(0, 10)) for (const [c, v] of m) {
-      if (cardCol < 0 && /player\s*id|رقم\s*البطاقة|البطاقة/i.test(v)) cardCol = c;
-      if (nameCol < 0 && /full\s*name|^name$|الاسم|أسماء/i.test(v)) nameCol = c;
-    }
-    if (cardCol < 0) {
-      const count = new Map<number, number>();
-      for (const [, m] of cells) for (const [c, v] of m) if (CARD_RE.test(v.replace(/\s+/g, ""))) count.set(c, (count.get(c) ?? 0) + 1);
-      cardCol = [...count].sort((a, b) => b[1] - a[1])[0]?.[0] ?? -1;
-    }
-    const sRels = await rels(zip, sh.path);
-    const drawings = [...sRels.values()].filter((r) => r.type.endsWith("/drawing"));
-    if (!drawings.length) continue;
+  for (const sh of await readWorkbook(file)) {
+    for (const u of sh.unsupported) if (u.row > 1) warnings.push(`${tag} — الصف ${u.row}: صيغة الصورة غير مدعومة (${u.ext})`);
+    if (!sh.images.length) continue;
+    const cardCol = cardColumn(sh.cells), nameCol = findCol(sh.cells, /full\s*name|^name$|الاسم|أسماء/i);
     if (cardCol < 0) { warnings.push(`${tag}: فيها صور لكن لم أجد عمود رقم البطاقة`); continue; }
-    for (const dr of drawings) {
-      const d = await xml(zip, dr.target);
-      if (!d) continue;
-      const dRels = await rels(zip, dr.target);
-      for (const a of [...byLocal(d, "twoCellAnchor"), ...byLocal(d, "oneCellAnchor")]) {
-        const from = byLocal(a, "from")[0];
-        const blip = byLocal(a, "blip")[0];
-        if (!from || !blip) continue;
-        const row = Number(byLocal(from, "row")[0]?.textContent ?? -1) + 1;
-        const embed = blip.getAttribute("r:embed") ?? Array.from(blip.attributes).find((x) => x.localName === "embed")?.value ?? "";
-        const media = dRels.get(embed)?.target;
-        const card = (cells.get(row)?.get(cardCol) ?? "").replace(/\s+/g, "").toUpperCase();
-        const name = nameCol >= 0 ? cells.get(row)?.get(nameCol) ?? "" : "";
-        if (!media || !zip.file(media)) continue;
-        if (!/\.(png|jpe?g|gif|bmp|webp)$/i.test(media)) { warnings.push(`${tag} — الصف ${row}: صيغة الصورة غير مدعومة (${media.split(".").pop()})`); continue; }
-        if (!card) { warnings.push(`${tag} — الصف ${row}: صورة بلا رقم بطاقة في صفّها`); continue; }
-        const raw = await zip.file(media)!.async("blob");
-        const blob = await toJpeg(raw).catch(() => raw);
-        rows.push({ key: `${tag}-${sh.name}-${row}-${media}`, sheet: tag, row, card, name, blob, url: URL.createObjectURL(blob) });
-      }
+    for (const im of sh.images) {
+      const card = (sh.cells.get(im.row)?.get(cardCol) ?? "").replace(/\s+/g, "").toUpperCase();
+      if (!card) { if (im.row > 1) warnings.push(`${tag} — الصف ${im.row}: صورة بلا رقم بطاقة في صفّها`); continue; }
+      const blob = await toJpeg(im.blob).catch(() => im.blob);
+      rows.push({ key: `${tag}-${sh.name}-${im.row}-${im.media}`, sheet: tag, row: im.row, card, name: nameCol >= 0 ? sh.cells.get(im.row)?.get(nameCol) ?? "" : "", blob, url: URL.createObjectURL(blob) });
     }
   }
   if (!rows.length && !warnings.length) warnings.push(`${tag}: لم أجد صورًا مثبّتة على الخلايا. إن كانت الصور «داخل الخلية» (Place in Cell) فاجعلها «فوق الخلايا» (Place over Cells) من Excel ثم أعد المحاولة.`);
