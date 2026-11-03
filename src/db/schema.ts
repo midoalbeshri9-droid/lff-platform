@@ -93,6 +93,7 @@ export const registrationWindows = pgTable("registration_windows", {
   endDate: d("end_date").notNull(),
   isException: boolean("is_exception").notNull().default(false),
   clubId: integer("club_id").references(() => clubs.id), // استثناء لنادٍ بعينه
+  divisionId: integer("division_id").references((): AnyPgColumn => divisions.id), // فترة خاصة بدرجة (فارغ = كل الدرجات)
   isClosed: boolean("is_closed").notNull().default(false),
 });
 

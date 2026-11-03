@@ -61,7 +61,7 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
         ...(u.can("reg.lists") ? [{ label: "📋 قوائم الفرق", href: "/registration/lists" }] : []),
         ...(u.can("cards.print") ? [{ label: "🪪 طباعة البطاقات", href: "/registration/cards" }] : []),
         ...(u.can("cards.design") ? [{ label: "🎨 تصميم البطاقات", href: "/registration/cards/templates" }] : []),
-        ...(u.can("reg.windows") ? ["sep" as const, { label: "📅 المواسم وفترات القيد", href: "/registration/settings" }] : []),
+        ...(u.can("reg.windows") ? ["sep" as const, { label: u.divisionId ? "📅 فترات القيد للدرجة" : "📅 المواسم وفترات القيد", href: "/registration/settings" }] : []),
       ],
     });
   }

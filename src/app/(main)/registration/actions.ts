@@ -1,6 +1,7 @@
 "use server";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { db } from "@/db";
 import {
   registrations, registrationDocuments, players, suspensions, seasons, registrationWindows, ageCategories, documentTypes,
@@ -224,7 +225,7 @@ export async function liftSuspension(f: FormData) {
 
 // ======================= المواسم والفترات والإعدادات =======================
 export async function saveSeason(f: FormData) {
-  const u = await requireUser("reg.windows");
+  const u = await requireFedUser("reg.windows");
   await attempt("/registration/settings", async () => {
     const id = int(f, "id");
     const data = { name: req(f, "name", "اسم الموسم"), startDate: req(f, "startDate", "البداية"), endDate: req(f, "endDate", "النهاية"), notes: str(f, "notes") };
@@ -237,7 +238,7 @@ export async function saveSeason(f: FormData) {
 }
 
 export async function setCurrentSeason(f: FormData) {
-  const u = await requireUser("reg.windows");
+  const u = await requireFedUser("reg.windows");
   await attempt("/registration/settings", async () => {
     const id = int(f, "id")!;
     await db.transaction(async (tx) => {
@@ -251,7 +252,7 @@ export async function setCurrentSeason(f: FormData) {
 
 /** إغلاق موسم: القيود المعتمدة فيه تصبح منتهية (ليُجدّدها النادي في الموسم الجديد) */
 export async function closeSeason(f: FormData) {
-  const u = await requireUser("reg.windows");
+  const u = await requireFedUser("reg.windows");
   await attempt("/registration/settings", async () => {
     const id = int(f, "id")!;
     const [s] = await db.select().from(seasons).where(eq(seasons.id, id));
@@ -265,17 +266,41 @@ export async function closeSeason(f: FormData) {
   });
 }
 
+/** إعدادات القيد العامة (المواسم، الفئات، المستندات): للاتحاد فقط لا لمستخدمي الدرجات */
+async function requireFedUser(p: string) {
+  const u = await requireUser(p);
+  if (u.divisionId) redirect("/denied");
+  return u;
+}
+
+/** مدير الدرجة يدير فترات درجته وأنديتها فقط؛ الاتحاد يدير كل الفترات */
+async function windowScope(u: Awaited<ReturnType<typeof requireUser>>, w: { divisionId: number | null; clubId: number | null }) {
+  if (!u.divisionId) return;
+  const sc = await scopeOf(u);
+  const ok = w.clubId ? !!sc && sc.clubIds.includes(w.clubId) : w.divisionId === u.divisionId;
+  if (!ok) throw new UserError("هذه الفترة خارج نطاق درجتك — الفترات العامة لكل الدرجات يديرها الاتحاد");
+}
+
 export async function saveWindow(f: FormData) {
   const u = await requireUser("reg.windows");
   await attempt("/registration/settings", async () => {
     const id = int(f, "id");
+    const clubId = int(f, "clubId");
     const data = {
       seasonId: int(f, "seasonId")!, label: req(f, "label", "اسم الفترة"), startDate: req(f, "startDate", "البداية"), endDate: req(f, "endDate", "النهاية"),
-      isException: bool(f, "isException"), clubId: int(f, "clubId"), isClosed: bool(f, "isClosed"),
+      isException: bool(f, "isException") || !!clubId, clubId,
+      // فترة نادٍ تتبع درجته، وفترة مدير الدرجة لدرجته دائمًا
+      divisionId: clubId ? null : u.divisionId ?? int(f, "divisionId"),
+      isClosed: bool(f, "isClosed"),
     };
     if (data.endDate < data.startDate) throw new UserError("تاريخ النهاية قبل البداية");
-    if (id) await db.update(registrationWindows).set(data).where(eq(registrationWindows.id, id));
-    else await db.insert(registrationWindows).values(data);
+    await windowScope(u, data);
+    if (id) {
+      const [old] = await db.select().from(registrationWindows).where(eq(registrationWindows.id, id));
+      if (!old) throw new UserError("الفترة غير موجودة");
+      await windowScope(u, old);
+      await db.update(registrationWindows).set(data).where(eq(registrationWindows.id, id));
+    } else await db.insert(registrationWindows).values(data);
     await audit(u, id ? "تعديل فترة قيد" : "فتح فترة قيد", "RegistrationWindow", id, data);
     return "تم حفظ فترة القيد";
   });
@@ -286,6 +311,8 @@ export async function toggleWindow(f: FormData) {
   await attempt("/registration/settings", async () => {
     const id = int(f, "id")!;
     const [w] = await db.select().from(registrationWindows).where(eq(registrationWindows.id, id));
+    if (!w) throw new UserError("الفترة غير موجودة");
+    await windowScope(u, w);
     await db.update(registrationWindows).set({ isClosed: !w.isClosed }).where(eq(registrationWindows.id, id));
     await audit(u, w.isClosed ? "إعادة فتح فترة" : "إغلاق فترة يدويًا", "RegistrationWindow", id);
     return w.isClosed ? "أُعيد فتح الفترة" : "أُغلقت الفترة";
@@ -296,14 +323,17 @@ export async function deleteWindow(f: FormData) {
   const u = await requireUser("reg.windows");
   await attempt("/registration/settings", async () => {
     const id = int(f, "id")!;
+    const [w] = await db.select().from(registrationWindows).where(eq(registrationWindows.id, id));
+    if (!w) throw new UserError("الفترة غير موجودة");
+    await windowScope(u, w);
     await db.delete(registrationWindows).where(eq(registrationWindows.id, id));
     await audit(u, "حذف فترة", "RegistrationWindow", id);
-    return "تم الحذف";
+    return "تم حذف الفترة";
   });
 }
 
 export async function saveCategory(f: FormData) {
-  const u = await requireUser("reg.windows");
+  const u = await requireFedUser("reg.windows");
   await attempt("/registration/settings#cats", async () => {
     const id = int(f, "id");
     const data = { name: req(f, "name", "الاسم"), maxAge: int(f, "maxAge"), maxForeign: int(f, "maxForeign"), sortOrder: int(f, "sortOrder") ?? 0, isActive: f.get("isActive") ? bool(f, "isActive") : true };
@@ -315,7 +345,7 @@ export async function saveCategory(f: FormData) {
 }
 
 export async function saveDocType(f: FormData) {
-  const u = await requireUser("reg.windows");
+  const u = await requireFedUser("reg.windows");
   await attempt("/registration/settings#docs", async () => {
     const id = int(f, "id");
     const data = {
@@ -330,7 +360,7 @@ export async function saveDocType(f: FormData) {
 }
 
 export async function saveRegSettings(f: FormData) {
-  const u = await requireUser("reg.windows");
+  const u = await requireFedUser("reg.windows");
   await attempt("/registration/settings", async () => {
     for (const k of ["require_origin_consent"]) {
       const v = bool(f, k) ? "1" : "0";

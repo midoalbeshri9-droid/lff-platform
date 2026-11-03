@@ -133,7 +133,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, string[]> = {
   FIN_HEAD: ["fin.view", "fin.manage", "fin.approve", "fin.settings", "reports.view", "sec.view", "archive.view", "archive.manage"],
   FIN_STAFF: ["fin.view", "fin.manage", "archive.view"],
   // مدير الدرجة: يدير كل ما يخص درجته فقط (القيد والمسابقات والحكام)
-  DIV_MANAGER: ["div.clubs", "div.users", "comp.stadiums", "reg.view", "reg.review", "reg.edit", "reg.suspend", "reg.lists", "reg.staff", "cards.print", "comp.view", "comp.manage", "comp.lineups", "comp.reports", "comp.suspend", "comp.sanctions", "comp.requests", "comp.observers", "ref.view", "ref.manage", "ref.assign", "ref.approve", "ref.evals"],
+  DIV_MANAGER: ["div.clubs", "div.users", "comp.stadiums", "reg.windows", "reg.view", "reg.review", "reg.edit", "reg.suspend", "reg.lists", "reg.staff", "cards.print", "comp.view", "comp.manage", "comp.lineups", "comp.reports", "comp.suspend", "comp.sanctions", "comp.requests", "comp.observers", "ref.view", "ref.manage", "ref.assign", "ref.approve", "ref.evals"],
   DIV_STAFF: ["reg.view", "reg.review", "reg.lists", "reg.staff", "cards.print", "comp.view", "comp.lineups", "comp.requests", "ref.view", "ref.assign"],
 };
 
@@ -145,7 +145,7 @@ export const SCOPEABLE = new Set([
   "reg.view", "reg.review", "reg.edit", "reg.suspend", "reg.lists", "reg.contracts", "reg.staff", "cards.print",
   "comp.view", "comp.manage", "comp.lineups", "comp.reports", "comp.suspend", "comp.sanctions", "comp.requests", "comp.observers",
   "ref.view", "ref.manage", "ref.assign", "ref.approve", "ref.evals",
-  "div.clubs", "div.users", "comp.stadiums",
+  "div.clubs", "div.users", "comp.stadiums", "reg.windows",
 ]);
 export const DIVISION_ROLES: Role[] = ["DIV_MANAGER", "DIV_STAFF"];
 

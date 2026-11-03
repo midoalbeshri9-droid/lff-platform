@@ -3,7 +3,7 @@ import { and, eq, ne, or, lte, gte, isNull, inArray, sql, desc } from "drizzle-o
 import { db, type Tx } from "@/db";
 import {
   seasons, registrationWindows, ageCategories, registrations, players, documentTypes, registrationDocuments,
-  registrationEvents, counters, settings, suspensions, contracts, type RegType,
+  registrationEvents, counters, settings, suspensions, contracts, clubs, type RegType,
 } from "@/db/schema";
 import { today, UserError } from "./util";
 
@@ -21,6 +21,7 @@ export async function getCurrentSeason() {
 
 /** هل فترة القيد مفتوحة لهذا النادي اليوم؟ (فترة عامة أو استثناء خاص بالنادي) */
 export async function openWindow(seasonId: number, clubId: number, on = today()) {
+  const [c] = await db.select({ d: clubs.divisionId }).from(clubs).where(eq(clubs.id, clubId));
   const [w] = await db
     .select()
     .from(registrationWindows)
@@ -30,7 +31,8 @@ export async function openWindow(seasonId: number, clubId: number, on = today())
         eq(registrationWindows.isClosed, false),
         lte(registrationWindows.startDate, on),
         gte(registrationWindows.endDate, on),
-        or(isNull(registrationWindows.clubId), eq(registrationWindows.clubId, clubId)),
+        // فترة للنادي نفسه (استثناء)، أو فترة عامة لكل الدرجات، أو فترة درجة النادي
+        or(eq(registrationWindows.clubId, clubId), and(isNull(registrationWindows.clubId), or(isNull(registrationWindows.divisionId), c?.d ? eq(registrationWindows.divisionId, c.d) : undefined))),
       ),
     )
     .limit(1);

@@ -1,6 +1,7 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, or, inArray, isNull, and } from "drizzle-orm";
 import { db } from "@/db";
-import { seasons, registrationWindows, ageCategories, documentTypes, clubs, settings } from "@/db/schema";
+import { seasons, registrationWindows, ageCategories, documentTypes, clubs, settings, divisions } from "@/db/schema";
+import { scopeOf } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { REG_TYPE } from "@/lib/labels";
 import { fmtDate, today } from "@/lib/util";
@@ -11,51 +12,69 @@ import {
 } from "../actions";
 
 export default async function RegSettings({ searchParams }: { searchParams: SP }) {
-  await requireUser("reg.windows");
+  const u = await requireUser("reg.windows");
   const sp = await searchParams;
+  const sc = await scopeOf(u);
+  const ids = sc?.clubIds.length ? sc.clubIds : [-1];
+  // مدير الدرجة: فترات درجته وأنديتها، مع عرض الفترات العامة للاطلاع
+  const wWhere = sc ? or(eq(registrationWindows.divisionId, sc.divisionId), inArray(registrationWindows.clubId, ids), and(isNull(registrationWindows.divisionId), isNull(registrationWindows.clubId))) : undefined;
+  const dv = await db.select({ id: divisions.id, name: divisions.name }).from(divisions).orderBy(divisions.level);
   const [ss, ws, cats, dts, cl, origin] = await Promise.all([
     db.select().from(seasons).orderBy(desc(seasons.startDate)),
-    db.select({ w: registrationWindows, club: clubs.name }).from(registrationWindows).leftJoin(clubs, eq(clubs.id, registrationWindows.clubId)).orderBy(desc(registrationWindows.startDate)),
+    db.select({ w: registrationWindows, club: clubs.name }).from(registrationWindows).leftJoin(clubs, eq(clubs.id, registrationWindows.clubId)).where(wWhere).orderBy(desc(registrationWindows.startDate)),
     db.select().from(ageCategories).orderBy(ageCategories.sortOrder),
     db.select().from(documentTypes).orderBy(documentTypes.sortOrder),
-    db.select({ id: clubs.id, name: clubs.name }).from(clubs).orderBy(clubs.name),
+    db.select({ id: clubs.id, name: clubs.name }).from(clubs).where(sc ? inArray(clubs.id, ids) : undefined).orderBy(clubs.name),
     db.select().from(settings).where(eq(settings.key, "require_origin_consent")),
   ]);
   const t = today();
   const status = (w: (typeof ws)[number]["w"]) =>
     w.isClosed ? <span className="b b-gray">مغلقة يدويًا</span> : w.startDate <= t && w.endDate >= t ? <span className="b b-green">مفتوحة الآن</span> : w.startDate > t ? <span className="b b-blue">قادمة</span> : <span className="b b-gray">منتهية</span>;
+  const WinFields = ({ w }: { w?: (typeof ws)[number]["w"] }) => (
+    <>
+      <Field label="الموسم"><select name="seasonId" defaultValue={w?.seasonId ?? ss.find((s) => s.isCurrent)?.id}>{ss.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
+      <Field label="اسم الفترة"><input type="text" name="label" required defaultValue={w?.label} placeholder="الفترة الصيفية / الشتوية" /></Field>
+      {!sc && <Field label="الدرجة"><select name="divisionId" defaultValue={w?.divisionId ?? ""}><option value="">كل الدرجات</option>{dv.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>}
+      <Field label="خاصة بنادٍ (استثناء)"><select name="clubId" defaultValue={w?.clubId ?? ""}><option value="">{sc ? `كل أندية ${sc.divisionName}` : "— لا (حسب الدرجة) —"}</option>{cl.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
+      <Field label="من"><input type="date" name="startDate" required defaultValue={w?.startDate ?? t} /></Field>
+      <Field label="إلى"><input type="date" name="endDate" required defaultValue={w?.endDate} /></Field>
+      <Field label="فترة استثنائية"><label className="check"><input type="checkbox" name="isException" defaultChecked={w?.isException} /> نعم</label></Field>
+    </>
+  );
   return (
     <>
-      <PageHead title="المواسم وفترات القيد" sub="فتح وإغلاق فترات التسجيل والانتقالات، الفئات العمرية، والمستندات المطلوبة" />
+      <PageHead title={sc ? `فترات القيد — ${sc.divisionName}` : "المواسم وفترات القيد"} sub={sc ? "فتح وإغلاق فترات التسجيل والانتقالات لأندية درجتك" : "فتح وإغلاق فترات التسجيل والانتقالات لكل درجة، الفئات العمرية، والمستندات المطلوبة"} />
       <Flash sp={sp} />
 
       <div className="card">
         <h2>فترات القيد والانتقالات</h2>
-        <p className="muted">لا تستطيع الأندية إرسال الطلبات إلا خلال فترة مفتوحة. يمكن فتح فترة استثنائية لنادٍ واحد.</p>
+        <p className="muted">لا تستطيع الأندية إرسال الطلبات إلا خلال فترة مفتوحة لدرجتها (أو فترة عامة لكل الدرجات). يمكن فتح فترة استثنائية لنادٍ واحد.</p>
         <div className="table-wrap">
-          <table className="t"><thead><tr><th>الفترة</th><th>الموسم</th><th>من</th><th>إلى</th><th>خاصة بنادٍ</th><th>الحالة</th><th></th></tr></thead>
+          <table className="t"><thead><tr><th>الفترة</th><th>الموسم</th><th>من</th><th>إلى</th><th>تشمل</th><th>الحالة</th><th></th></tr></thead>
             <tbody>{ws.map(({ w, club }) => (
               <tr key={w.id}><td><strong>{w.label}</strong>{w.isException && <span className="b b-purple" style={{ marginInlineStart: 6 }}>استثنائية</span>}</td>
-                <td>{ss.find((s) => s.id === w.seasonId)?.name}</td><td>{fmtDate(w.startDate)}</td><td>{fmtDate(w.endDate)}</td><td>{club ?? "كل الأندية"}</td><td>{status(w)}</td>
-                <td className="btn-row">
+                <td>{ss.find((s) => s.id === w.seasonId)?.name}</td><td>{fmtDate(w.startDate)}</td><td>{fmtDate(w.endDate)}</td><td>{club ? `نادي: ${club}` : w.divisionId ? <span className="b b-indigo">{dv.find((x) => x.id === w.divisionId)?.name}</span> : <span className="b b-gray">كل الدرجات</span>}</td><td>{status(w)}</td>
+                <td className="btn-row">{(!sc || w.clubId || w.divisionId === sc.divisionId) ? <>
                   <form action={toggleWindow}><input type="hidden" name="id" value={w.id} /><Submit className="btn btn-sm btn-light">{w.isClosed ? "إعادة فتح" : "إغلاق الآن"}</Submit></form>
+                  <details><summary className="btn btn-sm btn-light">تعديل</summary>
+                    <form action={saveWindow} className="form f1 mt" style={{ minWidth: 300 }}>
+                      <input type="hidden" name="id" value={w.id} />
+                      <WinFields w={w} />
+                      <Submit className="btn btn-sm">حفظ</Submit>
+                    </form></details>
                   <form action={deleteWindow}><input type="hidden" name="id" value={w.id} /><Submit className="btn btn-sm btn-ghost" confirm="حذف الفترة؟">حذف</Submit></form>
-                </td></tr>
+                </> : <span className="muted" style={{ fontSize: ".8rem" }}>يديرها الاتحاد</span>}</td></tr>
             ))}</tbody></table>
         </div>
         <details className="box mt"><summary>+ فتح فترة جديدة</summary>
           <form action={saveWindow} className="form f3 mt">
-            <Field label="الموسم"><select name="seasonId" defaultValue={ss.find((s) => s.isCurrent)?.id}>{ss.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
-            <Field label="اسم الفترة"><input type="text" name="label" required placeholder="الفترة الصيفية / الشتوية" /></Field>
-            <Field label="خاصة بنادٍ (استثناء)"><select name="clubId"><option value="">كل الأندية</option>{cl.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
-            <Field label="من"><input type="date" name="startDate" required defaultValue={t} /></Field>
-            <Field label="إلى"><input type="date" name="endDate" required /></Field>
-            <Field label="فترة استثنائية"><label className="check"><input type="checkbox" name="isException" /> نعم</label></Field>
+            <WinFields />
             <div className="full"><Submit>حفظ الفترة</Submit></div>
           </form>
         </details>
       </div>
 
+      {!sc && <>
       <div className="card">
         <h2>المواسم</h2>
         <div className="table-wrap">
@@ -133,6 +152,7 @@ export default async function RegSettings({ searchParams }: { searchParams: SP }
           </details>
         ))}
       </div>
+      </>}
     </>
   );
 }

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { and, eq, sql, gte, lte, isNull, asc, inArray } from "drizzle-orm";
+import { and, eq, sql, gte, lte, isNull, asc, inArray, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { registrations, matches, assignments, suspensions, registrationWindows, clubs, competitions, contracts, players, charges, appeals, sanctions } from "@/db/schema";
@@ -24,9 +24,11 @@ export default async function Dashboard() {
   const sid = season?.id ?? 0;
   const t = today();
   const week = new Date(Date.now() + 7 * 864e5);
-  const windows = await db.select().from(registrationWindows).where(and(eq(registrationWindows.seasonId, sid), isNull(registrationWindows.clubId), eq(registrationWindows.isClosed, false), gte(registrationWindows.endDate, t))).orderBy(asc(registrationWindows.startDate)).limit(2);
-  const h = alias(clubs, "h"), a = alias(clubs, "a");
   const sc = await scopeOf(u);
+  // الفترات العامة وفترة درجة المستخدم (مدير الدرجة)
+  const windows = await db.select().from(registrationWindows).where(and(eq(registrationWindows.seasonId, sid), isNull(registrationWindows.clubId), eq(registrationWindows.isClosed, false), gte(registrationWindows.endDate, t),
+    sc ? or(isNull(registrationWindows.divisionId), eq(registrationWindows.divisionId, sc.divisionId)) : undefined)).orderBy(asc(registrationWindows.startDate)).limit(2);
+  const h = alias(clubs, "h"), a = alias(clubs, "a");
   const R = regIn(sc), C = compIn(sc, matches.competitionId);
   const [submitted, approved, correction, origin, reports, upcoming, unassigned, drafts, susp] = await Promise.all([
     one(db.select({ n }).from(registrations).where(and(R, eq(registrations.status, "SUBMITTED")))),

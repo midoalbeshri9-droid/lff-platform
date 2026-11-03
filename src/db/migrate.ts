@@ -95,6 +95,12 @@ export async function migrate() {
     await db.insert(s.rolePermissions).values({ role: "DIV_MANAGER", permission: "comp.stadiums" }).onConflictDoNothing();
     await db.insert(s.settings).values({ key: "mig_div_stadiums", value: new Date().toISOString() }).onConflictDoNothing();
   }
+  // 13) مدير الدرجة يفتح فترات القيد لدرجته (مرة واحدة)
+  const [st13] = await db.select().from(s.settings).where(eq(s.settings.key, "mig_div_windows"));
+  if (!st13) {
+    await db.insert(s.rolePermissions).values({ role: "DIV_MANAGER", permission: "reg.windows" }).onConflictDoNothing();
+    await db.insert(s.settings).values({ key: "mig_div_windows", value: new Date().toISOString() }).onConflictDoNothing();
+  }
   console.log("✓ اكتمل ترحيل البيانات");
 }
 
