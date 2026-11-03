@@ -11,7 +11,7 @@ import { requireUser } from "@/lib/auth";
 import { audit, notifyClub } from "@/lib/audit";
 import { approveRegistration, logEvent, missingDocs, categoryFor, assertForeignQuota } from "@/lib/registration";
 import { addCharge, feeAmount } from "@/lib/finance";
-import { saveUpload, ALLOWED_IMG } from "@/lib/storage";
+import { saveUpload, ALLOWED_IMG, ALLOWED_DOC } from "@/lib/storage";
 import { attempt, str, req, int, bool, UserError } from "@/lib/util";
 
 // ======================= مراجعة الطلبات =======================
@@ -446,5 +446,51 @@ export async function decideStaff(f: FormData) {
       await audit(u, "قرار قيد إداري", "Staff", id, { status, reason }, tx);
     });
     return status === "APPROVED" ? "تم الاعتماد" : "تم إبلاغ النادي";
+  });
+}
+
+/** ملف اللاعب: رفع مستندات من لجنة القيد في أي وقت (تُلحق بقيد اللاعب وتُعتمد مباشرة) */
+export async function uploadPlayerDocs(f: FormData) {
+  const u = await requireUser("reg.edit");
+  const playerId = int(f, "playerId")!;
+  await attempt(`/registration/players/${playerId}#docs`, async () => {
+    guard(await inScopePlayer(u, playerId));
+    const regId = int(f, "registrationId");
+    const typeId = int(f, "documentTypeId");
+    if (!regId || !typeId) throw new UserError("اختر القيد ونوع المستند");
+    guard(await inScopeReg(u, regId));
+    const [r] = await db.select({ clubId: registrations.clubId }).from(registrations).where(and(eq(registrations.id, regId), eq(registrations.playerId, playerId)));
+    if (!r) throw new UserError("القيد لا يخص هذا اللاعب");
+    const [t] = await db.select({ name: documentTypes.name }).from(documentTypes).where(eq(documentTypes.id, typeId));
+    if (!t) throw new UserError("نوع المستند غير موجود");
+    const files = f.getAll("files").filter((x): x is File => x instanceof File && x.size > 0);
+    if (!files.length) throw new UserError("اختر ملفًا واحدًا على الأقل");
+    if (files.length > 10) throw new UserError("الحد الأقصى 10 ملفات في المرة الواحدة");
+    const saved = [];
+    for (const file of files) saved.push({ ...(await saveUpload(file, `docs/${r.clubId}`, ALLOWED_DOC)), name: file.name, type: file.type, size: file.size });
+    const now = new Date();
+    await db.insert(registrationDocuments).values(saved.map((x) => ({
+      registrationId: regId, documentTypeId: typeId, fileKey: x.key, originalName: x.name, mime: x.type, size: x.size,
+      status: "APPROVED" as const, uploadedBy: u.fullName, reviewedAt: now, reviewedBy: u.fullName,
+    })));
+    await logEvent(db, regId, u.fullName, "إضافة مستند لملف اللاعب", `${t.name} (${saved.length})`);
+    await audit(u, "إضافة مستندات لملف اللاعب", "Player", playerId, { type: t.name, files: saved.map((x) => x.name) });
+    return `أُضيف ${saved.length} مستند — ${t.name}`;
+  });
+}
+
+export async function deletePlayerDoc(f: FormData) {
+  const u = await requireUser("reg.edit");
+  const playerId = int(f, "playerId")!, docId = int(f, "docId")!;
+  await attempt(`/registration/players/${playerId}#docs`, async () => {
+    guard(await inScopePlayer(u, playerId));
+    const [d] = await db.select({ d: registrationDocuments, p: registrations.playerId }).from(registrationDocuments)
+      .innerJoin(registrations, eq(registrations.id, registrationDocuments.registrationId)).where(eq(registrationDocuments.id, docId));
+    if (!d || d.p !== playerId) throw new UserError("المستند غير موجود");
+    guard(await inScopeReg(u, d.d.registrationId));
+    await db.delete(registrationDocuments).where(eq(registrationDocuments.id, docId));
+    await logEvent(db, d.d.registrationId, u.fullName, "حذف مستند من ملف اللاعب", d.d.originalName);
+    await audit(u, "حذف مستند من ملف اللاعب", "Player", playerId, { file: d.d.originalName, key: d.d.fileKey });
+    return "تم حذف المستند";
   });
 }

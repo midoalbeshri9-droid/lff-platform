@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, asc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { players, registrations, clubs, seasons, suspensions, matchEvents, matches, competitions } from "@/db/schema";
+import { players, registrations, clubs, seasons, suspensions, matchEvents, matches, competitions, registrationDocuments, documentTypes } from "@/db/schema";
 import { scopeOf, clubIn, regIn, guardPage, inScopeReg, inScopePlayer } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { REG_STATUS, REG_TYPE, PLAYER_STATUS, EVENT_TYPE } from "@/lib/labels";
@@ -12,7 +12,7 @@ import { fileUrl } from "@/lib/storage";
 import { PageHead, Flash, Badge, Field, type SP } from "@/components/ui";
 import { Submit } from "@/components/Client";
 import { PlayerFields } from "@/components/PlayerForm";
-import { editPlayer, setPlayerStatus, addSuspension, liftSuspension } from "../../actions";
+import { editPlayer, setPlayerStatus, addSuspension, liftSuspension, uploadPlayerDocs, deletePlayerDoc } from "../../actions";
 
 export default async function PlayerFile({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const u = await requireUser("reg.view", "comp.view");
@@ -31,6 +31,13 @@ export default async function PlayerFile({ params, searchParams }: { params: Pro
       .innerJoin(competitions, eq(competitions.id, matches.competitionId))
       .where(and(eq(matchEvents.playerId, id), eq(matches.reportStatus, "APPROVED"))).orderBy(desc(matches.kickoff)).limit(100),
   ]);
+  const docs = await db.select({ d: registrationDocuments, type: documentTypes.name, season: seasons.name, club: clubs.name }).from(registrationDocuments)
+    .innerJoin(registrations, eq(registrations.id, registrationDocuments.registrationId)).innerJoin(documentTypes, eq(documentTypes.id, registrationDocuments.documentTypeId))
+    .innerJoin(seasons, eq(seasons.id, registrations.seasonId)).innerJoin(clubs, eq(clubs.id, registrations.clubId))
+    .where(eq(registrations.playerId, id)).orderBy(desc(registrationDocuments.uploadedAt));
+  const types = await db.select({ id: documentTypes.id, name: documentTypes.name }).from(documentTypes).where(eq(documentTypes.isActive, true)).orderBy(asc(documentTypes.sortOrder), asc(documentTypes.name));
+  const DOC_ST: Record<string, [string, string]> = { PENDING: ["قيد المراجعة", "amber"], APPROVED: ["مقبول", "green"], REJECTED: ["مرفوض", "red"] };
+  const kb = (n: number) => n > 1048576 ? `${(n / 1048576).toFixed(1)} م.ب` : `${Math.max(1, Math.round(n / 1024))} ك.ب`;
   const t = today();
   const isActive = (s: (typeof susp)[number]) => !s.isLifted && (s.kind === "ADMIN" ? !s.endDate || s.endDate >= t : (s.matchesTotal ?? 0) > s.matchesServed);
   const back = `/registration/players/${id}`;
@@ -53,6 +60,36 @@ export default async function PlayerFile({ params, searchParams }: { params: Pro
                 <span className="b b-red">طرد: {evs.filter((x) => ["RED", "SECOND_YELLOW"].includes(x.e.type)).length}</span>
               </div>
             </div>
+          </div>
+          <div className="card table-wrap" id="docs">
+            <h2>📁 مستندات اللاعب ({docs.length})</h2>
+            {docs.length === 0 ? <p className="muted">لا توجد مستندات بعد{u.can("reg.edit") ? " — أضفها من النموذج أدناه" : ""}</p> : (
+              <table className="t"><thead><tr><th>المستند</th><th>الملف</th><th>القيد</th><th>الحالة</th><th>أُضيف</th><th></th></tr></thead>
+                <tbody>{docs.map(({ d, type, season, club }) => (
+                  <tr key={d.id}><td><strong>{type}</strong></td>
+                    <td><a href={fileUrl(d.fileKey)!} target="_blank" rel="noreferrer">{d.mime.startsWith("image/") ? "🖼" : "📄"} {d.originalName}</a> <span className="muted" style={{ fontSize: ".8rem" }}>{kb(d.size)}</span></td>
+                    <td style={{ fontSize: ".85rem" }}>{club} — {season}</td>
+                    <td><span className={`b b-${DOC_ST[d.status][1]}`}>{DOC_ST[d.status][0]}</span>{d.rejectionReason && <div className="muted" style={{ fontSize: ".8rem" }}>{d.rejectionReason}</div>}</td>
+                    <td style={{ fontSize: ".8rem" }}>{d.uploadedBy}<div className="muted">{fmtDateTime(d.uploadedAt)}</div></td>
+                    <td>{u.can("reg.edit") && (
+                      <form action={deletePlayerDoc}><input type="hidden" name="playerId" value={id} /><input type="hidden" name="docId" value={d.id} />
+                        <Submit className="btn btn-sm btn-ghost" confirm={`حذف «${d.originalName}» من ملف اللاعب؟`}>حذف</Submit></form>)}</td></tr>
+                ))}</tbody></table>
+            )}
+            {u.can("reg.edit") && regs.length > 0 && (
+              <details className="mt" open={docs.length === 0}>
+                <summary>+ إضافة مستندات</summary>
+                <form action={uploadPlayerDocs} className="form f3 mt">
+                  <input type="hidden" name="playerId" value={id} />
+                  <Field label="نوع المستند"><select name="documentTypeId" required defaultValue="">
+                    <option value="" disabled>— اختر —</option>{types.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>
+                  <Field label="يُلحق بقيد"><select name="registrationId" defaultValue={regs[0].r.id}>
+                    {regs.map(({ r, club, season }) => <option key={r.id} value={r.id}>{season} — {club}</option>)}</select></Field>
+                  <Field label="الملفات" hint="PDF أو صور — حتى 10 ملفات"><input type="file" name="files" multiple required accept="application/pdf,image/jpeg,image/png,image/webp" /></Field>
+                  <div className="full"><Submit>📎 رفع المستندات</Submit></div>
+                </form>
+              </details>
+            )}
           </div>
           <div className="card table-wrap">
             <h2>سجل القيد والانتقالات</h2>

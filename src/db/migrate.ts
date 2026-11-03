@@ -87,6 +87,8 @@ export async function migrate() {
   if (!hasDiv) await db.insert(s.divisions).values([
     { name: "الدوري الممتاز", level: 1 }, { name: "الدرجة الأولى", level: 2 }, { name: "الدرجة الثانية", level: 3 }, { name: "الدرجة الثالثة", level: 4 },
   ]).onConflictDoNothing();
+  // 11) نوع مستند عام لملف اللاعب (لا يُطلب إلزاميًا)
+  await db.insert(s.documentTypes).values({ name: "مستند آخر", requiredFor: [], sortOrder: 99 }).onConflictDoNothing();
   console.log("✓ اكتمل ترحيل البيانات");
 }
 
