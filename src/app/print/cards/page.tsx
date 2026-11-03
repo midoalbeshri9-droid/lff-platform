@@ -39,7 +39,7 @@ export default async function PrintCards({ searchParams }: { searchParams: Promi
     photo: fileUrl(p.photoKey),
     qr: await QRCode.toDataURL(`${base}/verify/${r.verifyToken}`, { margin: 0, width: 300, errorCorrectionLevel: "M" }),
     data: {
-      fullName: p.fullName, fullNameEn: p.fullNameEn ?? "", club: club.name, clubEn: club.nameEn ?? "", number: r.number ?? "",
+      fullName: p.fullName, fullNameEn: p.fullNameEn ?? "", club: club.name, clubEn: club.nameEn ?? "", number: r.number ?? "", cardNo: p.cardNo ?? "",
       season: season.name, category: cat ?? "", dob: fmtDate(p.dateOfBirth), birthYear: p.dateOfBirth.slice(0, 4), nationalId: p.nationalId ?? "",
       nationality: p.nationality, position: POSITION[p.position], shirt: r.shirtNumber ? String(r.shirtNumber) : "", level: PRO_LEVEL[p.professionalLevel],
       regType: REG_TYPE[r.type], approvedAt: r.decidedAt ? fmtDate(r.decidedAt) : "", validUntil: fmtDate(season.endDate),

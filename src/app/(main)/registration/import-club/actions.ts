@@ -5,7 +5,7 @@ import { players, registrations, clubs, seasons, registrationEvents, divisions }
 import { requireUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { inScopeClub, scopeOf } from "@/lib/scope";
-import { categoryFor } from "@/lib/registration";
+import { categoryFor, nextNumber } from "@/lib/registration";
 import { UserError } from "@/lib/util";
 
 export type ImportRow = { card: string; name: string; dob: string | null; approx: boolean; nat: string; shirt: number | null };
@@ -71,9 +71,9 @@ export async function importClubChunk(input: { clubId?: number; newClub?: { name
         .where(and(eq(registrations.playerId, p.id), inArray(registrations.status, ["APPROVED", "EXPIRED", "TRANSFERRED"]))).orderBy(desc(registrations.id)).limit(1);
       const fromClubId = last && last.c !== clubId ? last.c : null;
       const cat = await categoryFor(r.dob, season.startDate);
-      const free = card ? !(await db.select({ id: registrations.id }).from(registrations).where(eq(registrations.number, card))).length : false;
+      const number = await nextNumber(db, season.name); // رقم قيد بصيغة المنظومة — ورقم البطاقة يبقى في ملف اللاعب
       const [reg] = await db.insert(registrations).values({
-        playerId: p.id, clubId, seasonId: season.id, type: fromClubId ? "TRANSFER" : last ? "RENEWAL" : "NEW", fromClubId, status: "APPROVED", number: free ? card : null,
+        playerId: p.id, clubId, seasonId: season.id, type: fromClubId ? "TRANSFER" : last ? "RENEWAL" : "NEW", fromClubId, status: "APPROVED", number,
         categoryId: cat?.id ?? null, shirtNumber: r.shirt, notes: "مستورد من ملف Excel للنادي",
         submittedAt: new Date(), submittedBy: u.fullName, decidedAt: new Date(), decidedBy: `${u.fullName} (${BY})`,
       }).returning();

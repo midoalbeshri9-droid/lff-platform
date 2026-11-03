@@ -29,6 +29,7 @@ export default async function Verify({ params }: { params: Promise<{ token: stri
               <dl className="dl" style={{ textAlign: "start", marginTop: "1rem" }}>
                 <dt>النادي</dt><dd>{r.club.name}</dd>
                 <dt>رقم القيد</dt><dd className="kbd">{r.number}</dd>
+                {r.player.cardNo && (<><dt>رقم البطاقة</dt><dd className="kbd">{r.player.cardNo}</dd></>)}
                 <dt>الموسم</dt><dd>{r.season.name}</dd>
                 <dt>الفئة</dt><dd>{r.category?.name ?? "—"}</dd>
                 <dt>حالة القيد</dt><dd>{REG_STATUS[r.status][0]}</dd>

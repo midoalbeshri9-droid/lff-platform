@@ -49,10 +49,13 @@ export async function importPlayers(file: string, reportFile?: string) {
     }
     const from = r.fromClub ? clubId(r.fromClub) ?? null : null;
     const isClubNote = !!r.note && !FREE.has(r.note) && !r.review;
-    const numberFree = r.card ? !(await db.select({ id: s.registrations.id }).from(s.registrations).where(eq(s.registrations.number, r.card))).length : false;
+    // رقم قيد بصيغة المنظومة (رقم البطاقة يبقى في ملف اللاعب)
+    const [ctr] = r.review ? [] : await db.insert(s.counters).values({ key: `reg:${season.name}`, value: 1 })
+      .onConflictDoUpdate({ target: s.counters.key, set: { value: sql`${s.counters.value} + 1` } }).returning();
+    const regNo = ctr ? `${season.name.slice(0, 4)}-${String(ctr.value).padStart(5, "0")}` : null;
     const [reg] = await db.insert(s.registrations).values({
       playerId: p.id, clubId: cid, seasonId: season.id, type: from || isClubNote ? "TRANSFER" : "RENEWAL",
-      status: r.review ? "SUBMITTED" : "APPROVED", number: !r.review && numberFree ? r.card : null,
+      status: r.review ? "SUBMITTED" : "APPROVED", number: regNo,
       categoryId: catFor(r.dob), shirtNumber: r.shirt, fromClubId: from,
       notes: [r.note && (isClubNote && !from ? `النادي السابق: ${r.note}` : r.note), "مستورد من القائمة النهائية"].filter(Boolean).join(" — "),
       submittedAt: new Date(), submittedBy: BY, ...(r.review ? {} : { decidedAt: new Date(), decidedBy: BY }),

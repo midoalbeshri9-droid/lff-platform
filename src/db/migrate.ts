@@ -101,6 +101,23 @@ export async function migrate() {
     await db.insert(s.rolePermissions).values({ role: "DIV_MANAGER", permission: "reg.windows" }).onConflictDoNothing();
     await db.insert(s.settings).values({ key: "mig_div_windows", value: new Date().toISOString() }).onConflictDoNothing();
   }
+  // 14) القيود المستوردة كان رقم قيدها = رقم البطاقة: تُعطى أرقام قيد بصيغة المنظومة (رقم البطاقة يبقى في ملف اللاعب)
+  const imported = await db.select({ id: s.registrations.id, season: s.seasons.name }).from(s.registrations)
+    .innerJoin(s.players, eq(s.players.id, s.registrations.playerId)).innerJoin(s.seasons, eq(s.seasons.id, s.registrations.seasonId))
+    .where(sql`${s.registrations.number} is not null and ${s.registrations.number} = ${s.players.cardNo}`).orderBy(s.registrations.id);
+  for (const r of imported) {
+    const [row] = await db.insert(s.counters).values({ key: `reg:${r.season}`, value: 1 })
+      .onConflictDoUpdate({ target: s.counters.key, set: { value: sql`${s.counters.value} + 1` } }).returning();
+    await db.update(s.registrations).set({ number: `${r.season.slice(0, 4)}-${String(row.value).padStart(5, "0")}` }).where(eq(s.registrations.id, r.id));
+  }
+  if (imported.length) console.log(`✓ أرقام قيد جديدة لـ ${imported.length} قيدًا مستوردًا`);
+  // 15) حقل «رقم البطاقة» في قوالب البطاقات ذات التصميم الافتراضي (تحت الموسم)
+  for (const t of await db.select().from(s.cardTemplates)) {
+    if (t.front.some((e) => e.field === "cardNo")) continue;
+    const season = t.front.find((e) => e.id === "season" && e.y === 38.5 && e.x === 40);
+    if (!season) continue; // قالب معدّل: يُضاف الحقل من مصمم البطاقات
+    await db.update(s.cardTemplates).set({ front: [...t.front, { id: "cardNo", kind: "field", field: "cardNo", text: "رقم البطاقة:", x: 40, y: 43, w: 43, h: 4, fontSize: 7.5, align: "right" }] }).where(eq(s.cardTemplates.id, t.id));
+  }
   console.log("✓ اكتمل ترحيل البيانات");
 }
 

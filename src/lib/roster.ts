@@ -13,6 +13,7 @@ export const ROSTER_COLUMNS: { key: string; label: string; get: (x: Row, i: numb
   { key: "seq", label: "م", get: (_x, i) => String(i + 1) },
   { key: "photo", label: "الصورة", get: () => "" },
   { key: "number", label: "رقم القيد", get: (x) => x.r.number ?? "" },
+  { key: "cardNo", label: "رقم البطاقة", get: (x) => x.p.cardNo ?? "" },
   { key: "fullName", label: "الاسم", get: (x) => x.p.fullName },
   { key: "fullNameEn", label: "الاسم بالإنجليزية", get: (x) => x.p.fullNameEn ?? "" },
   { key: "dob", label: "تاريخ الميلاد", get: (x) => fmtDate(x.p.dateOfBirth) },
@@ -33,7 +34,7 @@ export const ROSTER_COLUMNS: { key: string; label: string; get: (x: Row, i: numb
   { key: "phone", label: "الهاتف", get: (x) => x.p.phone ?? "" },
   { key: "signature", label: "توقيع اللاعب", get: () => "" },
 ];
-export const DEFAULT_COLUMNS = ["seq", "photo", "number", "fullName", "dob", "nationalId", "category", "position", "shirt"];
+export const DEFAULT_COLUMNS = ["seq", "photo", "number", "cardNo", "fullName", "dob", "nationalId", "category", "position", "shirt"];
 
 export async function loadRoster(seasonId: number, clubIds: number[], categoryId?: number | null) {
   const fc = alias(clubs, "fc");

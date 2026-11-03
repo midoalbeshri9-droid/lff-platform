@@ -116,7 +116,7 @@ export async function lastApproved(playerId: number) {
   return r ?? null;
 }
 
-async function nextNumber(tx: Tx, seasonName: string) {
+export async function nextNumber(tx: Tx | typeof db, seasonName: string) {
   const key = `reg:${seasonName}`;
   const [row] = await tx
     .insert(counters)

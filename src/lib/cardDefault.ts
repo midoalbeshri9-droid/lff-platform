@@ -15,6 +15,7 @@ export const DEFAULT_FRONT: CardElement[] = [
   { id: "dob", kind: "field", field: "dob", text: "الميلاد:", x: 40, y: 34, w: 43, h: 4, fontSize: 7.5, align: "right" },
   { id: "qr", kind: "qr", x: 3, y: 40, w: 12.5, h: 12.5 },
   { id: "season", kind: "field", field: "season", text: "الموسم:", x: 40, y: 38.5, w: 43, h: 4, fontSize: 7.5, align: "right" },
+  { id: "cardNo", kind: "field", field: "cardNo", text: "رقم البطاقة:", x: 40, y: 43, w: 43, h: 4, fontSize: 7.5, align: "right" },
   { id: "foot", kind: "rect", x: 0, y: 50.5, w: 85.6, h: 3.5, bg: "#4C7A30" },
   { id: "flag", kind: "rect", x: 0, y: 49.5, w: 85.6, h: 1, bg: "#A92222" },
 ];

@@ -5,6 +5,7 @@ export const CARD_FIELDS: { key: string; label: string; sample: string }[] = [
   { key: "club", label: "النادي", sample: "نادي الأهلي طرابلس" },
   { key: "clubEn", label: "النادي بالإنجليزية", sample: "Al Ahli Tripoli" },
   { key: "number", label: "رقم القيد", sample: "2026-00123" },
+  { key: "cardNo", label: "رقم البطاقة (ثابت للاعب)", sample: "000146M03" },
   { key: "season", label: "الموسم", sample: "2026-2027" },
   { key: "category", label: "الفئة العمرية", sample: "الفريق الأول" },
   { key: "dob", label: "تاريخ الميلاد", sample: "14/03/2001" },
