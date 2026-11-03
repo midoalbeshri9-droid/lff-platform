@@ -31,7 +31,8 @@ export default async function PlayersList({ searchParams }: { searchParams: SP }
     .orderBy(desc(players.id)).limit(300);
   return (
     <>
-      <PageHead title="سجل اللاعبين" sub="كل اللاعبين المسجلين في المنظومة عبر كل الأندية والمواسم" />
+      <PageHead title="سجل اللاعبين" sub="كل اللاعبين المسجلين في المنظومة عبر كل الأندية والمواسم"
+        actions={u.can("reg.edit") ? <Link className="btn btn-light" href="/registration/photos">🖼 استيراد الصور من Excel</Link> : undefined} />
       <form className="filters">
         <div className="field grow"><label>بحث</label><input type="search" name="q" defaultValue={q} placeholder="الاسم، رقم البطاقة، الرقم الوطني، الجواز" /></div>
         <div className="field"><label>النادي الحالي</label><select name="club" defaultValue={sp.club ?? ""}><option value="">الكل</option>{allClubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
