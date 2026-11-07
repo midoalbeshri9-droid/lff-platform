@@ -368,6 +368,7 @@ export const competitionStages = pgTable("competition_stages", {
   koPairing: text("ko_pairing").notNull().default("SEEDED"), // خروج المغلوب: SEEDED (أول × ثاني المجموعة المجاورة) | DRAW (قرعة) | MANUAL (يدوي)
   tieDecider: text("tie_decider").notNull().default("ET_PENS"), // حسم التعادل: ET_PENS (وقت إضافي ثم ترجيح) | PENS (ترجيح مباشرة)
   thirdPlace: boolean("third_place").notNull().default(false), // مباراة تحديد المركز الثالث
+  resetYellows: boolean("reset_yellows").notNull().default(false), // لا تُحتسب إنذارات المراحل السابقة (الإيقافات المستحقة تبقى)
   finalVenue: text("final_venue"), // ملعب محايد للنهائي (فارغ = ملعب الفريق الأول)
   status: stageStatusEnum("status").notNull().default("PENDING"),
   notes: text("notes"),

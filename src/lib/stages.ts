@@ -10,7 +10,7 @@ type CompType = (typeof competitions.$inferSelect)["type"];
 
 export const STAGE_FORMAT: Record<string, string> = { LEAGUE: "دوري", GROUPS: "مجموعات", KNOCKOUT: "خروج المغلوب" };
 export const CARRY_POINTS: Record<string, string> = { NONE: "لا ترحيل", FULL: "ترحيل كامل النقاط", HALF: "ترحيل نصف النقاط (يُقرب لأعلى)" };
-export const KO_PAIRING: Record<string, string> = { SEEDED: "بالتصنيف (أول المجموعة × ثاني المجاورة)", DRAW: "قرعة عشوائية", MANUAL: "يدويًا من اللجنة" };
+export const KO_PAIRING: Record<string, string> = { SEEDED: "بالتصنيف (أول المجموعة × ثاني المجاورة)", RANK: "حسب المركز (الأول × الأول نهائي، الثاني × الثاني لتحديد الثالث)", DRAW: "قرعة عشوائية", MANUAL: "يدويًا من اللجنة" };
 export const TIE_DECIDER: Record<string, string> = { ET_PENS: "وقت إضافي ثم ركلات ترجيح", PENS: "ركلات ترجيح مباشرة" };
 export const STAGE_STATUS: Record<string, [string, string]> = { PENDING: ["لم تبدأ", "b-gray"], ACTIVE: ["جارية", "b-green"], DONE: ["انتهت", "b-blue"] };
 
@@ -204,8 +204,18 @@ export async function generateStageFixtures(stageId: number) {
     }
   } else if (s.format === "KNOCKOUT") {
     if (teams.length % 2) throw new UserError(`عدد الفرق فردي (${teams.length}) — أضف أو احذف فريقًا، أو أضف المباريات يدويًا`);
-    const legs = teams.length === 2 ? s.finalLegs : s.legs;
-    rows.push(...koMatches(s.competitionId, stageId, 1, pairsFor(s, teams), legs, venue, 1, teams.length === 2 ? await neutralVenue(s) : null));
+    if (s.koPairing === "RANK") {
+      // مجموعتان: الأول × الأول (النهائي) والثاني × الثاني (المركز الثالث)
+      const groups = [...new Set(teams.map((t) => t.fromGroup ?? ""))];
+      const by = (g: string, seed: number) => teams.find((t) => (t.fromGroup ?? "") === g && t.seed === seed)?.clubId;
+      if (groups.length !== 2 || teams.length > 4 || !by(groups[0], 1) || !by(groups[1], 1)) throw new UserError("«حسب المركز» يتطلب فريقين أو أربعة متأهلين من مجموعتين (الأول والثاني)");
+      const neutral = await neutralVenue(s);
+      rows.push(...koMatches(s.competitionId, stageId, 1, [[by(groups[0], 1)!, by(groups[1], 1)!]], s.finalLegs, venue, 1, neutral));
+      if (teams.length === 4) rows.push(...koMatches(s.competitionId, stageId, 1, [[by(groups[0], 2)!, by(groups[1], 2)!]], 1, venue, 2, neutral, true));
+    } else {
+      const legs = teams.length === 2 ? s.finalLegs : s.legs;
+      rows.push(...koMatches(s.competitionId, stageId, 1, pairsFor(s, teams), legs, venue, 1, teams.length === 2 ? await neutralVenue(s) : null));
+    }
   } else {
     roundRobin(teams.map((t) => t.clubId), s.legs).forEach((m) => rows.push({ competitionId: s.competitionId, stageId, round: m.round, homeClubId: m.home, awayClubId: m.away, venue: venue(m.home)?.stadium, city: venue(m.home)?.city, stadiumId: venue(m.home)?.stadiumId }));
   }

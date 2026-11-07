@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, inArray, sql, lte } from "drizzle-orm";
 import { db, type Tx } from "@/db";
-import { competitions, matches, matchEvents, suspensions, clubs, registrations, stageTeams } from "@/db/schema";
+import { competitions, matches, matchEvents, suspensions, clubs, registrations, stageTeams, competitionStages } from "@/db/schema";
 import { UserError, dayOf } from "./util";
 import { roundRobin, lffRank, type StandingRow } from "./competitionPure";
 import { ensureStages, generateStageFixtures } from "./stages";
@@ -144,13 +144,16 @@ export async function approveMatch(tx: Tx, matchId: number, by: string) {
     created.push(`طرد لاعب #${e.playerId}`);
   }
   const yellowsHere = evs.filter((e) => e.type === "YELLOW" && e.playerId && !sentOff.has(e.playerId));
+  // مرحلة تُلغى فيها إنذارات المراحل السابقة: تُحتسب إنذارات هذه المرحلة فقط
+  const [stg] = m.stageId ? await tx.select({ reset: competitionStages.resetYellows }).from(competitionStages).where(eq(competitionStages.id, m.stageId)) : [];
+  const stageOnly = stg?.reset ? eq(matches.stageId, m.stageId!) : undefined;
   for (const e of yellowsHere) {
     // مجموع الإنذارات في المسابقة بعد هذه المباراة (المباريات المعتمدة + هذه)
     const [{ n }] = await tx
       .select({ n: sql<number>`count(*)::int` })
       .from(matchEvents)
       .innerJoin(matches, eq(matches.id, matchEvents.matchId))
-      .where(and(eq(matchEvents.playerId, e.playerId!), eq(matchEvents.type, "YELLOW"), eq(matches.competitionId, c.id),
+      .where(and(eq(matchEvents.playerId, e.playerId!), eq(matchEvents.type, "YELLOW"), eq(matches.competitionId, c.id), stageOnly,
         sql`(${matches.reportStatus} = 'APPROVED' or ${matches.id} = ${matchId})`));
     // مستويات الإنذارات (مثال "3:1,5:2,7:3") أو حد ثابت متكرر
     const rules = (c.yellowRules ?? "").split(",").map((x) => x.split(":").map(Number)).filter((x) => x.length === 2 && x[0] > 0 && x[1] > 0);

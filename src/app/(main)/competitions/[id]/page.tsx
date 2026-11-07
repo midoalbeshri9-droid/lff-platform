@@ -386,10 +386,11 @@ async function Stages({ id, manage, stages, stage, teams }: { id: number; manage
 function stageSummary(x: Stage) {
   const p: string[] = [];
   if (x.pointsWin != null || x.pointsDraw != null) p.push(`النقاط ${x.pointsWin ?? "—"}/${x.pointsDraw ?? "—"}`);
+  if (x.resetYellows) p.push("تصفير الإنذارات");
   if (x.carryPoints !== "NONE") p.push(x.carryPoints === "FULL" ? "ترحيل كامل" : "ترحيل النصف");
   if (x.format !== "KNOCKOUT" && x.qualifyPerGroup) p.push(`يتأهل ${x.qualifyPerGroup}${x.qualifyBest ? ` + أفضل ${x.qualifyBest}` : ""}`);
   if (x.format === "KNOCKOUT") {
-    p.push(x.koPairing === "DRAW" ? "قرعة" : x.koPairing === "MANUAL" ? "إقران يدوي" : "بالتصنيف");
+    p.push(x.koPairing === "DRAW" ? "قرعة" : x.koPairing === "MANUAL" ? "إقران يدوي" : x.koPairing === "RANK" ? "حسب المركز" : "بالتصنيف");
     p.push(x.tieDecider === "PENS" ? "ترجيح مباشر" : "إضافي + ترجيح");
     if (x.thirdPlace) p.push("مباراة الثالث");
     if (x.finalVenue) p.push(`النهائي: ${x.finalVenue}`);
@@ -409,6 +410,7 @@ function StageFields({ s }: { s?: Stage }) {
       <Field label="متأهلون إضافيون من أفضل أصحاب المركز التالي" hint="المجموعات: مثل أفضل الثوالث — 0 أو فارغ = لا"><input type="number" name="qualifyBest" min={0} defaultValue={s?.qualifyBest ?? ""} /></Field>
       <Field label="نقاط الفوز في هذه المرحلة" hint="فارغ = نقاط المسابقة"><input type="number" name="pointsWin" min={0} max={10} defaultValue={s?.pointsWin ?? ""} /></Field>
       <Field label="نقاط التعادل في هذه المرحلة" hint="فارغ = نقاط المسابقة"><input type="number" name="pointsDraw" min={0} max={10} defaultValue={s?.pointsDraw ?? ""} /></Field>
+      <label className="check full"><input type="checkbox" name="resetYellows" value="1" defaultChecked={s?.resetYellows} /> إلغاء إنذارات المراحل السابقة عند بدء هذه المرحلة (تبقى الإيقافات المستحقة)</label>
       <Field label="ترحيل نقاط المرحلة السابقة" hint="دوري/مجموعات — يُطبَّق عند تأهيل الفرق إلى هذه المرحلة"><select name="carryPoints" defaultValue={s?.carryPoints ?? "NONE"}><Options map={CARRY_POINTS} /></select></Field>
       <fieldset className="full box" style={{ padding: ".4rem .7rem" }}><legend style={{ fontSize: ".85rem" }}>خروج المغلوب</legend>
         <div className="form f2">

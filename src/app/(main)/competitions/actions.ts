@@ -137,9 +137,10 @@ function stageData(f: FormData) {
     qualifyBest: format === "GROUPS" ? int(f, "qualifyBest") || null : null,
     pointsWin: int(f, "pointsWin"), pointsDraw: int(f, "pointsDraw"),
     carryPoints: format !== "KNOCKOUT" && ["FULL", "HALF"].includes(str(f, "carryPoints") ?? "") ? str(f, "carryPoints")! : "NONE",
-    koPairing: ["SEEDED", "DRAW", "MANUAL"].includes(str(f, "koPairing") ?? "") ? str(f, "koPairing")! : "SEEDED",
+    koPairing: ["SEEDED", "RANK", "DRAW", "MANUAL"].includes(str(f, "koPairing") ?? "") ? str(f, "koPairing")! : "SEEDED",
     tieDecider: str(f, "tieDecider") === "PENS" ? "PENS" : "ET_PENS",
     thirdPlace: format === "KNOCKOUT" && f.get("thirdPlace") === "1",
+    resetYellows: f.get("resetYellows") === "1",
     finalVenue: format === "KNOCKOUT" ? str(f, "finalVenue") : null,
   };
 }
