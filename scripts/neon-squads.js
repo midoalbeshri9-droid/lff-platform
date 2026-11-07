@@ -22,7 +22,7 @@ if (mode === "check") {
   if (!fs.existsSync(plan)) { console.log("✗ شغّل الفحص أولًا (neon-squads-check.bat)"); process.exit(1); }
   const n = JSON.parse(fs.readFileSync(plan, "utf8")).cancel.length;
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  rl.question(`سيُلغى قيد ${n} لاعبًا (لا حذف للاعبين أو ملفاتهم). اكتب نعم للتنفيذ: `, (a) => {
+  rl.question(`Apply plan (cancel ${n} registrations, no deletion)? Type yes: `, (a) => {
     rl.close();
     if (a.trim() !== "نعم" && a.trim().toLowerCase() !== "yes") { console.log("أُلغي التنفيذ — لم يتغير شيء"); return; }
     if (!run("npx tsx src/db/finalize-squads.ts apply data/squads-plan.json")) { console.log("✗ فشل التنفيذ"); process.exit(1); }
