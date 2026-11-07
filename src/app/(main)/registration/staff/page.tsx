@@ -9,7 +9,7 @@ import { fileUrl } from "@/lib/storage";
 import { fmtDateTime } from "@/lib/util";
 import { PageHead, Flash, Badge, Empty, type SP } from "@/components/ui";
 import { Submit } from "@/components/Client";
-import { decideStaff } from "../actions";
+import { decideStaff, setStaffCard } from "../actions";
 
 export default async function StaffReview({ searchParams }: { searchParams: SP }) {
   const u = await requireUser("reg.view", "reg.staff");
@@ -32,12 +32,18 @@ export default async function StaffReview({ searchParams }: { searchParams: SP }
       </form>
       <div className="card table-wrap">
         {rows.length === 0 ? <Empty>لا يوجد</Empty> : (
-          <table className="t"><thead><tr><th></th><th>الاسم</th><th>النادي</th><th>الصفة</th><th>الرقم الوطني</th><th>الرخصة</th><th>المستند</th><th>الحالة</th><th></th></tr></thead>
+          <table className="t"><thead><tr><th></th><th>الاسم</th><th>النادي</th><th>الصفة</th><th>الرقم الوطني</th><th>الرخصة</th><th>رقم البطاقة</th><th>المستند</th><th>الحالة</th><th></th></tr></thead>
             <tbody>{rows.map(({ s, club }) => (
               <tr key={s.id}>
                 <td>{s.photoKey ? <img className="thumb" src={fileUrl(s.photoKey)!} alt="" /> : <span className="ph">👤</span>}</td>
                 <td><strong>{s.fullName}</strong><div className="muted" style={{ fontSize: ".75rem" }}>{fmtDateTime(s.submittedAt)}</div></td>
                 <td>{club}</td><td>{STAFF_ROLE[s.role]}</td><td className="kbd">{s.nationalId ?? "—"}</td><td>{s.licenseNo ?? "—"} {s.licenseLevel}</td>
+                <td>{u.can("reg.staff") ? (
+                  <form action={setStaffCard} className="row" style={{ flexWrap: "nowrap" }}>
+                    <input type="hidden" name="id" value={s.id} /><input type="hidden" name="back" value={`/registration/staff?season=${seasonId}&status=${sp.status ?? "SUBMITTED"}`} />
+                    <input type="text" name="cardNo" defaultValue={s.cardNo ?? ""} style={{ width: 90 }} dir="ltr" />
+                    <Submit className="btn btn-sm btn-ghost">💾</Submit>
+                  </form>) : (s.cardNo ?? "—")}</td>
                 <td>{s.documentKey ? <a href={fileUrl(s.documentKey)!} target="_blank">📎 عرض</a> : "—"}</td>
                 <td><Badge v={REG_STATUS[s.status]} /></td>
                 <td>{s.status === "SUBMITTED" && u.can("reg.staff") && (

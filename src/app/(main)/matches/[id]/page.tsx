@@ -2,11 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, eq, asc, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { matches, clubs, competitions, matchSquads, matchEvents, players, assignments, officials, commissionerReports, evaluations } from "@/db/schema";
+import { matches, clubs, competitions, matchSquads, matchEvents, players, assignments, officials, commissionerReports, evaluations, staff } from "@/db/schema";
 import { scopeOf, clubIn, compIn, officialIn, regIn, guardPage, inScopeClub, inScopeComp, inScopeMatch, inScopePlayer, inScopeReg, inScopeOfficial, inScopeSanction, inScopeStaff } from "@/lib/scope";
 import { requireUser, getCurrentUser } from "@/lib/auth";
 import { clubEligibility } from "@/lib/eligibility";
-import { MATCH_STATUS, REPORT_STATUS, EVENT_TYPE, ASSIGN_ROLE, ASSIGN_STATUS, SANCTION_TYPE, SANCTION_STATUS, OBSERVER_ROLES } from "@/lib/labels";
+import { MATCH_STATUS, REPORT_STATUS, EVENT_TYPE, ASSIGN_ROLE, ASSIGN_STATUS, SANCTION_TYPE, SANCTION_STATUS, OBSERVER_ROLES, STAFF_ROLE, CARD_REASONS } from "@/lib/labels";
 import { sanctions } from "@/db/schema";
 import { matchNotices } from "@/lib/sanctions";
 import { fmtDateTime, toLocalInput, dayOf } from "@/lib/util";
@@ -80,8 +80,12 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
 }
 
 async function Report({ m, u, name }: { m: typeof matches.$inferSelect; u: Awaited<ReturnType<typeof requireUser>>; name: (id: number) => string }) {
-  const evs = await db.select({ e: matchEvents, player: players.fullName }).from(matchEvents).leftJoin(players, eq(players.id, matchEvents.playerId))
+  const evs = await db.select({ e: matchEvents, player: players.fullName, staffName: staff.fullName, staffRole: staff.role }).from(matchEvents).leftJoin(players, eq(players.id, matchEvents.playerId))
+    .leftJoin(staff, eq(staff.id, matchEvents.staffId))
     .where(eq(matchEvents.matchId, m.id)).orderBy(asc(matchEvents.minute), asc(matchEvents.id));
+  const [comp] = await db.select({ season: competitions.seasonId }).from(competitions).where(eq(competitions.id, m.competitionId));
+  const clubStaff = await db.select({ id: staff.id, name: staff.fullName, role: staff.role, clubId: staff.clubId }).from(staff)
+    .where(and(inArray(staff.clubId, [m.homeClubId, m.awayClubId]), eq(staff.seasonId, comp.season), eq(staff.status, "APPROVED"))).orderBy(staff.fullName);
   const squad = await db.select({ s: matchSquads, name: players.fullName }).from(matchSquads).innerJoin(players, eq(players.id, matchSquads.playerId)).where(eq(matchSquads.matchId, m.id));
   const can = u.can("comp.reports") && m.reportStatus !== "APPROVED";
   return (
@@ -92,8 +96,8 @@ async function Report({ m, u, name }: { m: typeof matches.$inferSelect; u: Await
         <div className="card table-wrap">
           <h3>أحداث المباراة</h3>
           {evs.length === 0 ? <Empty>لا أحداث مسجلة</Empty> : (
-            <table className="t"><tbody>{evs.map(({ e, player }) => (
-              <tr key={e.id}><td className="num">{e.minute ? `${e.minute}'` : ""}</td><td>{EVENT_TYPE[e.type]}</td><td><strong>{player ?? "—"}</strong></td><td>{name(e.clubId)}</td><td className="muted">{e.note}</td>
+            <table className="t"><tbody>{evs.map(({ e, player, staffName, staffRole }) => (
+              <tr key={e.id}><td className="num">{e.minute ? `${e.minute}'` : ""}</td><td>{EVENT_TYPE[e.type]}</td><td><strong>{player ?? staffName ?? e.staffName ?? "—"}</strong>{(staffName || e.staffName) && <span className="muted" style={{ fontSize: ".78rem" }}> — مرافق{e.staffRole ? `: ${e.staffRole}` : staffRole ? `: ${STAFF_ROLE[staffRole]}` : ""}</span>}</td><td>{name(e.clubId)}</td><td className="muted">{e.note}</td>
                 <td>{can && <form action={deleteEvent}><input type="hidden" name="matchId" value={m.id} /><input type="hidden" name="eventId" value={e.id} /><Submit className="btn btn-sm btn-ghost">✕</Submit></form>}</td></tr>
             ))}</tbody></table>
           )}
@@ -110,7 +114,18 @@ async function Report({ m, u, name }: { m: typeof matches.$inferSelect; u: Await
                 </select>
               </Field>
               <Field label="الفريق"><select name="clubId"><option value={m.homeClubId}>{name(m.homeClubId)}</option><option value={m.awayClubId}>{name(m.awayClubId)}</option></select></Field>
-              <Field label="ملاحظة"><input type="text" name="note" /></Field>
+              <Field label="سبب البطاقة / ملاحظة"><input type="text" name="note" list="card-reasons" /></Field>
+              <datalist id="card-reasons">{CARD_REASONS.map((x) => <option key={x} value={x} />)}</datalist>
+              <fieldset className="full box" style={{ padding: ".3rem .6rem" }}><legend style={{ fontSize: ".82rem" }}>بطاقة لمرافق (جهاز فني أو إداري) بدل اللاعب</legend>
+                <div className="form f3">
+                  <Field label="من الجهاز المسجّل"><select name="staffId"><option value="">—</option>
+                    {[m.homeClubId, m.awayClubId].map((cid) => <optgroup key={cid} label={name(cid)}>{clubStaff.filter((x) => x.clubId === cid).map((x) => <option key={x.id} value={x.id}>{x.name} — {STAFF_ROLE[x.role]}</option>)}</optgroup>)}
+                  </select></Field>
+                  <Field label="أو الاسم يدويًا" hint="مع اختيار «الفريق»"><input type="text" name="staffName" /></Field>
+                  <Field label="الصفة"><input type="text" name="staffRole" list="staff-roles" placeholder="مدير فني، إداري..." /></Field>
+                  <datalist id="staff-roles">{[...Object.values(STAFF_ROLE), "مدير فني", "مدير الكرة"].map((x) => <option key={x} value={x} />)}</datalist>
+                </div>
+              </fieldset>
               <div style={{ alignSelf: "end" }}><Submit className="btn btn-light">+ إضافة</Submit></div>
             </form>
           )}

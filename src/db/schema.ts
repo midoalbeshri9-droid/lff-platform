@@ -438,7 +438,11 @@ export const matchEvents = pgTable("match_events", {
   playerId: integer("player_id").references(() => players.id),
   type: eventTypeEnum("type").notNull(),
   minute: integer("minute"),
-  note: text("note"),
+  note: text("note"), // سبب البطاقة أو ملاحظة
+  // بطاقات المرافقين (الجهاز الفني والإداري): من الجهاز المسجّل للنادي أو بالاسم يدويًا
+  staffId: integer("staff_id").references(() => staff.id, { onDelete: "set null" }),
+  staffName: text("staff_name"),
+  staffRole: text("staff_role"),
 });
 
 // ======================= الحكام والمراقبون =======================
@@ -566,6 +570,37 @@ export const reportFiles = pgTable("report_files", {
   uploadedAt: ts("uploaded_at").notNull().defaultNow(),
 }, (t) => [index("report_files_match_idx").on(t.matchId, t.kind)]);
 
+// قرار لجنة المسابقات لكل جولة (اعتماد النتائج والإنذارات وعقوبات الأندية)
+export type DecisionRow = Record<string, string> & { manual?: string };
+export type DecisionContent = {
+  subject: string; // بشأن ...
+  preamble: string[]; // بعد الاطلاع
+  resultsIntro: string;
+  results: { group: string; rows: DecisionRow[] }[]; // teams, score, result
+  playersIntro: string; players: DecisionRow[]; // name, cardNo, category, club, opponent, reason
+  staffIntro: string; staff: DecisionRow[]; // name, cardNo, category, club, role, reason
+  redsIntro: string; reds: DecisionRow[]; // name, cardNo, club, opponent, reason, ban
+  clubSanctions: string[];
+  extra: { title: string; body: string }[];
+  closing: string;
+  signerName: string; signerTitle: string;
+};
+export const decisionStatusEnum = pgEnum("decision_status", ["DRAFT", "ISSUED"]);
+export const roundDecisions = pgTable("round_decisions", {
+  id: serial("id").primaryKey(),
+  competitionId: integer("competition_id").notNull().references(() => competitions.id, { onDelete: "cascade" }),
+  stageId: integer("stage_id").notNull().references(() => competitionStages.id, { onDelete: "cascade" }),
+  round: integer("round").notNull(),
+  number: text("number"), // رقم القرار (يُعطى عند الإصدار أو يُكتب يدويًا)
+  issueDate: d("issue_date"),
+  status: decisionStatusEnum("status").notNull().default("DRAFT"),
+  content: jsonb("content").$type<DecisionContent>().notNull(),
+  createdBy: text("created_by").notNull(),
+  issuedBy: text("issued_by"),
+  issuedAt: ts("issued_at"),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+}, (t) => [uniqueIndex("round_decision_uq").on(t.stageId, t.round)]);
+
 // ======================= المرحلة الثانية =======================
 
 // رموز التحقق: تفعيل الحساب، استعادة كلمة المرور، تغيير البريد
@@ -637,6 +672,7 @@ export const staff = pgTable("staff", {
   phone: text("phone"),
   licenseNo: text("license_no"),
   licenseLevel: text("license_level"),
+  cardNo: text("card_no"), // رقم بطاقة المرافق
   photoKey: text("photo_key"),
   documentKey: text("document_key"),
   status: regStatusEnum("status").notNull().default("DRAFT"),

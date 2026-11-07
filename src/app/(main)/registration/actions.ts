@@ -484,6 +484,19 @@ export async function decideStaff(f: FormData) {
   });
 }
 
+/** رقم بطاقة المرافق (الإداري / الجهاز الفني) — يظهر في قرارات الإنذار */
+export async function setStaffCard(f: FormData) {
+  const u = await requireUser("reg.staff");
+  await attempt(() => String(f.get("back") ?? "/registration/staff"), async () => {
+    const id = int(f, "id")!;
+    guard(await inScopeStaff(u, id));
+    const cardNo = str(f, "cardNo");
+    await db.update(staff).set({ cardNo }).where(eq(staff.id, id));
+    await audit(u, "رقم بطاقة مرافق", "Staff", id, { cardNo });
+    return "حُفظ رقم البطاقة";
+  });
+}
+
 /** ملف اللاعب: رفع مستندات من لجنة القيد في أي وقت (تُلحق بقيد اللاعب وتُعتمد مباشرة) */
 export async function uploadPlayerDocs(f: FormData) {
   const u = await requireUser("reg.edit");

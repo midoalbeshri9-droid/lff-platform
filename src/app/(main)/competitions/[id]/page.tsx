@@ -18,6 +18,9 @@ import { COMP_TYPE, COMP_STATUS, MATCH_STATUS, REPORT_STATUS, TIEBREAK } from "@
 import { fmtDateTime, toLocalInput } from "@/lib/util";
 import { PageHead, Flash, Badge, Empty, Field, Options, type SP } from "@/components/ui";
 import { Submit, CheckAll } from "@/components/Client";
+import { roundDecisions } from "@/db/schema";
+import { createDecision } from "../decisions/actions";
+import { fmtDate } from "@/lib/util";
 import {
   saveCompetition, setCompetitionStatus, addTeams, removeTeam, makeFixtures, clearFixtures, saveMatch, bulkSchedule,
   addStage, saveStage, deleteStage, stageAddTeams, stageRemoveTeam, stageDraw, stageRegionGroups, stageSaveGroups, stageQualify, stageNextRound, stageManualPairs, deleteCompetition,
@@ -40,7 +43,7 @@ export default async function Competition({ params, searchParams }: { params: Pr
   const stages = await ensureStages(id);
   const current = stages.find((x) => x.status === "ACTIVE") ?? stages.find((x) => x.status !== "DONE") ?? stages[stages.length - 1];
   const stage = stages.find((x) => x.id === Number(sp.stage)) ?? current;
-  const tabs: [string, string][] = [["fixtures", "الجدول والمباريات"], ["table", stages.some((x) => x.format === "KNOCKOUT") ? "الترتيب والأدوار" : "الترتيب"], ["stages", `المراحل (${stages.length})`], ["scorers", "الهدافون"], ["discipline", "الإيقافات"], ["fairplay", "اللعب النظيف"],
+  const tabs: [string, string][] = [["fixtures", "الجدول والمباريات"], ["table", stages.some((x) => x.format === "KNOCKOUT") ? "الترتيب والأدوار" : "الترتيب"], ["stages", `المراحل (${stages.length})`], ["decisions", "قرارات الجولات"], ["scorers", "الهدافون"], ["discipline", "الإيقافات"], ["fairplay", "اللعب النظيف"],
     ...(c.squadListMax != null ? [["squads", "قوائم الموسم"] as [string, string]] : []), ["teams", `الفرق (${teams.length})`], ["settings", "الإعدادات"]];
 
   return (
@@ -60,6 +63,7 @@ export default async function Competition({ params, searchParams }: { params: Pr
       {tab === "fixtures" && <Fixtures id={id} manage={manage} teams={teams} stages={stages} stage={stage} />}
       {tab === "table" && <Table id={id} stages={stages} stage={stage} />}
       {tab === "stages" && <Stages id={id} manage={manage} stages={stages} stage={stage} teams={teams} />}
+      {tab === "decisions" && <Decisions id={id} stages={stages} stage={stage} manage={manage} />}
       {tab === "scorers" && <Scorers id={id} />}
       {tab === "discipline" && <Discipline id={id} />}
       {tab === "fairplay" && <FairPlay id={id} />}
@@ -567,5 +571,29 @@ async function DangerZone({ c }: { c: typeof competitions.$inferSelect }) {
         </form>
       )}
     </div>
+  );
+}
+
+/** قرارات لجنة المسابقات لكل جولة */
+async function Decisions({ id, stages, stage, manage }: { id: number; stages: Stage[]; stage: Stage; manage: boolean }) {
+  const rounds = await db.select({ round: matches.round, n: sql<number>`count(*)::int`, played: sql<number>`count(*) filter (where ${matches.status} in ('PLAYED','FORFEIT'))::int`, approved: sql<number>`count(*) filter (where ${matches.reportStatus} = 'APPROVED')::int`, from: sql<Date>`min(${matches.kickoff})` })
+    .from(matches).where(eq(matches.stageId, stage.id)).groupBy(matches.round).orderBy(matches.round);
+  const ds = await db.select().from(roundDecisions).where(eq(roundDecisions.stageId, stage.id));
+  return (
+    <>
+      <StageTabs stages={stages} stage={stage} tab="decisions" />
+      <div className="card table-wrap">
+        <p className="muted" style={{ fontSize: ".85rem" }}>قرار اعتماد نتائج كل جولة وبطاقات الإنذار (اللاعبون والمرافقون) وعقوبات الأندية — يُولَّد من بيانات المنظومة ويُعدَّل قبل الإصدار ويُطبع بقالب قرارات اللجنة.</p>
+        {rounds.length === 0 ? <Empty>لا مباريات مجدولة في هذه المرحلة</Empty> : (
+          <table className="t"><thead><tr><th>الجولة</th><th>التاريخ</th><th>المباريات</th><th>لُعبت / اعتُمدت</th><th>القرار</th><th></th></tr></thead>
+            <tbody>{rounds.map((r) => { const d = ds.find((x) => x.round === r.round); return (
+              <tr key={r.round}><td>الجولة {r.round}</td><td>{r.from ? fmtDate(new Date(r.from)) : "—"}</td><td className="num">{r.n}</td><td className="num">{r.played} / {r.approved}</td>
+                <td>{!d ? <span className="muted">—</span> : d.status === "ISSUED" ? <span className="b b-green">صادر رقم ({d.number}) {fmtDate(d.issueDate)}</span> : <span className="b b-amber">مسودة</span>}</td>
+                <td className="row">{d ? <><Link className="btn btn-sm btn-light" href={`/competitions/decisions/${d.id}`}>{d.status === "ISSUED" || !manage ? "عرض" : "تعديل"}</Link><Link className="btn btn-sm btn-light" href={`/print/decision/${d.id}`} target="_blank">🖨</Link></>
+                  : manage && <form action={createDecision}><input type="hidden" name="stageId" value={stage.id} /><input type="hidden" name="round" value={r.round} />
+                    <Submit className="btn btn-sm btn-gold" confirm={r.approved < r.n ? `لم تُعتمد كل مباريات الجولة (${r.approved} من ${r.n}) — إنشاء المسودة الآن؟ يمكنك تحديثها لاحقًا.` : undefined}>📝 إعداد القرار</Submit></form>}</td></tr>); })}</tbody></table>
+        )}
+      </div>
+    </>
   );
 }

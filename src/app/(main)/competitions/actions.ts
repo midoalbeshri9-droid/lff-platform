@@ -1,7 +1,7 @@
 "use server";
 import { and, eq, ne, or } from "drizzle-orm";
 import { db } from "@/db";
-import { competitions, competitionTeams, matches, matchEvents, assignments, matchRequests, competitionSquads, matchSquads, registrations, clubs, competitionStages, stageTeams, settings } from "@/db/schema";
+import { competitions, competitionTeams, matches, matchEvents, assignments, matchRequests, competitionSquads, matchSquads, registrations, clubs, competitionStages, stageTeams, settings, staff } from "@/db/schema";
 import { addCharge } from "@/lib/finance";
 import { resolveStadium, stadiumBlock, blockWithHint } from "@/lib/stadiums";
 import { guard, inScopeClub, inScopeComp, inScopeMatch, inScopeStage, scopeOf } from "@/lib/scope";
@@ -429,7 +429,23 @@ export async function addEvent(f: FormData) {
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
     if (m.reportStatus === "APPROVED") throw new UserError("التقرير معتمد");
     let clubId = int(f, "clubId")!;
-    const type = str(f, "type") as "GOAL" | "SUB_IN", playerId = int(f, "playerId");
+    const type = str(f, "type") as "GOAL" | "SUB_IN";
+    // بطاقة لمرافق (جهاز فني أو إداري): من الجهاز المسجّل أو بالاسم
+    const staffId = int(f, "staffId"), staffName = str(f, "staffName"), staffRole = str(f, "staffRole");
+    if (staffId || staffName) {
+      if (!["YELLOW", "SECOND_YELLOW", "RED"].includes(type)) throw new UserError("أحداث المرافقين: بطاقات الإنذار والطرد فقط");
+      if (int(f, "playerId")) throw new UserError("اختر اللاعب أو المرافق، لا الاثنين");
+      if (staffId) {
+        const [st] = await db.select({ c: staff.clubId }).from(staff).where(eq(staff.id, staffId));
+        if (!st) throw new UserError("المرافق غير موجود");
+        clubId = st.c;
+      }
+      if (clubId !== m.homeClubId && clubId !== m.awayClubId) throw new UserError("المرافق ليس من فريقي المباراة");
+      await db.insert(matchEvents).values({ matchId, clubId, staffId, staffName: staffId ? null : staffName, staffRole, type, minute: int(f, "minute"), note: str(f, "note") });
+      await audit(u, "إضافة بطاقة مرافق", "Match", matchId);
+      return "تمت الإضافة";
+    }
+    const playerId = int(f, "playerId");
     // عند اختيار لاعب من القائمة يُؤخذ فريقه من القائمة نفسها (يمنع تسجيل الحدث للفريق الخطأ)
     if (playerId) {
       const [own] = await db.select({ c: matchSquads.clubId }).from(matchSquads).where(and(eq(matchSquads.matchId, matchId), eq(matchSquads.playerId, playerId)));

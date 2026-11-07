@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { and, eq, inArray, asc, desc, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { competitions, competitionStages, matches, clubs, matchEvents, players, suspensions, sanctions, assignments, officials, registrations } from "@/db/schema";
+import { competitions, competitionStages, matches, clubs, matchEvents, players, suspensions, sanctions, assignments, officials, registrations, staff } from "@/db/schema";
 import { inScopeComp } from "@/lib/scope";
 import { getCurrentUser } from "@/lib/auth";
 import { standings } from "@/lib/competition";
@@ -40,7 +40,7 @@ export default async function RoundReport({ params, searchParams }: { params: Pr
   const ms = st ? await db.select().from(matches).where(and(eq(matches.stageId, st.id), eq(matches.round, round))).orderBy(asc(matches.kickoff), asc(matches.id)) : [];
   const ids = ms.map((m) => m.id);
   const next = st ? await db.select().from(matches).where(and(eq(matches.stageId, st.id), eq(matches.round, round + 1))).orderBy(asc(matches.kickoff), asc(matches.id)) : [];
-  const evs = ids.length ? await db.select({ e: matchEvents, player: players.fullName }).from(matchEvents).leftJoin(players, eq(players.id, matchEvents.playerId))
+  const evs = ids.length ? await db.select({ e: matchEvents, player: sql<string | null>`coalesce(${players.fullName}, ${staff.fullName} || ' (مرافق)', ${matchEvents.staffName} || ' (مرافق)')` }).from(matchEvents).leftJoin(players, eq(players.id, matchEvents.playerId)).leftJoin(staff, eq(staff.id, matchEvents.staffId))
     .where(and(inArray(matchEvents.matchId, ids), inArray(matchEvents.type, [...GOALS, ...CARDS] as ("GOAL")[]))).orderBy(asc(matchEvents.matchId), asc(matchEvents.minute)) : [];
   const crewIds = [...ids, ...next.map((m) => m.id)];
   const crews = crewIds.length ? await db.select({ a: assignments, name: officials.fullName }).from(assignments).innerJoin(officials, eq(officials.id, assignments.officialId))
