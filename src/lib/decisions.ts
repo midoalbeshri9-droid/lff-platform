@@ -1,12 +1,19 @@
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/db";
-import { competitions, competitionStages, matches, clubs, matchEvents, players, staff, sanctions, suspensions, seasons, ageCategories, roundDecisions, settings, type DecisionContent, type DecisionRow } from "@/db/schema";
+import { competitions, competitionStages, matches, matchSquads, clubs, matchEvents, players, staff, sanctions, suspensions, seasons, ageCategories, roundDecisions, settings, type DecisionContent, type DecisionRow } from "@/db/schema";
 import { koRoundName } from "./competitionPure";
 import { STAFF_ROLE } from "./labels";
 import { dinarsWords } from "./tafqeet";
 
 const ORD = ["", "الأول", "الثاني", "الثالث", "الرابع", "الخامس", "السادس", "السابع", "الثامن", "التاسع", "العاشر", "الحادي عشر", "الثاني عشر", "الثالث عشر", "الرابع عشر", "الخامس عشر", "السادس عشر", "السابع عشر", "الثامن عشر", "التاسع عشر", "العشرون"];
 const GROUP_ORD: Record<string, string> = { "أ": "الأولى", "ب": "الثانية", "ج": "الثالثة", "د": "الرابعة", "هـ": "الخامسة", "و": "السادسة", "ز": "السابعة", "ح": "الثامنة" };
+/** «(1) مباراة واحدة» / «(2) مباراتين» / «(3) ثلاث مباريات» */
+export function matchesWords(n: number) {
+  const W = ["", "مباراة واحدة", "مباراتين", "ثلاث مباريات", "أربع مباريات", "خمس مباريات", "ست مباريات", "سبع مباريات", "ثماني مباريات", "تسع مباريات", "عشر مباريات"];
+  return `(${n}) ${W[n] ?? "مباراة"}`;
+}
+const money = (v: string | number) => `(${Number(v)} د.ل) ${dinarsWords(Number(v))}`;
+const FAN_RX = /جمهور|جماهير|مشجع|المدرجات|الألعاب النارية|الشماريخ/;
 export const weekName = (n: number) => `الأسبوع ${ORD[n] ?? n}`;
 export const groupName = (g: string) => `المجموعة ${GROUP_ORD[g] ?? g}`;
 
@@ -49,9 +56,15 @@ const resultText = (m: typeof matches.$inferSelect, name: Map<number, string>) =
 };
 
 /** المحتوى المولَّد من بيانات المنظومة للجولة */
-async function generate(x: Ctx): Promise<Omit<DecisionContent, "preamble" | "extra" | "closing" | "signerName" | "signerTitle">> {
+async function generate(x: Ctx): Promise<Omit<DecisionContent, "preamble" | "extra" | "closing" | "signerName" | "signerTitle" | "banArticle">> {
   const { c, season, ms, name, scope, cat } = x;
   const ids = ms.map((m) => m.id);
+  // نادي اللاعب في هذه المباريات (من القوائم أو من أحداثه)
+  const clubOfPlayer = new Map<number, string>();
+  if (ids.length) {
+    for (const q of await db.select({ p: matchSquads.playerId, c: matchSquads.clubId }).from(matchSquads).where(inArray(matchSquads.matchId, ids))) clubOfPlayer.set(q.p, name.get(q.c) ?? "");
+    for (const q of await db.select({ p: matchEvents.playerId, c: matchEvents.clubId }).from(matchEvents).where(inArray(matchEvents.matchId, ids))) if (q.p) clubOfPlayer.set(q.p, name.get(q.c) ?? "");
+  }
   const opp = (mid: number, club: number) => { const m = ms.find((y) => y.id === mid)!; return name.get(m.homeClubId === club ? m.awayClubId : m.homeClubId) ?? ""; };
   const groups = [...new Set(ms.map((m) => m.groupName ?? ""))];
   const results = groups.map((g) => ({
@@ -69,26 +82,47 @@ async function generate(x: Ctx): Promise<Omit<DecisionContent, "preamble" | "ext
   const players_: DecisionRow[] = evs.filter((r) => r.e.type === "YELLOW" && !isStaff(r) && r.p).map((r) => ({
     name: r.p!.fullName, cardNo: r.p!.cardNo ?? "", category: cat, club: name.get(r.e.clubId) ?? "", opponent: opp(r.e.matchId, r.e.clubId), reason: r.e.note ?? "",
   }));
-  const staff_: DecisionRow[] = evs.filter((r) => isStaff(r)).map((r) => ({
+  const staff_: DecisionRow[] = evs.filter((r) => isStaff(r) && r.e.type === "YELLOW").map((r) => ({
     name: r.s?.fullName ?? r.e.staffName ?? "", cardNo: r.s?.cardNo ?? "", category: cat, club: name.get(r.e.clubId) ?? "",
-    role: r.e.staffRole || (r.s ? STAFF_ROLE[r.s.role] : "") || "", reason: `${r.e.type === "YELLOW" ? "" : "طرد — "}${r.e.note ?? ""}`,
+    role: r.e.staffRole || (r.s ? STAFF_ROLE[r.s.role] : "") || "", reason: r.e.note ?? "",
   }));
-  const susp = ids.length ? await db.select().from(suspensions).where(and(inArray(suspensions.sourceMatchId, ids), eq(suspensions.isLifted, false))) : [];
-  const reds: DecisionRow[] = evs.filter((r) => r.e.type !== "YELLOW" && !isStaff(r) && r.p).map((r) => {
-    const s = susp.find((y) => y.playerId === r.p!.id && y.sourceMatchId === r.e.matchId);
-    return { name: r.p!.fullName, cardNo: r.p!.cardNo ?? "", club: name.get(r.e.clubId) ?? "", opponent: opp(r.e.matchId, r.e.clubId),
-      reason: r.e.note || (r.e.type === "RED" ? "طرد مباشر" : "إنذار ثانٍ"), ban: s?.matchesTotal ? `${s.matchesTotal} مباراة` : "" };
-  });
-  const sn = ids.length ? await db.select().from(sanctions).where(and(inArray(sanctions.matchId, ids), eq(sanctions.targetType, "CLUB"), ne(sanctions.status, "REVOKED"))).orderBy(asc(sanctions.id)) : [];
-  const clubSanctions = sn.map((s) => {
-    const club = name.get(s.clubId) ?? "";
-    const what = s.type === "FINE" && s.fineAmount ? `بغرامة مالية قدرها (${Number(s.fineAmount).toLocaleString("en")} د.ل) ${dinarsWords(Number(s.fineAmount))}`
-      : s.type === "POINTS_DEDUCTION" ? `بخصم (${s.points}) نقاط من رصيده`
-      : s.type === "CLOSED_DOORS" ? `باللعب دون جمهور لعدد (${s.matchesCount ?? 1}) مباراة`
-      : s.type === "WARNING" ? "بالإنذار" : s.type === "FORFEIT" ? "باعتباره خاسرًا للمباراة" : `بـ${s.reason}`;
-    const fineToo = s.type !== "FINE" && s.fineAmount ? ` وبغرامة مالية قدرها (${Number(s.fineAmount).toLocaleString("en")} د.ل) ${dinarsWords(Number(s.fineAmount))}` : "";
-    return `يعاقب نادي (${club}) ${what}${fineToo}${s.articleText ? `، وذلك طبقًا لنص ${s.articleText.replace(/^المادة/, "المادة")}` : ""}.`;
-  });
+  // العقوبات: الإيقافات التلقائية (طرد / تراكم إنذارات) وقرارات العقوبات المرتبطة بمباريات الجولة
+  const kibar = cat === "أكابر" ? "كبار" : cat;
+  const susp = ids.length ? await db.select({ s: suspensions, p: players }).from(suspensions).innerJoin(players, eq(players.id, suspensions.playerId))
+    .where(and(inArray(suspensions.sourceMatchId, ids), eq(suspensions.isLifted, false), eq(suspensions.kind, "MATCHES"))).orderBy(asc(suspensions.id)) : [];
+  const sn = ids.length ? await db.select({ s: sanctions, p: players, st: staff }).from(sanctions).leftJoin(players, eq(players.id, sanctions.playerId)).leftJoin(staff, eq(staff.id, sanctions.staffId))
+    .where(and(inArray(sanctions.matchId, ids), ne(sanctions.status, "REVOKED"))).orderBy(asc(sanctions.id)) : [];
+  const art = (t: string | null) => `، وذلك طبقًا لنص ${t?.trim() || "%ART%"}.`;
+  const penalty = (s: typeof sanctions.$inferSelect, ban: string) => {
+    const parts: string[] = [];
+    if (s.type === "MATCH_BAN" || (s.matchesCount && ["MATCH_BAN"].includes(s.type))) parts.push(`${ban} لعدد ${matchesWords(s.matchesCount ?? 1)}`);
+    else if (s.type === "TIME_BAN") parts.push(`${ban} لمدة من ${s.fromDate ?? "..."} إلى ${s.toDate ?? "..."}`);
+    else if (s.type === "WARNING") parts.push("بالإنذار");
+    else if (s.type === "POINTS_DEDUCTION") parts.push(`بخصم (${s.points}) نقاط من رصيده`);
+    else if (s.type === "CLOSED_DOORS") parts.push(`باللعب دون جمهور لعدد ${matchesWords(s.matchesCount ?? 1)}`);
+    else if (s.type === "STADIUM_BAN") parts.push(`بالحرمان من ملعبه لعدد ${matchesWords(s.matchesCount ?? 1)}`);
+    else if (s.type === "FORFEIT") parts.push("باعتباره خاسرًا للمباراة");
+    if (s.fineAmount && Number(s.fineAmount) > 0) parts.push(`${parts.length ? "وب" : "ب"}غرامة مالية قدرها ${money(s.fineAmount)}`);
+    if (!parts.length) parts.push(`بـ${s.reason}`);
+    return parts.join(" ");
+  };
+  const playerSanctions = [
+    ...susp.filter((x) => !sn.some((y) => y.s.suspensionId === x.s.id)).map(({ s, p }) =>
+      `يعاقب اللاعب (${p.fullName})${p.cardNo ? ` رقم البطاقة الرياضية (${p.cardNo})` : ""} من ${kibar} فريق (${clubOfPlayer.get(p.id) ?? ""}) بالإيقاف عن المشاركة مع فريقه لعدد ${matchesWords(s.matchesTotal ?? 1)}${art(null)}`),
+    ...sn.filter((x) => x.s.targetType === "PLAYER" && x.p).map(({ s, p }) =>
+      `يعاقب اللاعب (${p!.fullName})${p!.cardNo ? ` رقم البطاقة الرياضية (${p!.cardNo})` : ""} من ${kibar} فريق (${name.get(s.clubId) ?? ""}) ${penalty(s, "بالإيقاف عن المشاركة مع فريقه")}${art(s.articleText)}`),
+  ];
+  const staffSanctions = [
+    ...evs.filter((r) => isStaff(r) && r.e.type !== "YELLOW" && !sn.some((y) => y.s.targetType === "STAFF" && y.s.staffId && y.s.staffId === r.e.staffId)).map((r) =>
+      `يعاقب (${r.e.staffRole || (r.s ? STAFF_ROLE[r.s.role] : "")}) فريق (${name.get(r.e.clubId) ?? ""}) (${r.s?.fullName ?? r.e.staffName ?? ""}) بالإيقاف عن مرافقة فريقه لعدد ${matchesWords(1)}${art(null)}`),
+    ...sn.filter((x) => x.s.targetType === "STAFF").map(({ s, st }) =>
+      `يعاقب (${st ? STAFF_ROLE[st.role] : ""}) فريق (${name.get(s.clubId) ?? ""}) (${st?.fullName ?? ""}) ${penalty(s, "بالإيقاف عن مرافقة فريقه")}${art(s.articleText)}`),
+  ];
+  const clubRows = sn.filter((x) => x.s.targetType === "CLUB");
+  const isFan = (s: typeof sanctions.$inferSelect) => s.type === "CLOSED_DOORS" || s.type === "STADIUM_BAN" || FAN_RX.test(`${s.reason} ${s.articleText ?? ""} ${s.notes ?? ""}`);
+  const clubText = ({ s }: (typeof sn)[number]) => `يعاقب نادي (${name.get(s.clubId) ?? ""}) ${penalty(s, "")}${art(s.articleText)}`;
+  const clubSanctions = clubRows.filter((x) => !isFan(x.s)).map(clubText);
+  const fanSanctions = clubRows.filter((x) => isFan(x.s)).map(clubText);
   const sYear = season?.name ?? "";
   const comp = c.name;
   return {
@@ -99,10 +133,14 @@ async function generate(x: Ctx): Promise<Omit<DecisionContent, "preamble" | "ext
     players: players_,
     staffIntro: `تعتمد بطاقات الإنذار للمرافقين الواردة في تقارير الحكام والمراقبين لمباريات (${scope}) ضمن مسابقة ${comp} للموسم الرياضي ${sYear}م على المرافقين المذكورين أدناه وعددهم (${staff_.length}): -`,
     staff: staff_,
-    redsIntro: `تعتمد حالات الطرد الواردة في تقارير الحكام ومراقبي المباريات من (${scope}) على اللاعبين المذكورين أدناه وعددهم (${reds.length}): -`,
-    reds,
-    clubSanctions,
+    playerSanctions, staffSanctions, clubSanctions, fanSanctions,
   };
+}
+
+/** نص المادة الافتراضي للإيقافات التلقائية */
+function withArticle<T extends { playerSanctions: string[]; staffSanctions: string[] }>(g: T, art: string): T {
+  const f = (a: string[]) => a.map((x) => x.replace("%ART%", art || "المادة (  ) من لائحة الجزاءات"));
+  return { ...g, playerSanctions: f(g.playerSanctions), staffSanctions: f(g.staffSanctions) };
 }
 
 /** تحديث العدد في نص المقدمة بعد إضافة صفوف يدوية */
@@ -114,8 +152,10 @@ export async function draftFor(stageId: number, round: number): Promise<Decision
   const gen = await generate(x);
   const [prev] = await db.select().from(roundDecisions).where(eq(roundDecisions.competitionId, x.c.id)).orderBy(asc(roundDecisions.id)).limit(1000).then((r) => r.slice(-1));
   const set = Object.fromEntries((await db.select().from(settings).where(inArray(settings.key, ["decision_signer_name", "decision_signer_title"]))).map((s) => [s.key, s.value]));
+  const banArticle = prev?.content.banArticle ?? "المادة (  ) من لائحة الجزاءات";
   return {
-    ...gen,
+    ...withArticle(gen, banArticle),
+    banArticle,
     preamble: prev?.content.preamble ?? DEFAULT_PREAMBLE,
     extra: [],
     closing: prev?.content.closing ?? "يعمل بهذا القرار من تاريخ صدوره وعلى الجهات ذات العلاقة تنفيذه كلٌّ فيما يخصه.",
@@ -126,13 +166,13 @@ export async function draftFor(stageId: number, round: number): Promise<Decision
 
 /** إعادة التوليد من بيانات المنظومة مع الإبقاء على الصفوف اليدوية والمقدمة والمواد الإضافية والتوقيع */
 export async function regenerate(stageId: number, round: number, old: DecisionContent): Promise<DecisionContent> {
-  const gen = await generate(await context(stageId, round));
+  const gen = withArticle(await generate(await context(stageId, round)), old.banArticle);
   const keep = (rows: DecisionRow[]) => rows.filter((r) => r.manual);
-  const players = [...gen.players, ...keep(old.players)], staffRows = [...gen.staff, ...keep(old.staff)], reds = [...gen.reds, ...keep(old.reds)];
+  const players = [...gen.players, ...keep(old.players)], staffRows = [...gen.staff, ...keep(old.staff)];
   return {
     ...old, ...gen,
-    players, staff: staffRows, reds,
-    playersIntro: recount(gen.playersIntro, players.length), staffIntro: recount(gen.staffIntro, staffRows.length), redsIntro: recount(gen.redsIntro, reds.length),
+    players, staff: staffRows,
+    playersIntro: recount(gen.playersIntro, players.length), staffIntro: recount(gen.staffIntro, staffRows.length),
   };
 }
 

@@ -41,12 +41,14 @@ function clean(raw: unknown): DecisionContent {
   const c = raw as DecisionContent;
   const s = (v: unknown) => String(v ?? "").slice(0, 4000);
   const rows = (r: unknown) => (Array.isArray(r) ? r.slice(0, 400).map((x) => Object.fromEntries(Object.entries(x as object).map(([k, v]) => [k, s(v)]))) : []);
+  const list = (a: unknown) => (Array.isArray(a) ? a : []).map(s).filter((x) => x.trim());
   if (!c || typeof c !== "object") throw new UserError("محتوى غير صالح");
   return {
     subject: s(c.subject), preamble: (Array.isArray(c.preamble) ? c.preamble : []).map(s).filter((x) => x.trim()),
     resultsIntro: s(c.resultsIntro), results: (Array.isArray(c.results) ? c.results : []).map((g) => ({ group: s(g.group), rows: rows(g.rows) })),
-    playersIntro: s(c.playersIntro), players: rows(c.players), staffIntro: s(c.staffIntro), staff: rows(c.staff), redsIntro: s(c.redsIntro), reds: rows(c.reds),
-    clubSanctions: (Array.isArray(c.clubSanctions) ? c.clubSanctions : []).map(s).filter((x) => x.trim()),
+    playersIntro: s(c.playersIntro), players: rows(c.players), staffIntro: s(c.staffIntro), staff: rows(c.staff),
+    banArticle: s(c.banArticle),
+    playerSanctions: list(c.playerSanctions), staffSanctions: list(c.staffSanctions), clubSanctions: list(c.clubSanctions), fanSanctions: list(c.fanSanctions),
     extra: (Array.isArray(c.extra) ? c.extra : []).map((e) => ({ title: s(e.title), body: s(e.body) })).filter((e) => e.body.trim()),
     closing: s(c.closing), signerName: s(c.signerName), signerTitle: s(c.signerTitle),
   };

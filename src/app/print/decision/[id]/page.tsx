@@ -30,7 +30,8 @@ export default async function DecisionPrint({ params }: { params: Promise<{ id: 
   const dayName = dt ? dt.toLocaleDateString("ar-LY", { weekday: "long" }) : "";
   const dateTxt = d.issueDate ? d.issueDate.replace(/-/g, "/") : "....../....../......";
   let art = 1;
-  const cards = [c.players.length > 0, c.staff.length > 0, c.reds.length > 0];
+  const cards = [c.players.length > 0, c.staff.length > 0];
+  const SECTIONS: [string, string[]][] = [["عقوبات اللاعبين", c.playerSanctions], ["عقوبات المرافقين", c.staffSanctions], ["عقوبات الأندية", c.clubSanctions], ["عقوبات الجمهور", c.fanSanctions]];
   const Head = ({ prefix }: { prefix: string }) => (
     <div className="dz-head">
       <img src="/img/logo-256.png" alt="" />
@@ -78,17 +79,14 @@ export default async function DecisionPrint({ params }: { params: Promise<{ id: 
                 <p className="dz-p dz-next"><b>{cards[0] ? 2 : 1}-</b> {c.staffIntro}</p>
                 <Table cols={[["name", "اسم المرافق"], ["cardNo", "رقم البطاقة", 70], ["category", "الفئة", 50], ["club", "الفريق التابع له", 100], ["role", "الصفة", 85], ["reason", "سبب الإنذار", 140]]} rows={c.staff} />
               </>}
-              {c.reds.length > 0 && <>
-                <p className="dz-p dz-next"><b>{cards.filter(Boolean).length}-</b> {c.redsIntro}</p>
-                <Table cols={[["name", "اســـم الرياضـــي"], ["cardNo", "رقم البطاقة", 95], ["club", "الفريق التابع له", 105], ["opponent", "الفريق المتباري معه", 105], ["reason", "السبب", 110], ["ban", "الإيقاف", 60]]} rows={c.reds} />
-              </>}
             </>}
 
-            {c.clubSanctions.length > 0 && <div className="dz-keep">
-              {ART(art++)}
-              <div className="dz-sub">(عقوبـــات الأنديـــة)</div>
-              {c.clubSanctions.map((s, i) => <p key={i} className="dz-p"><b>{i + 1}-</b> {s}</p>)}
-            </div>}
+            {SECTIONS.filter(([, l]) => l.length > 0).map(([title, l]) => (
+              <div key={title}>
+                <div className="dz-keep dz-next">{ART(art++)}<div className="dz-sub">({title}) ✍</div></div>
+                {l.map((x, i) => <p key={i} className="dz-p dz-keep"><b>{i + 1}-</b> {x}</p>)}
+              </div>
+            ))}
 
             {c.extra.map((e, i) => <div key={i} className="dz-keep">{ART(art++)}{e.title && <div className="dz-sub">({e.title})</div>}<p className="dz-p" style={{ whiteSpace: "pre-wrap" }}>{e.body}</p></div>)}
 

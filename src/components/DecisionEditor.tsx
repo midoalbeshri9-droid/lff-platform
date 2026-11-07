@@ -5,7 +5,6 @@ import type { DecisionContent, DecisionRow } from "@/db/schema";
 type Col = { k: string; label: string; w?: number; list?: string };
 const PLAYER_COLS: Col[] = [{ k: "name", label: "اسم الرياضي" }, { k: "cardNo", label: "رقم البطاقة", w: 120 }, { k: "category", label: "الفئة", w: 80 }, { k: "club", label: "الفريق التابع له", w: 130, list: "dec-clubs" }, { k: "opponent", label: "الفريق المتبارى معه", w: 130, list: "dec-clubs" }, { k: "reason", label: "سبب الإنذار", w: 170, list: "dec-reasons" }];
 const STAFF_COLS: Col[] = [{ k: "name", label: "اسم المرافق" }, { k: "cardNo", label: "رقم البطاقة", w: 100 }, { k: "category", label: "الفئة", w: 80 }, { k: "club", label: "الفريق التابع له", w: 130, list: "dec-clubs" }, { k: "role", label: "الصفة", w: 120, list: "dec-roles" }, { k: "reason", label: "سبب الإنذار", w: 170, list: "dec-reasons" }];
-const RED_COLS: Col[] = [{ k: "name", label: "اسم الرياضي" }, { k: "cardNo", label: "رقم البطاقة", w: 120 }, { k: "club", label: "الفريق التابع له", w: 130, list: "dec-clubs" }, { k: "opponent", label: "الفريق المتبارى معه", w: 130, list: "dec-clubs" }, { k: "reason", label: "السبب", w: 150, list: "dec-reasons" }, { k: "ban", label: "الإيقاف", w: 90 }];
 const RES_COLS: Col[] = [{ k: "teams", label: "الفريقان المتباريان" }, { k: "score", label: "النتيجة", w: 90 }, { k: "result", label: "", w: 230 }];
 
 function Rows({ cols, rows, onChange, addLabel }: { cols: Col[]; rows: DecisionRow[]; onChange: (r: DecisionRow[]) => void; addLabel: string }) {
@@ -30,6 +29,14 @@ function Rows({ cols, rows, onChange, addLabel }: { cols: Col[]; rows: DecisionR
   );
 }
 
+type SKey = "playerSanctions" | "staffSanctions" | "clubSanctions" | "fanSanctions";
+const SANCTION_LISTS: [SKey, string, string][] = [
+  ["playerSanctions", "عقوبات اللاعبين", "يعاقب اللاعب () رقم البطاقة الرياضية () من كبار فريق () بالإيقاف عن المشاركة مع فريقه لعدد (1) مباراة واحدة، وذلك طبقًا لنص المادة () من لائحة الجزاءات."],
+  ["staffSanctions", "عقوبات المرافقين", "يعاقب () فريق () () بالإيقاف عن مرافقة فريقه لعدد (1) مباراة واحدة، وذلك طبقًا لنص المادة () من لائحة الجزاءات."],
+  ["clubSanctions", "عقوبات الأندية", "يعاقب نادي () بغرامة مالية قدرها ( د.ل) ، وذلك طبقًا لنص المادة () الفقرة () من لائحة الجزاءات."],
+  ["fanSanctions", "عقوبات الجمهور", "يعاقب نادي () بغرامة مالية قدرها ( د.ل) ، وذلك طبقًا لنص المادة () الفقرة () من لائحة الجزاءات."],
+];
+
 const recount = (intro: string, n: number) => intro.replace(/وعددهم \(\d+\)/, `وعددهم (${n})`);
 
 export function DecisionEditor({ id, initial, number, issueDate, clubs, roles, reasons, action, printHref }: {
@@ -40,7 +47,7 @@ export function DecisionEditor({ id, initial, number, issueDate, clubs, roles, r
   const op = useRef<HTMLInputElement>(null);
   const go = (v: string, ask?: string) => (e: React.MouseEvent) => { if (ask && !confirm(ask)) { e.preventDefault(); return; } op.current!.value = v; };
   const up = <K extends keyof DecisionContent>(k: K, v: DecisionContent[K]) => setC((p) => ({ ...p, [k]: v }));
-  const T = (k: "subject" | "resultsIntro" | "playersIntro" | "staffIntro" | "redsIntro" | "closing", rows = 2) =>
+  const T = (k: "subject" | "resultsIntro" | "playersIntro" | "staffIntro" | "closing", rows = 2) =>
     <textarea rows={rows} value={c[k]} onChange={(e) => up(k, e.target.value)} style={{ width: "100%" }} />;
   return (
     <form action={action} className="stack">
@@ -81,19 +88,26 @@ export function DecisionEditor({ id, initial, number, issueDate, clubs, roles, r
         {T("staffIntro")}
         <Rows cols={STAFF_COLS} rows={c.staff} onChange={(r) => { up("staff", r); up("staffIntro", recount(c.staffIntro, r.length)); }} addLabel="مرافق يدويًا" />
       </div>
-      <div className="card"><h3>3- حالات الطرد ({c.reds.length})</h3>
-        <p className="muted" style={{ fontSize: ".82rem", margin: 0 }}>تظهر في القرار فقط إن وُجدت صفوف.</p>
-        {T("redsIntro")}
-        <Rows cols={RED_COLS} rows={c.reds} onChange={(r) => { up("reds", r); up("redsIntro", recount(c.redsIntro, r.length)); }} addLabel="حالة طرد يدويًا" />
-      </div>
-
-      <div className="card"><h3>عقوبات الأندية ({c.clubSanctions.length})</h3>
-        {c.clubSanctions.map((s, i) => (
-          <div key={i} className="row" style={{ alignItems: "start" }}><strong>{i + 1}-</strong>
-            <textarea rows={2} value={s} onChange={(e) => up("clubSanctions", c.clubSanctions.map((x, j) => (j === i ? e.target.value : x)))} style={{ flex: 1 }} />
-            <button type="button" className="btn btn-sm btn-ghost" onClick={() => up("clubSanctions", c.clubSanctions.filter((_, j) => j !== i))}>✕</button></div>
+      <div className="card"><h3>العقوبات</h3>
+        <div className="field"><label>نص المادة للإيقاف التلقائي (الطرد وتراكم الإنذارات)</label>
+          <input type="text" value={c.banArticle} onChange={(e) => {
+            const v = e.target.value, old = c.banArticle;
+            const swap = (a: string[]) => a.map((x) => (old ? x.split(old).join(v) : x));
+            setC((p) => ({ ...p, banArticle: v, playerSanctions: swap(p.playerSanctions), staffSanctions: swap(p.staffSanctions) }));
+          }} style={{ width: "100%" }} />
+          <span className="muted" style={{ fontSize: ".78rem" }}>يُستبدل في فقرات العقوبات المولّدة ويُنقل للقرارات التالية</span></div>
+        {SANCTION_LISTS.map(([k, label, tpl]) => (
+          <div key={k} className="mt">
+            <strong>{label} ({c[k].length})</strong>
+            {c[k].map((x, i) => (
+              <div key={i} className="row" style={{ alignItems: "start", marginTop: 4 }}><strong>{i + 1}-</strong>
+                <textarea rows={2} value={x} onChange={(e) => up(k, c[k].map((y, j) => (j === i ? e.target.value : y)))} style={{ flex: 1 }} />
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => up(k, c[k].filter((_, j) => j !== i))}>✕</button></div>
+            ))}
+            <button type="button" className="btn btn-sm btn-light" style={{ marginTop: 4 }} onClick={() => up(k, [...c[k], tpl])}>+ إضافة</button>
+          </div>
         ))}
-        <button type="button" className="btn btn-sm btn-light" onClick={() => up("clubSanctions", [...c.clubSanctions, "يعاقب نادي () بغرامة مالية قدرها ( د.ل) ، وذلك طبقًا لنص المادة () الفقرة () من لائحة الجزاءات."])}>+ عقوبة نادٍ</button>
+        <p className="muted" style={{ fontSize: ".8rem" }}>كل قسم يظهر في القرار مادةً مستقلة فقط إن كان فيه فقرات.</p>
       </div>
 
       <div className="card"><h3>مواد إضافية</h3>

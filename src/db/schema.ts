@@ -579,8 +579,11 @@ export type DecisionContent = {
   results: { group: string; rows: DecisionRow[] }[]; // teams, score, result
   playersIntro: string; players: DecisionRow[]; // name, cardNo, category, club, opponent, reason
   staffIntro: string; staff: DecisionRow[]; // name, cardNo, category, club, role, reason
-  redsIntro: string; reds: DecisionRow[]; // name, cardNo, club, opponent, reason, ban
-  clubSanctions: string[];
+  banArticle: string; // نص المادة للإيقاف التلقائي (طرد / تراكم إنذارات) — يُنقل للقرارات التالية
+  playerSanctions: string[]; // عقوبات اللاعبين
+  staffSanctions: string[]; // عقوبات المرافقين
+  clubSanctions: string[]; // عقوبات الأندية
+  fanSanctions: string[]; // عقوبات الجمهور
   extra: { title: string; body: string }[];
   closing: string;
   signerName: string; signerTitle: string;
