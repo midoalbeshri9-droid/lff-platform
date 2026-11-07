@@ -10,6 +10,7 @@ import { POSITION } from "@/lib/labels";
 import { scopeOf, clubIn, compIn, officialIn, regIn, guardPage, inScopeClub, inScopeComp, inScopeMatch, inScopePlayer, inScopeReg, inScopeOfficial, inScopeSanction, inScopeStaff } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { standings, topScorers } from "@/lib/competition";
+import { competitionFootprint } from "@/lib/compDelete";
 import { allStadiums } from "@/lib/stadiums";
 import { ensureStages, knockoutRounds, STAGE_FORMAT, STAGE_STATUS, type Stage } from "@/lib/stages";
 import { GROUP_LETTERS } from "@/lib/competitionPure";
@@ -19,7 +20,7 @@ import { PageHead, Flash, Badge, Empty, Field, Options, type SP } from "@/compon
 import { Submit, CheckAll } from "@/components/Client";
 import {
   saveCompetition, setCompetitionStatus, addTeams, removeTeam, makeFixtures, clearFixtures, saveMatch, bulkSchedule,
-  addStage, saveStage, deleteStage, stageAddTeams, stageRemoveTeam, stageDraw, stageRegionGroups, stageSaveGroups, stageQualify, stageNextRound,
+  addStage, saveStage, deleteStage, stageAddTeams, stageRemoveTeam, stageDraw, stageRegionGroups, stageSaveGroups, stageQualify, stageNextRound, deleteCompetition,
 } from "../actions";
 
 export default async function Competition({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
@@ -63,6 +64,7 @@ export default async function Competition({ params, searchParams }: { params: Pr
       {tab === "squads" && c.squadListMax != null && <Squads c={c} teams={teams} clubId={sp.club ? Number(sp.club) : teams[0]?.club.id} canEdit={u.can("comp.lineups")} />}
       {tab === "teams" && <Teams id={id} manage={manage} teams={teams} groups={stages[0]?.format === "GROUPS"} divisionId={sc?.divisionId ?? null} />}
       {tab === "settings" && <Settings c={c} manage={manage} federation={!sc} />}
+      {tab === "settings" && u.role === "ADMIN" && <DangerZone c={c} />}
     </>
   );
 }
@@ -487,5 +489,28 @@ async function Squads({ c, teams, clubId, canEdit }: { c: typeof competitions.$i
       <SquadListForm competitionId={c.id} clubId={clubId} max={c.squadListMax!} maxForeign={c.maxForeign} readOnly={!canEdit}
         rows={regs.map((r) => ({ id: r.p.id, name: r.p.fullName, num: r.num, cat: r.cat, pos: POSITION[r.p.position], foreign: r.p.isForeign, checked: chosen.has(r.p.id) }))} />
     </>
+  );
+}
+
+/** منطقة الخطر: حذف المسابقة نهائيًا (مدير المنظومة) */
+async function DangerZone({ c }: { c: typeof competitions.$inferSelect }) {
+  const { counts: n } = await competitionFootprint(c.id);
+  const items: [string, number][] = [["فريقًا", n.teams], ["مباراة", n.matches], ["منها معتمدة النتيجة", n.played], ["حدثًا (أهداف، بطاقات، تبديلات)", n.events],
+    ["تعيين حكام", n.assignments], ["تقييمًا", n.evaluations], ["عقوبة", n.sanctions], ["طعنًا", n.appeals], ["إيقافًا", n.suspensions], ["مستحقًا ماليًا", n.charges]];
+  return (
+    <div className="card" style={{ borderColor: "var(--red, #A92222)", borderWidth: 2, borderStyle: "solid" }}>
+      <h3 className="danger-text">⚠ حذف المسابقة نهائيًا</h3>
+      <p>يُحذف معها كل ما نتج عنها ولا يمكن التراجع:</p>
+      <ul style={{ columns: 2, margin: ".3rem 0 .8rem" }}>{items.map(([l, v]) => <li key={l}><strong>{v}</strong> {l}</li>)}</ul>
+      {n.payments > 0 ? (
+        <div className="alert err">توجد {n.payments} دفعة مالية مسجلة على مستحقات هذه المسابقة — ألغِ الدفعات من المالية أولًا ثم احذف المسابقة.</div>
+      ) : (
+        <form action={deleteCompetition} className="form f2">
+          <input type="hidden" name="id" value={c.id} />
+          <Field label={`للتأكيد اكتب اسم المسابقة: «${c.name}»`}><input type="text" name="confirm" required autoComplete="off" /></Field>
+          <div style={{ alignSelf: "end" }}><Submit className="btn btn-danger" confirm={`حذف «${c.name}» وكل بياناتها نهائيًا؟ لا يمكن التراجع.`}>🗑 حذف المسابقة نهائيًا</Submit></div>
+        </form>
+      )}
+    </div>
   );
 }

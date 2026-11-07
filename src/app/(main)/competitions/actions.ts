@@ -14,6 +14,7 @@ import {
   nextKnockoutRound, qualifyToNext, getStage,
 } from "@/lib/stages";
 import { saveLineup } from "@/lib/lineup";
+import { deleteCompetitionCascade } from "@/lib/compDelete";
 import { attempt, str, req, int, ints, num, UserError, fromLocalInput, dayOf } from "@/lib/util";
 
 export async function saveCompetition(f: FormData) {
@@ -546,5 +547,24 @@ export async function saveRestHours(f: FormData) {
     await db.insert(settings).values({ key: "min_rest_hours", value: v }).onConflictDoUpdate({ target: settings.key, set: { value: v } });
     await audit(u, "تعديل الحد الأدنى للراحة", "Setting", null, v);
     return "تم الحفظ";
+  });
+}
+
+/** حذف المسابقة نهائيًا مع كل ما نتج عنها — لمدير المنظومة فقط، بعد كتابة اسم المسابقة للتأكيد */
+export async function deleteCompetition(f: FormData) {
+  const u = await requireUser("comp.manage");
+  const id = int(f, "id")!;
+  let done = false;
+  await attempt(() => (done ? "/competitions" : `/competitions/${id}?tab=settings`), async () => {
+    if (u.role !== "ADMIN") throw new UserError("حذف المسابقة نهائيًا من صلاحية مدير المنظومة فقط");
+    const [c] = await db.select().from(competitions).where(eq(competitions.id, id));
+    if (!c) throw new UserError("المسابقة غير موجودة");
+    if ((str(f, "confirm") ?? "").replace(/\s+/g, " ").trim() !== c.name.replace(/\s+/g, " ").trim()) throw new UserError("اكتب اسم المسابقة كما هو تمامًا للتأكيد");
+    let counts;
+    try { counts = await deleteCompetitionCascade(id); }
+    catch (e) { if (e instanceof Error && e.message.startsWith("PAYMENTS:")) throw new UserError(`توجد ${e.message.split(":")[1]} دفعة مالية مسجلة على مستحقات هذه المسابقة — ألغِ الدفعات من المالية أولًا`); throw e; }
+    await audit(u, "حذف مسابقة نهائيًا", "Competition", id, { name: c.name, ...counts });
+    done = true;
+    return `حُذفت المسابقة «${c.name}» نهائيًا مع ${counts.matches} مباراة و${counts.sanctions} عقوبة و${counts.charges} مستحقًا ماليًا`;
   });
 }
