@@ -24,6 +24,7 @@ export const PERMISSION_GROUPS: { group: string; items: [string, string][] }[] =
       ["comp.manage", "إدارة المسابقات والفرق والجدولة"],
       ["comp.lineups", "إدخال قوائم المباريات لأي نادٍ"],
       ["comp.reports", "اعتماد تقارير المباريات والنتائج"],
+      ["comp.reports.view", "الاطلاع على تقارير الحكام ومراقبي المباريات (سرية للجنة المسابقات)"],
       ["comp.suspend", "إيقاف لاعبين بعدد مباريات ورفعه"],
       ["comp.sanctions", "إصدار قرارات العقوبات والبت في الطعون"],
       ["comp.articles", "إدارة لائحة العقوبات"],
@@ -121,8 +122,8 @@ export const DEFAULT_PERMISSIONS: Record<Role, string[]> = {
   SEC_STAFF: ["sec.view", "sec.manage", "archive.view", "archive.manage"],
   REG_HEAD: ["reg.view", "reg.review", "reg.edit", "reg.windows", "reg.suspend", "reg.lists", "reg.contracts", "reg.staff", "cards.print", "cards.design", "comp.view", "reports.view", "sec.view", "archive.view", "archive.manage"],
   REG_STAFF: ["reg.view", "reg.review", "reg.lists", "reg.contracts", "reg.staff", "cards.print", "archive.view"],
-  COMP_HEAD: ["comp.view", "comp.manage", "comp.lineups", "comp.reports", "comp.suspend", "comp.sanctions", "comp.articles", "comp.requests", "comp.stadiums", "comp.observers", "reg.view", "ref.view", "reports.view", "sec.view", "archive.view", "archive.manage"],
-  COMP_STAFF: ["comp.view", "comp.manage", "comp.lineups", "comp.requests", "comp.stadiums", "comp.observers", "reg.view", "ref.view", "archive.view"],
+  COMP_HEAD: ["comp.view", "comp.reports.view", "comp.manage", "comp.lineups", "comp.reports", "comp.suspend", "comp.sanctions", "comp.articles", "comp.requests", "comp.stadiums", "comp.observers", "reg.view", "ref.view", "reports.view", "sec.view", "archive.view", "archive.manage"],
+  COMP_STAFF: ["comp.view", "comp.reports.view", "comp.manage", "comp.lineups", "comp.requests", "comp.stadiums", "comp.observers", "reg.view", "ref.view", "archive.view"],
   REF_HEAD: ["ref.view", "ref.manage", "ref.assign", "ref.approve", "ref.evals", "comp.view", "reports.view", "sec.view", "archive.view", "archive.manage"],
   REF_STAFF: ["ref.view", "ref.manage", "ref.assign", "comp.view", "archive.view"],
   CLUB_MANAGER: ["club.view", "club.edit", "club.submit", "club.lineups", "club.origin", "club.finance", "club.appeals"],
@@ -133,7 +134,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, string[]> = {
   FIN_HEAD: ["fin.view", "fin.manage", "fin.approve", "fin.settings", "reports.view", "sec.view", "archive.view", "archive.manage"],
   FIN_STAFF: ["fin.view", "fin.manage", "archive.view"],
   // مدير الدرجة: يدير كل ما يخص درجته فقط (القيد والمسابقات والحكام)
-  DIV_MANAGER: ["div.clubs", "div.users", "comp.stadiums", "reg.windows", "reg.view", "reg.review", "reg.edit", "reg.suspend", "reg.lists", "reg.staff", "cards.print", "comp.view", "comp.manage", "comp.lineups", "comp.reports", "comp.suspend", "comp.sanctions", "comp.requests", "comp.observers", "ref.view", "ref.manage", "ref.assign", "ref.approve", "ref.evals"],
+  DIV_MANAGER: ["div.clubs", "div.users", "comp.stadiums", "reg.windows", "reg.view", "reg.review", "reg.edit", "reg.suspend", "reg.lists", "reg.staff", "cards.print", "comp.view", "comp.reports.view", "comp.manage", "comp.lineups", "comp.reports", "comp.suspend", "comp.sanctions", "comp.requests", "comp.observers", "ref.view", "ref.manage", "ref.assign", "ref.approve", "ref.evals"],
   DIV_STAFF: ["reg.view", "reg.review", "reg.lists", "reg.staff", "cards.print", "comp.view", "comp.lineups", "comp.requests", "ref.view", "ref.assign"],
 };
 
@@ -143,7 +144,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, string[]> = {
  */
 export const SCOPEABLE = new Set([
   "reg.view", "reg.review", "reg.edit", "reg.suspend", "reg.lists", "reg.contracts", "reg.staff", "cards.print",
-  "comp.view", "comp.manage", "comp.lineups", "comp.reports", "comp.suspend", "comp.sanctions", "comp.requests", "comp.observers",
+  "comp.view", "comp.reports.view", "comp.manage", "comp.lineups", "comp.reports", "comp.suspend", "comp.sanctions", "comp.requests", "comp.observers",
   "ref.view", "ref.manage", "ref.assign", "ref.approve", "ref.evals",
   "div.clubs", "div.users", "comp.stadiums", "reg.windows",
 ]);

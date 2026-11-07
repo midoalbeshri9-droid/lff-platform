@@ -98,7 +98,7 @@ export function tieAggregate(legs: Leg[]) {
   return { a: A, ga, gb };
 }
 
-export type StandingRow = { clubId: number; name: string; group: string | null; p: number; w: number; d: number; l: number; gf: number; ga: number; gd: number; pts: number; deducted: number; playoff?: boolean };
+export type StandingRow = { clubId: number; name: string; group: string | null; p: number; w: number; d: number; l: number; gf: number; ga: number; gd: number; pts: number; deducted: number; carried?: number; playoff?: boolean };
 type MRow = { homeClubId: number; awayClubId: number; homeScore: number | null; awayScore: number | null };
 
 /**
@@ -158,3 +158,28 @@ function resolveTie(teams: StandingRow[], ms: MRow[], win: number, draw: number,
   return blocks.flatMap((b) => (b.length > 1 ? resolveTie(b, ms, win, draw, legs, true) : b));
 }
 
+
+type QIn = { clubId: number; group: string | null; pts: number; p: number; gd: number; gf: number };
+/**
+ * المتأهلون من مرحلة دوري/مجموعات: أول (perGroup) من كل مجموعة، ثم (best) من أفضل أصحاب المركز التالي عبر المجموعات
+ * (مثل أفضل الثوالث) — يُفاضل بينهم بمعدل النقاط للمباراة (لعدالة المجموعات غير المتساوية) ثم فارق الأهداف ثم الأهداف.
+ * rows مرتبة مسبقًا داخل كل مجموعة.
+ */
+export function pickQualifiers<T extends QIn>(rows: T[], perGroup: number, best = 0) {
+  const groups = [...new Set(rows.map((r) => r.group ?? ""))];
+  const q: { clubId: number; seed: number; fromGroup: string | null; pts: number }[] = [];
+  const next: T[] = [];
+  for (const g of groups) {
+    const gr = rows.filter((r) => (r.group ?? "") === g);
+    gr.slice(0, perGroup).forEach((r, i) => q.push({ clubId: r.clubId, seed: i + 1, fromGroup: g || null, pts: r.pts }));
+    if (gr[perGroup]) next.push(gr[perGroup]);
+  }
+  if (best > 0) {
+    const avg = (r: T) => (r.p ? r.pts / r.p : 0);
+    const gdAvg = (r: T) => (r.p ? r.gd / r.p : 0);
+    const gfAvg = (r: T) => (r.p ? r.gf / r.p : 0);
+    next.sort((a, b) => avg(b) - avg(a) || gdAvg(b) - gdAvg(a) || gfAvg(b) - gfAvg(a));
+    next.slice(0, best).forEach((r) => q.push({ clubId: r.clubId, seed: perGroup + 1, fromGroup: r.group || null, pts: r.pts }));
+  }
+  return q;
+}

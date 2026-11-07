@@ -1,6 +1,7 @@
 import { eq, and, or } from "drizzle-orm";
 import { db } from "@/db";
-import { registrationDocuments, registrations, players, correspondence, decisions, archiveDocs, archiveVersions, staff } from "@/db/schema";
+import { registrationDocuments, registrations, players, correspondence, decisions, archiveDocs, archiveVersions, staff, reportFiles } from "@/db/schema";
+import { inScopeMatch } from "@/lib/scope";
 import { ROLE_COMMITTEE } from "@/lib/labels";
 import { canSeeDoc } from "@/lib/archive";
 import { audit } from "@/lib/audit";
@@ -27,6 +28,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ key: st
     allowed = true;
   } else if (key.startsWith("cards/")) allowed = true; // خلفيات البطاقات
   else if (key.startsWith("regulations/")) allowed = true; // اللوائح المعتمدة متاحة لكل المستخدمين
+  else if (key.startsWith("reports/")) {
+    // مرفقات تقارير الحكام والمراقبين: سرية للجنة المسابقات وكاتب التقرير فقط
+    const [x] = await db.select({ off: reportFiles.officialId, matchId: reportFiles.matchId }).from(reportFiles).where(eq(reportFiles.fileKey, key));
+    allowed = !!x && ((u.isOfficial && u.officialId === x.off) || (!u.isClub && !u.isOfficial && u.canAny("comp.reports", "comp.reports.view") && (await inScopeMatch(u, x.matchId))));
+  }
   else if (!u.isClub && !u.isOfficial && key.startsWith("correspondence/")) {
     // المراسلات: الأمانة العامة، أو اللجنة المختصة بالمراسلة
     if (u.can("sec.view")) allowed = true;

@@ -1,7 +1,9 @@
 "use server";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { assignments, matches, matchEvents, matchSquads, evaluations, commissionerReports } from "@/db/schema";
+import { getTemplate, answersFrom, requireAnswers } from "@/lib/reports";
+import { saveUpload, ALLOWED_DOC } from "@/lib/storage";
+import { assignments, matches, matchEvents, matchSquads, evaluations, matchReportForms, reportFiles } from "@/db/schema";
 import { requireOfficialUser } from "@/lib/auth";
 import { audit, notifyRoles, notifyStaff } from "@/lib/audit";
 import { attempt, str, req, int, UserError } from "@/lib/util";
@@ -71,8 +73,9 @@ export async function refSaveReport(f: FormData) {
     if (submit && (home == null || away == null)) throw new UserError("أدخل النتيجة النهائية قبل الإرسال");
     if ((home != null && home < 0) || (away != null && away < 0)) throw new UserError("النتيجة لا تكون سالبة");
     if (submit && m.kickoff && m.kickoff.getTime() > Date.now()) throw new UserError("لا يمكن إرسال التقرير قبل موعد المباراة");
+    await saveForm("REFEREE", matchId, u.officialId, f, submit);
     await db.update(matches).set({
-      homeScore: home, awayScore: away, attendance: int(f, "attendance"), reportNotes: str(f, "reportNotes"),
+      homeScore: home, awayScore: away, attendance: int(f, "attendance"), ...(f.has("reportNotes") ? { reportNotes: str(f, "reportNotes") } : {}),
       ...(submit ? { reportStatus: "SUBMITTED" as const, reportSubmittedAt: new Date(), reportReturn: null } : {}),
     }).where(eq(matches.id, matchId));
     if (submit) {
@@ -119,20 +122,71 @@ export async function saveCommissionerReport(f: FormData) {
   const matchId = int(f, "matchId")!;
   const submit = f.get("submit") === "1";
   await attempt(`/portal/matches/${matchId}`, async () => {
-    await myRole(u.officialId, matchId, ["COMMISSIONER", "REF_OBSERVER"]);
-    const [ex] = await db.select().from(commissionerReports).where(eq(commissionerReports.matchId, matchId));
+    await myRole(u.officialId, matchId, ["COMMISSIONER"]);
+    const [ex] = await db.select().from(matchReportForms).where(and(eq(matchReportForms.matchId, matchId), eq(matchReportForms.kind, "COMMISSIONER")));
     if (ex?.isSubmitted) throw new UserError("التقرير مُرسل مسبقًا");
-    const row = {
-      matchId, officialId: u.officialId, actualKickoff: str(f, "actualKickoff"), attendance: int(f, "attendance"), pitch: str(f, "pitch"),
-      organization: str(f, "organization"), security: str(f, "security"), incidents: str(f, "incidents"), recommendations: str(f, "recommendations"),
-      isSubmitted: submit, submittedAt: submit ? new Date() : null,
-    };
-    await db.insert(commissionerReports).values(row).onConflictDoUpdate({ target: commissionerReports.matchId, set: row });
+    if (submit) { const [m] = await db.select({ k: matches.kickoff }).from(matches).where(eq(matches.id, matchId)); if (m?.k && m.k.getTime() > Date.now()) throw new UserError("لا يمكن إرسال التقرير قبل موعد المباراة"); }
+    await saveForm("COMMISSIONER", matchId, u.officialId, f, submit);
     if (submit) {
       await notifyStaff(["COMP_HEAD", "COMP_STAFF"], "تقرير مراقب مباراة", u.fullName, `/matches/${matchId}?tab=officials`, { matchId });
       await audit(u, "إرسال تقرير مراقب المباراة", "Match", matchId);
     }
-    return submit ? "تم إرسال التقرير" : "تم حفظ المسودة";
+    return submit ? "تم إرسال التقرير إلى لجنة المسابقات" : "تم حفظ المسودة";
+  });
+}
+
+/** حفظ خانات نموذج التقرير (نسخة من النموذج الحالي ما دام التقرير قابلًا للتعديل) */
+async function saveForm(kind: "REFEREE" | "COMMISSIONER", matchId: number, officialId: number, f: FormData, submit: boolean) {
+  const t = await getTemplate(kind);
+  const fields = t.fields;
+  const answers = answersFrom(f, fields);
+  if (submit) {
+    requireAnswers(fields, answers);
+    if (t.requireAttachment) {
+      const [x] = await db.select({ id: reportFiles.id }).from(reportFiles).where(and(eq(reportFiles.matchId, matchId), eq(reportFiles.kind, kind))).limit(1);
+      if (!x) throw new UserError("أرفق التقرير الورقي (صورة أو PDF) قبل الإرسال");
+    }
+  }
+  const row = { matchId, kind, officialId, fields, answers, isSubmitted: submit, submittedAt: submit ? new Date() : null, updatedAt: new Date() };
+  await db.insert(matchReportForms).values(row).onConflictDoUpdate({ target: [matchReportForms.matchId, matchReportForms.kind], set: row });
+}
+
+/** هل يملك المسؤول تعديل مرفقات هذا التقرير الآن؟ */
+async function reportEditable(officialId: number, matchId: number, kind: "REFEREE" | "COMMISSIONER") {
+  if (kind === "REFEREE") { await myRole(officialId, matchId, ["REFEREE"]); await refEditable(matchId); return; }
+  await myRole(officialId, matchId, ["COMMISSIONER"]);
+  const [ex] = await db.select({ s: matchReportForms.isSubmitted }).from(matchReportForms).where(and(eq(matchReportForms.matchId, matchId), eq(matchReportForms.kind, "COMMISSIONER")));
+  if (ex?.s) throw new UserError("التقرير مُرسل — لا يمكن تعديل المرفقات");
+}
+
+/** رفع مرفق للتقرير (ملف واحد في كل طلب) */
+export async function uploadReportFile(fd: FormData): Promise<{ ok: boolean; msg: string }> {
+  try {
+    const u = await requireOfficialUser();
+    const matchId = Number(fd.get("matchId")), kind = String(fd.get("kind")) as "REFEREE" | "COMMISSIONER";
+    if (kind !== "REFEREE" && kind !== "COMMISSIONER") throw new UserError("نوع غير صحيح");
+    await reportEditable(u.officialId, matchId, kind);
+    const file = fd.get("file") as File | null;
+    if (!file || !file.size) throw new UserError("ملف فارغ");
+    const n = await db.select({ id: reportFiles.id }).from(reportFiles).where(and(eq(reportFiles.matchId, matchId), eq(reportFiles.kind, kind)));
+    if (n.length >= 20) throw new UserError("الحد الأقصى 20 مرفقًا للتقرير");
+    const s = await saveUpload(file, "reports", ALLOWED_DOC);
+    await db.insert(reportFiles).values({ matchId, kind, officialId: u.officialId, fileKey: s.key, originalName: file.name, mime: file.type, size: file.size });
+    return { ok: true, msg: "أُرفق" };
+  } catch (e) {
+    return { ok: false, msg: e instanceof UserError ? e.message : "تعذر الرفع" };
+  }
+}
+
+export async function deleteReportFile(f: FormData) {
+  const u = await requireOfficialUser();
+  const matchId = int(f, "matchId")!;
+  await attempt(`/portal/matches/${matchId}`, async () => {
+    const [x] = await db.select().from(reportFiles).where(and(eq(reportFiles.id, int(f, "id")!), eq(reportFiles.matchId, matchId), eq(reportFiles.officialId, u.officialId)));
+    if (!x) throw new UserError("المرفق غير موجود");
+    await reportEditable(u.officialId, matchId, x.kind);
+    await db.delete(reportFiles).where(eq(reportFiles.id, x.id));
+    return "حُذف المرفق";
   });
 }
 

@@ -118,6 +118,12 @@ export async function migrate() {
     if (!season) continue; // قالب معدّل: يُضاف الحقل من مصمم البطاقات
     await db.update(s.cardTemplates).set({ front: [...t.front, { id: "cardNo", kind: "field", field: "cardNo", text: "رقم البطاقة:", x: 40, y: 43, w: 43, h: 4, fontSize: 7.5, align: "right" }] }).where(eq(s.cardTemplates.id, t.id));
   }
+  // 16) الاطلاع على تقارير الحكام والمراقبين (سرية للجنة المسابقات) — مرة واحدة
+  const [st16] = await db.select().from(s.settings).where(eq(s.settings.key, "mig_reports_view"));
+  if (!st16) {
+    for (const role of ["COMP_HEAD", "COMP_STAFF", "DIV_MANAGER"] as const) await db.insert(s.rolePermissions).values({ role, permission: "comp.reports.view" }).onConflictDoNothing();
+    await db.insert(s.settings).values({ key: "mig_reports_view", value: new Date().toISOString() }).onConflictDoNothing();
+  }
   console.log("✓ اكتمل ترحيل البيانات");
 }
 

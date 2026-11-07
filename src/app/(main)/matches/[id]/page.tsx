@@ -18,6 +18,8 @@ import { competitionStages } from "@/db/schema";
 import { koRoundName } from "@/lib/competitionPure";
 import { assignOfficial } from "../../referees/actions";
 import { allStadiums } from "@/lib/stadiums";
+import { canSeeReports } from "@/lib/reports";
+import { MatchReportView, ConfidentialNote } from "@/components/MatchReportView";
 
 export default async function MatchPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const u = await requireUser("comp.view", "ref.view");
@@ -35,8 +37,8 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
   const ko = stage?.format === "KNOCKOUT";
   let roundLabel = `الجولة ${m.round}`;
   if (ko) {
-    const inRound = await db.select({ t: matches.tieNo }).from(matches).where(and(eq(matches.stageId, stage.id), eq(matches.round, m.round)));
-    roundLabel = koRoundName(new Set(inRound.map((x) => x.t)).size * 2, m.round) + (m.leg === 2 ? " — الإياب" : "");
+    const inRound = await db.select({ t: matches.tieNo }).from(matches).where(and(eq(matches.stageId, stage.id), eq(matches.round, m.round), eq(matches.isThirdPlace, false)));
+    roundLabel = m.isThirdPlace ? "مباراة المركز الثالث" : koRoundName(new Set(inRound.map((x) => x.t)).size * 2, m.round) + (m.leg === 2 ? " — الإياب" : "");
   }
   const tabs: [string, string][] = [["report", "التقرير والأحداث"], ["lineups", "قوائم الفريقين"], ["officials", "الطاقم والمراقبة"], ["info", "بيانات المباراة"]];
 
@@ -62,14 +64,14 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
         <form action={setPenalties} className="card row">
           <input type="hidden" name="matchId" value={m.id} />
           <strong>ركلات الترجيح</strong>
-          <span className="muted" style={{ fontSize: ".85rem" }}>عند التعادل في المباراة (أو في المجموع بعد الإياب)</span>
+          <span className="muted" style={{ fontSize: ".85rem" }}>عند التعادل في المباراة (أو في المجموع بعد الإياب) — نظام المرحلة: {stage.tieDecider === "PENS" ? "ركلات ترجيح مباشرة دون وقت إضافي" : "وقت إضافي (النتيجة بعده) ثم ركلات ترجيح"}</span>
           <Field label={home.name}><input className="score-in" type="number" name="homePens" min={0} defaultValue={m.homePens ?? ""} /></Field>
           <Field label={away.name}><input className="score-in" type="number" name="awayPens" min={0} defaultValue={m.awayPens ?? ""} /></Field>
           <Submit className="btn btn-light">حفظ</Submit>
         </form>
       )}
       {tab === "lineups" && <Lineups m={m} c={c} canEdit={u.can("comp.lineups") && m.reportStatus !== "APPROVED"} clubsList={[home, away]} />}
-      {tab === "officials" && <Officials id={id} canObserver={u.can("comp.observers") && m.reportStatus !== "APPROVED"} canAssign={u.can("ref.assign")} canEvals={u.canAny("ref.evals", "comp.view")} canReport={u.can("comp.view")} canSanction={u.can("comp.sanctions")} />}
+      {tab === "officials" && <Officials id={id} canObserver={u.can("comp.observers") && m.reportStatus !== "APPROVED"} canAssign={u.can("ref.assign")} canEvals={u.canAny("ref.evals", "comp.view")} canReport={canSeeReports(u)} canSanction={u.can("comp.sanctions")} />}
       {tab === "report" && <MatchSanctions id={id} />}
       {tab === "info" && <Info m={m} home={home} away={away} canEdit={u.can("comp.manage")} />}
       {tab === "info" && <datalist id="stadiums-list">{(await allStadiums()).filter((x) => x.status !== "CLOSED").map((x) => <option key={x.id} value={x.name}>{x.city ?? ""}</option>)}</datalist>}
@@ -114,7 +116,9 @@ async function Report({ m, u, name }: { m: typeof matches.$inferSelect; u: Await
           )}
           {squad.length === 0 && can && <p className="muted mt">لم تُدخل قوائم الفريقين — أدخلها من تبويب «قوائم الفريقين» لاختيار اللاعبين في الأحداث.</p>}
         </div>
-        {m.reportNotes && <div className="card"><h3>ملاحظات الحكم</h3><div className="doc-text">{m.reportNotes}</div></div>}
+        {canSeeReports(u)
+          ? <MatchReportView matchId={m.id} kind="REFEREE" legacy={m.reportNotes ? <div className="mt"><strong style={{ fontSize: ".9rem" }}>ملاحظات الحكم</strong><div className="doc-text">{m.reportNotes}</div></div> : null} />
+          : <ConfidentialNote what="تقرير الحكم" />}
       </div>
       <div>
         {can && (
@@ -191,15 +195,14 @@ async function Officials({ id, canObserver, canAssign, canEvals, canReport, canS
         {canObserver && <ObserverForm id={id} current={rows.find((r) => OBSERVER_ROLES.includes(r.a.role) && r.a.status !== "DECLINED")?.a.officialId ?? null} />}
       </div>
       <div>
-        {canReport && <div className="card">
-          <div className="card-head"><h3>تقرير مراقب المباراة</h3>{cr?.isSubmitted && canSanction && <Link className="btn btn-sm btn-danger" href={`/competitions/sanctions/new?match=${id}`}>⚖ تحويل إلى عقوبة</Link>}</div>
-          {!cr?.isSubmitted ? <p className="muted">لم يُرسل بعد</p> : (
+        {canReport ? <>
+          <MatchReportView matchId={id} kind="COMMISSIONER" legacy={cr?.isSubmitted ? (
             <dl className="dl">
               <dt>انطلاق فعلي</dt><dd>{cr.actualKickoff}</dd><dt>الحضور</dt><dd>{cr.attendance}</dd><dt>الملعب</dt><dd>{cr.pitch}</dd>
               <dt>التنظيم</dt><dd>{cr.organization}</dd><dt>الأمن والجماهير</dt><dd>{cr.security}</dd><dt>الحوادث</dt><dd>{cr.incidents}</dd><dt>التوصيات</dt><dd>{cr.recommendations}</dd>
-            </dl>
-          )}
-        </div>}
+            </dl>) : null} />
+          {canSanction && <Link className="btn btn-sm btn-danger" href={`/competitions/sanctions/new?match=${id}`}>⚖ تحويل التقرير إلى عقوبة</Link>}
+        </> : <ConfidentialNote what="تقرير مراقب المباراة" />}
         {canEvals && (
           <div className="card table-wrap">
             <h3>تقييم الحكام (من تقرير مراقب المباراة)</h3>

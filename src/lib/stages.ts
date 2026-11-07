@@ -3,12 +3,15 @@ import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { competitions, competitionStages, stageTeams, competitionTeams, matches, clubs, stadiums } from "@/db/schema";
 import { UserError } from "./util";
-import { roundRobin, koPairs, koRoundName, tieWinner, GROUP_LETTERS } from "./competitionPure";
+import { roundRobin, koPairs, koRoundName, tieWinner, GROUP_LETTERS, pickQualifiers } from "./competitionPure";
 
 export type Stage = typeof competitionStages.$inferSelect;
 type CompType = (typeof competitions.$inferSelect)["type"];
 
 export const STAGE_FORMAT: Record<string, string> = { LEAGUE: "دوري", GROUPS: "مجموعات", KNOCKOUT: "خروج المغلوب" };
+export const CARRY_POINTS: Record<string, string> = { NONE: "لا ترحيل", FULL: "ترحيل كامل النقاط", HALF: "ترحيل نصف النقاط (يُقرب لأعلى)" };
+export const KO_PAIRING: Record<string, string> = { SEEDED: "بالتصنيف (أول المجموعة × ثاني المجاورة)", DRAW: "قرعة عشوائية", MANUAL: "يدويًا من اللجنة" };
+export const TIE_DECIDER: Record<string, string> = { ET_PENS: "وقت إضافي ثم ركلات ترجيح", PENS: "ركلات ترجيح مباشرة" };
 export const STAGE_STATUS: Record<string, [string, string]> = { PENDING: ["لم تبدأ", "b-gray"], ACTIVE: ["جارية", "b-green"], DONE: ["انتهت", "b-blue"] };
 
 /** المراحل الافتراضية حسب نظام المسابقة عند إنشائها */
@@ -128,13 +131,53 @@ async function venues() {
   };
 }
 
-function koMatches(competitionId: number, stageId: number, round: number, pairs: [number, number][], legs: number, venue: (id: number) => { stadium: string | null; city: string | null; stadiumId: number | null } | undefined, startTie = 1) {
+type Venue = { stadium: string | null; city: string | null; stadiumId: number | null };
+function koMatches(competitionId: number, stageId: number, round: number, pairs: [number, number][], legs: number, venue: (id: number) => Venue | undefined, startTie = 1, neutral?: Venue | null, thirdPlace = false) {
   const rows: (typeof matches.$inferInsert)[] = [];
   pairs.forEach(([a, b], i) => {
-    rows.push({ competitionId, stageId, round, tieNo: startTie + i, leg: 1, homeClubId: a, awayClubId: b, venue: venue(a)?.stadium, city: venue(a)?.city, stadiumId: venue(a)?.stadiumId });
+    // النهائي (مباراة واحدة) على ملعب محايد إن حددته اللجنة
+    const v1 = neutral && legs === 1 ? neutral : venue(a);
+    rows.push({ competitionId, stageId, round, tieNo: startTie + i, leg: 1, homeClubId: a, awayClubId: b, venue: v1?.stadium, city: v1?.city, stadiumId: v1?.stadiumId, isThirdPlace: thirdPlace });
     if (legs >= 2) rows.push({ competitionId, stageId, round, tieNo: startTie + i, leg: 2, homeClubId: b, awayClubId: a, venue: venue(b)?.stadium, city: venue(b)?.city, stadiumId: venue(b)?.stadiumId });
   });
   return rows;
+}
+
+async function neutralVenue(s: Stage): Promise<Venue | null> {
+  const name = s.finalVenue?.trim();
+  if (!name) return null;
+  const [x] = await db.select().from(stadiums).where(eq(stadiums.name, name));
+  return { stadium: x?.name ?? name, city: x?.city ?? null, stadiumId: x?.id ?? null };
+}
+
+/** فرق خروج المغلوب حسب طريقة الإقران: بالتصنيف أو القرعة */
+function pairsFor(s: Stage, teams: { clubId: number; seed: number | null; fromGroup: string | null }[]) {
+  if (s.koPairing === "MANUAL") throw new UserError("طريقة الإقران «يدويًا»: حدّد المواجهات من نموذج «المواجهات يدويًا» في تبويب المراحل");
+  return koPairs(s.koPairing === "DRAW" ? teams.map((t) => ({ ...t, seed: null })) : teams);
+}
+
+/** إقران يدوي للدور الأول في خروج المغلوب (لجنة المسابقات) */
+export async function manualKoPairs(stageId: number, pairs: [number, number][]) {
+  const s = await getStage(stageId);
+  if (s.format !== "KNOCKOUT") throw new UserError("الإقران اليدوي لمراحل خروج المغلوب فقط");
+  if (await stageHasMatches(stageId)) throw new UserError("المرحلة مجدولة — احذف جدولها أولًا");
+  const teams = new Set((await db.select().from(stageTeams).where(eq(stageTeams.stageId, stageId))).map((t) => t.clubId));
+  const used = new Set<number>();
+  for (const [a, b] of pairs) {
+    if (a === b) throw new UserError("لا يلاقي الفريق نفسه");
+    for (const x of [a, b]) {
+      if (!teams.has(x)) throw new UserError("فريق ليس من فرق المرحلة");
+      if (used.has(x)) throw new UserError("فريق مكرر في أكثر من مواجهة");
+      used.add(x);
+    }
+  }
+  if (!pairs.length) throw new UserError("حدّد مواجهة واحدة على الأقل");
+  if (used.size !== teams.size) throw new UserError(`لم تُقرن كل الفرق (${used.size} من ${teams.size})`);
+  const legs = pairs.length === 1 ? s.finalLegs : s.legs;
+  const rows = koMatches(s.competitionId, stageId, 1, pairs, legs, await venues(), 1, pairs.length === 1 ? await neutralVenue(s) : null);
+  await db.insert(matches).values(rows);
+  await db.update(competitionStages).set({ status: "ACTIVE" }).where(eq(competitionStages.id, stageId));
+  return rows.length;
 }
 
 /** إنشاء جدول مرحلة */
@@ -162,7 +205,7 @@ export async function generateStageFixtures(stageId: number) {
   } else if (s.format === "KNOCKOUT") {
     if (teams.length % 2) throw new UserError(`عدد الفرق فردي (${teams.length}) — أضف أو احذف فريقًا، أو أضف المباريات يدويًا`);
     const legs = teams.length === 2 ? s.finalLegs : s.legs;
-    rows.push(...koMatches(s.competitionId, stageId, 1, koPairs(teams), legs, venue));
+    rows.push(...koMatches(s.competitionId, stageId, 1, pairsFor(s, teams), legs, venue, 1, teams.length === 2 ? await neutralVenue(s) : null));
   } else {
     roundRobin(teams.map((t) => t.clubId), s.legs).forEach((m) => rows.push({ competitionId: s.competitionId, stageId, round: m.round, homeClubId: m.home, awayClubId: m.away, venue: venue(m.home)?.stadium, city: venue(m.home)?.city, stadiumId: venue(m.home)?.stadiumId }));
   }
@@ -182,7 +225,7 @@ export type KoRound = { round: number; name: string; ties: Tie[] };
 
 /** أدوار خروج المغلوب ومواجهاتها والفائز في كل منها */
 export async function knockoutRounds(stageId: number): Promise<KoRound[]> {
-  const ms = await db.select().from(matches).where(eq(matches.stageId, stageId)).orderBy(asc(matches.round), asc(matches.tieNo), asc(matches.leg), asc(matches.id));
+  const ms = await db.select().from(matches).where(and(eq(matches.stageId, stageId), eq(matches.isThirdPlace, false))).orderBy(asc(matches.round), asc(matches.tieNo), asc(matches.leg), asc(matches.id));
   const rounds = [...new Set(ms.map((m) => m.round))];
   return rounds.map((r) => {
     const inRound = ms.filter((m) => m.round === r);
@@ -193,6 +236,13 @@ export async function knockoutRounds(stageId: number): Promise<KoRound[]> {
     });
     return { round: r, name: koRoundName(ties.length * 2, r), ties };
   });
+}
+
+/** مباراة تحديد المركز الثالث (إن وُجدت) */
+export async function thirdPlaceTie(stageId: number): Promise<Tie | null> {
+  const legs = await db.select().from(matches).where(and(eq(matches.stageId, stageId), eq(matches.isThirdPlace, true))).orderBy(asc(matches.leg), asc(matches.id));
+  if (!legs.length) return null;
+  return { tieNo: legs[0].tieNo ?? 0, legs, a: legs[0].homeClubId, b: legs[0].awayClubId, winner: tieWinner(legs) };
 }
 
 /** إنشاء الدور التالي في خروج المغلوب من الفائزين (الفائز 1 × الفائز 2 ...) */
@@ -206,6 +256,8 @@ export async function nextKnockoutRound(stageId: number) {
   if (undecided.length) throw new UserError(`${undecided.length} مواجهة لم تُحسم بعد (اعتماد النتائج، أو ركلات الترجيح عند التعادل)`);
   const winners = last.ties.map((t) => t.winner!);
   if (winners.length === 1) {
+    const third = await thirdPlaceTie(stageId);
+    if (third && third.winner == null) throw new UserError("مباراة المركز الثالث لم تُحسم بعد");
     await db.update(competitionStages).set({ status: "DONE" }).where(eq(competitionStages.id, stageId));
     return { champion: winners[0], created: 0 };
   }
@@ -213,7 +265,14 @@ export async function nextKnockoutRound(stageId: number) {
   const pairs: [number, number][] = [];
   for (let i = 0; i < winners.length; i += 2) pairs.push([winners[i], winners[i + 1]]);
   const legs = pairs.length === 1 ? s.finalLegs : s.legs;
-  const rows = koMatches(s.competitionId, stageId, last.round + 1, pairs, legs, await venues());
+  const venue = await venues();
+  const neutral = pairs.length === 1 ? await neutralVenue(s) : null;
+  const rows = koMatches(s.competitionId, stageId, last.round + 1, pairs, legs, venue, 1, neutral);
+  // مباراة المركز الثالث بين الخاسرَين في نصف النهائي (مباراة واحدة)
+  if (pairs.length === 1 && s.thirdPlace && last.ties.length === 2) {
+    const losers = last.ties.map((t) => (t.winner === t.a ? t.b : t.a)) as [number, number];
+    rows.push(...koMatches(s.competitionId, stageId, last.round + 1, [losers], 1, venue, 2, neutral, true));
+  }
   await db.insert(matches).values(rows);
   return { champion: null, created: rows.length, name: koRoundName(pairs.length * 2, last.round + 1) };
 }
@@ -226,7 +285,8 @@ export async function koChampion(stageId: number) {
 }
 
 /** تأهيل أفضل الفرق من مرحلة دوري/مجموعات إلى المرحلة التالية */
-export async function qualifyToNext(stageId: number, perGroup: number, standingsFn: (competitionId: number, stageId: number) => Promise<{ clubId: number; group: string | null }[]>) {
+type QRow = { clubId: number; group: string | null; pts: number; p: number; gd: number; gf: number };
+export async function qualifyToNext(stageId: number, perGroup: number, best: number, standingsFn: (competitionId: number, stageId: number) => Promise<QRow[]>) {
   const s = await getStage(stageId);
   if (s.format === "KNOCKOUT") throw new UserError("في خروج المغلوب استخدم «إنشاء الدور التالي»");
   const [next] = await db.select().from(competitionStages).where(and(eq(competitionStages.competitionId, s.competitionId), eq(competitionStages.seq, s.seq + 1)));
@@ -236,12 +296,11 @@ export async function qualifyToNext(stageId: number, perGroup: number, standings
   if (pending.length) throw new UserError("توجد مباريات لم تُلعب أو لم تُعتمد في هذه المرحلة");
   if (!(perGroup >= 1)) throw new UserError("حدد عدد المتأهلين");
   const rows = await standingsFn(s.competitionId, stageId);
-  const groups = [...new Set(rows.map((r) => r.group ?? ""))];
-  const q: { clubId: number; seed: number; fromGroup: string | null }[] = [];
-  for (const g of groups) rows.filter((r) => (r.group ?? "") === g).slice(0, perGroup).forEach((r, i) => q.push({ clubId: r.clubId, seed: i + 1, fromGroup: g || null }));
+  const q = pickQualifiers(rows, perGroup, best);
+  const carry = (pts: number) => (next.carryPoints === "FULL" ? pts : next.carryPoints === "HALF" ? Math.ceil(pts / 2) : 0);
   await db.delete(stageTeams).where(eq(stageTeams.stageId, next.id));
-  if (q.length) await db.insert(stageTeams).values(q.map((x) => ({ stageId: next.id, clubId: x.clubId, seed: x.seed, fromGroup: x.fromGroup })));
-  await db.update(competitionStages).set({ status: "DONE", qualifyPerGroup: perGroup }).where(eq(competitionStages.id, stageId));
+  if (q.length) await db.insert(stageTeams).values(q.map((x) => ({ stageId: next.id, clubId: x.clubId, seed: x.seed, fromGroup: x.fromGroup, bonusPts: carry(x.pts) })));
+  await db.update(competitionStages).set({ status: "DONE", qualifyPerGroup: perGroup, qualifyBest: best || null }).where(eq(competitionStages.id, stageId));
   await db.update(competitionStages).set({ status: "ACTIVE" }).where(eq(competitionStages.id, next.id));
   return { count: q.length, next };
 }

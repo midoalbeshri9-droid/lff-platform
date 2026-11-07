@@ -75,6 +75,8 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
         { label: "⚽ المباريات", href: "/matches" },
         { label: "📅 التقويم والتعارضات", href: "/competitions/calendar" },
         { label: "🏟 سجل الملاعب", href: "/competitions/stadiums" },
+        ...(u.can("comp.observers") ? [{ label: "🕵 مراقبو المباريات", href: "/competitions/observers" }] : []),
+        ...(u.can("comp.manage") && !u.divisionId ? [{ label: "📝 نماذج تقارير الحكم والمراقب", href: "/competitions/report-templates" }] : []),
         ...(u.can("comp.reports") ? [{ label: "📄 تقارير بانتظار الاعتماد", href: "/matches?report=SUBMITTED", badge: reports }] : []),
         { label: "⛔ الإيقافات", href: "/registration/suspensions?kind=MATCHES" },
         "sep",

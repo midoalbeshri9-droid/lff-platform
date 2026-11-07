@@ -11,7 +11,7 @@ import { audit, notifyClub, notifyOfficial } from "@/lib/audit";
 import { approveMatch, standings } from "@/lib/competition";
 import {
   ensureStages, templateStages, addToFirstStage, removeFromStages, generateStageFixtures, clearStageFixtures, drawGroups, setGroups, groupsByRegion,
-  nextKnockoutRound, qualifyToNext, getStage,
+  nextKnockoutRound, qualifyToNext, getStage, manualKoPairs,
 } from "@/lib/stages";
 import { saveLineup } from "@/lib/lineup";
 import { deleteCompetitionCascade } from "@/lib/compDelete";
@@ -134,6 +134,13 @@ function stageData(f: FormData) {
     finalLegs: Math.max(1, Math.min(2, int(f, "finalLegs") ?? 1)),
     groupsCount: format === "GROUPS" ? int(f, "groupsCount") : null,
     qualifyPerGroup: int(f, "qualifyPerGroup"), notes: str(f, "notes"),
+    qualifyBest: format === "GROUPS" ? int(f, "qualifyBest") || null : null,
+    pointsWin: int(f, "pointsWin"), pointsDraw: int(f, "pointsDraw"),
+    carryPoints: format !== "KNOCKOUT" && ["FULL", "HALF"].includes(str(f, "carryPoints") ?? "") ? str(f, "carryPoints")! : "NONE",
+    koPairing: ["SEEDED", "DRAW", "MANUAL"].includes(str(f, "koPairing") ?? "") ? str(f, "koPairing")! : "SEEDED",
+    tieDecider: str(f, "tieDecider") === "PENS" ? "PENS" : "ET_PENS",
+    thirdPlace: format === "KNOCKOUT" && f.get("thirdPlace") === "1",
+    finalVenue: format === "KNOCKOUT" ? str(f, "finalVenue") : null,
   };
 }
 
@@ -262,10 +269,29 @@ export async function stageQualify(f: FormData) {
   await attempt(stageBack(s.competitionId, stageId), async () => {
     guard(await inScopeStage(u, stageId));
     const per = int(f, "perGroup") ?? s.qualifyPerGroup ?? 2;
-    const r = await qualifyToNext(stageId, per, (cid, sid) => standings(cid, sid));
+    const best = s.format === "GROUPS" ? int(f, "best") ?? s.qualifyBest ?? 0 : 0;
+    const r = await qualifyToNext(stageId, per, best, (cid, sid) => standings(cid, sid));
     for (const t of await db.select().from(stageTeams).where(eq(stageTeams.stageId, r.next.id))) await notifyClub(t.clubId, "تأهل إلى المرحلة التالية", r.next.name, "/club/matches");
     await audit(u, "تأهيل فرق للمرحلة التالية", "Competition", s.competitionId, { from: s.name, to: r.next.name, count: r.count });
     return `تأهل ${r.count} فريق إلى «${r.next.name}»`;
+  });
+}
+
+/** الإقران اليدوي لمواجهات الدور الأول في خروج المغلوب */
+export async function stageManualPairs(f: FormData) {
+  const u = await requireUser("comp.manage");
+  const stageId = int(f, "stageId")!;
+  const s = await getStage(stageId);
+  await attempt(stageBack(s.competitionId, stageId), async () => {
+    guard(await inScopeStage(u, stageId));
+    const pairs: [number, number][] = [];
+    for (let i = 0; i < 64; i++) {
+      const a = int(f, `a_${i}`), b = int(f, `b_${i}`);
+      if (a && b) pairs.push([a, b]); else if (a || b) throw new UserError(`أكمل المواجهة رقم ${i + 1}`);
+    }
+    const n = await manualKoPairs(stageId, pairs);
+    await audit(u, "إقران يدوي لخروج المغلوب", "Competition", s.competitionId, { stage: s.name, pairs });
+    return `تم إنشاء ${pairs.length} مواجهة (${n} مباراة) — حدّد المواعيد من «الجدول والمباريات»`;
   });
 }
 

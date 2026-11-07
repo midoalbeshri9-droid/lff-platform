@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { and, eq, desc, asc, notInArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { competitions, competitionTeams, clubs, matches, seasons, ageCategories, suspensions, players, matchEvents, registrations, competitionSquads, stageTeams, divisions } from "@/db/schema";
+import { competitions, competitionTeams, clubs, matches, seasons, ageCategories, suspensions, players, matchEvents, registrations, competitionSquads, stageTeams, divisions, stadiums } from "@/db/schema";
 import { sql } from "drizzle-orm";
 import { SquadListForm } from "@/components/SquadList";
 import { POSITION } from "@/lib/labels";
@@ -12,15 +12,15 @@ import { requireUser } from "@/lib/auth";
 import { standings, topScorers } from "@/lib/competition";
 import { competitionFootprint } from "@/lib/compDelete";
 import { allStadiums } from "@/lib/stadiums";
-import { ensureStages, knockoutRounds, STAGE_FORMAT, STAGE_STATUS, type Stage } from "@/lib/stages";
-import { GROUP_LETTERS } from "@/lib/competitionPure";
+import { ensureStages, knockoutRounds, thirdPlaceTie, STAGE_FORMAT, STAGE_STATUS, CARRY_POINTS, KO_PAIRING, TIE_DECIDER, type Stage } from "@/lib/stages";
+import { GROUP_LETTERS, pickQualifiers } from "@/lib/competitionPure";
 import { COMP_TYPE, COMP_STATUS, MATCH_STATUS, REPORT_STATUS, TIEBREAK } from "@/lib/labels";
 import { fmtDateTime, toLocalInput } from "@/lib/util";
 import { PageHead, Flash, Badge, Empty, Field, Options, type SP } from "@/components/ui";
 import { Submit, CheckAll } from "@/components/Client";
 import {
   saveCompetition, setCompetitionStatus, addTeams, removeTeam, makeFixtures, clearFixtures, saveMatch, bulkSchedule,
-  addStage, saveStage, deleteStage, stageAddTeams, stageRemoveTeam, stageDraw, stageRegionGroups, stageSaveGroups, stageQualify, stageNextRound, deleteCompetition,
+  addStage, saveStage, deleteStage, stageAddTeams, stageRemoveTeam, stageDraw, stageRegionGroups, stageSaveGroups, stageQualify, stageNextRound, stageManualPairs, deleteCompetition,
 } from "../actions";
 
 export default async function Competition({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
@@ -46,13 +46,15 @@ export default async function Competition({ params, searchParams }: { params: Pr
   return (
     <>
       <PageHead title={c.name} sub={<>{season.name} — {stages.map((x) => x.name).join(" ← ")} — <Badge v={COMP_STATUS[c.status]} /></>} crumbs={[["المسابقات", "/competitions"], [c.name]]}
-        actions={manage && (
+        actions={<>
+          <Link className="btn btn-light btn-sm" href={`/print/round/${id}`} target="_blank">📊 التقرير الأسبوعي للجولة</Link>
+          {manage && (
           <form action={setCompetitionStatus} className="row">
             <input type="hidden" name="id" value={id} />
             <select name="status" defaultValue={c.status} style={{ width: "auto" }}>{Object.entries(COMP_STATUS).map(([k, v]) => <option key={k} value={k}>{v[0]}</option>)}</select>
             <Submit className="btn btn-light btn-sm">تحديث الحالة</Submit>
           </form>
-        )} />
+        )}</>} />
       <Flash sp={sp} />
       <div className="tabs">{tabs.map(([k, l]) => <Link key={k} href={`?tab=${k}`} className={`tab ${tab === k ? "active" : ""}`}>{l}</Link>)}</div>
       {tab === "fixtures" && <Fixtures id={id} manage={manage} teams={teams} stages={stages} stage={stage} />}
@@ -157,20 +159,23 @@ async function StageTable({ id, stage }: { id: number; stage: Stage }) {
   const rows = await standings(id, stage.id);
   const groups = [...new Set(rows.map((r) => r.group ?? ""))];
   const q = stage.qualifyPerGroup ?? 0;
+  const bestIds = new Set(stage.format === "GROUPS" && stage.qualifyBest ? pickQualifiers(rows, q, stage.qualifyBest).filter((x) => x.seed === q + 1).map((x) => x.clubId) : []);
+  const anyCarry = rows.some((r) => r.carried);
   return (
     <>
       <div className="row no-print" style={{ marginBottom: ".6rem" }}>
         <Link className="btn btn-light btn-sm" href={`/print/standings/${id}?stage=${stage.id}`} target="_blank">🖨 طباعة الترتيب</Link>
-        {q > 0 && <span className="muted">المظلل: مراكز التأهل ({q} من {stage.format === "GROUPS" ? "كل مجموعة" : "الترتيب"})</span>}
+        {q > 0 && <span className="muted">المظلل: مراكز التأهل ({q} من {stage.format === "GROUPS" ? "كل مجموعة" : "الترتيب"}{bestIds.size ? ` + أفضل ${stage.qualifyBest} من المركز ${q + 1} — بإطار` : ""})</span>}
+        {(stage.pointsWin != null || stage.pointsDraw != null) && <span className="muted">نقاط المرحلة: الفوز {stage.pointsWin ?? "—"} — التعادل {stage.pointsDraw ?? "—"}</span>}
       </div>
       {rows.length === 0 && <div className="card"><Empty>لا فرق في هذه المرحلة بعد</Empty></div>}
       {groups.map((g) => (
         <div key={g} className="card table-wrap">
           {g && <h3>المجموعة {g}</h3>}
-          <table className="t"><thead><tr><th>#</th><th>الفريق</th><th className="num">لعب</th><th className="num">فاز</th><th className="num">تعادل</th><th className="num">خسر</th><th className="num">له</th><th className="num">عليه</th><th className="num">الفارق</th><th className="num">النقاط</th><th className="num">مخصوم</th></tr></thead>
+          <table className="t"><thead><tr><th>#</th><th>الفريق</th><th className="num">لعب</th><th className="num">فاز</th><th className="num">تعادل</th><th className="num">خسر</th><th className="num">له</th><th className="num">عليه</th><th className="num">الفارق</th>{anyCarry && <th className="num">مرحّل</th>}<th className="num">النقاط</th><th className="num">مخصوم</th></tr></thead>
             <tbody>{rows.filter((r) => (r.group ?? "") === g).map((r, i) => (
-              <tr key={r.clubId} className={i < q ? "ok-row" : ""}><td>{i + 1}</td><td><strong>{r.name}</strong>{r.playoff && <span className="b b-amber" style={{ marginInlineStart: 6 }} title="تساوٍ تام وفق م24 — تُجرى مباراة فاصلة">مباراة فاصلة</span>}</td><td className="num">{r.p}</td><td className="num">{r.w}</td><td className="num">{r.d}</td><td className="num">{r.l}</td>
-                <td className="num">{r.gf}</td><td className="num">{r.ga}</td><td className="num">{r.gd > 0 ? "+" : ""}{r.gd}</td><td className="num"><strong>{r.pts}</strong></td><td className="num">{r.deducted ? <span className="danger-text">−{r.deducted}</span> : ""}</td></tr>
+              <tr key={r.clubId} className={i < q ? "ok-row" : ""} style={bestIds.has(r.clubId) ? { outline: "2px dashed var(--lff-gold, #c9a227)" } : undefined}><td>{i + 1}</td><td><strong>{r.name}</strong>{r.playoff && <span className="b b-amber" style={{ marginInlineStart: 6 }} title="تساوٍ تام وفق م24 — تُجرى مباراة فاصلة">مباراة فاصلة</span>}</td><td className="num">{r.p}</td><td className="num">{r.w}</td><td className="num">{r.d}</td><td className="num">{r.l}</td>
+                <td className="num">{r.gf}</td><td className="num">{r.ga}</td><td className="num">{r.gd > 0 ? "+" : ""}{r.gd}</td>{anyCarry && <td className="num">{r.carried || ""}</td>}<td className="num"><strong>{r.pts}</strong></td><td className="num">{r.deducted ? <span className="danger-text">−{r.deducted}</span> : ""}</td></tr>
             ))}</tbody></table>
         </div>
       ))}
@@ -180,13 +185,15 @@ async function StageTable({ id, stage }: { id: number; stage: Stage }) {
 
 async function Bracket({ stage }: { stage: Stage }) {
   const rounds = await knockoutRounds(stage.id);
+  const third = await thirdPlaceTie(stage.id);
   const names = new Map((await db.select({ id: clubs.id, name: clubs.name }).from(clubs)).map((x) => [x.id, x.name]));
   if (!rounds.length) return <div className="card"><Empty>لم تُنشأ مواجهات خروج المغلوب بعد</Empty></div>;
   const last = rounds[rounds.length - 1];
   const champion = last.ties.length === 1 ? last.ties[0].winner : null;
   return (
     <>
-      {champion && <div className="alert ok" style={{ fontSize: "1.1rem" }}>🏆 البطل: <strong>{names.get(champion)}</strong></div>}
+      {champion && <div className="alert ok" style={{ fontSize: "1.1rem" }}>🏆 البطل: <strong>{names.get(champion)}</strong>{third?.winner ? <> — 🥉 الثالث: <strong>{names.get(third.winner)}</strong></> : null}</div>}
+      <p className="muted" style={{ fontSize: ".85rem" }}>حسم التعادل: {TIE_DECIDER[stage.tieDecider]}{stage.finalVenue ? ` — النهائي على ملعب ${stage.finalVenue}` : ""}</p>
       <div className="bracket">
         {rounds.map((r) => (
           <div key={r.round} className="card bracket-col">
@@ -212,6 +219,14 @@ async function Bracket({ stage }: { stage: Stage }) {
             })}
           </div>
         ))}
+        {third && (
+          <div className="card bracket-col"><h3>المركز الثالث</h3>
+            <div className="tie">
+              {[third.a, third.b].map((club) => <div key={club} className={`tie-team ${third.winner === club ? "win" : third.winner ? "lose" : ""}`}><span>{names.get(club)}</span><strong className="num">{third.legs[0].homeScore != null ? (third.legs[0].homeClubId === club ? third.legs[0].homeScore : third.legs[0].awayScore) : ""}</strong></div>)}
+              <div className="tie-meta"><Link href={`/matches/${third.legs[0].id}`}>المباراة</Link>{third.legs[0].homePens != null && <span>ترجيح {third.legs[0].homePens}-{third.legs[0].awayPens}</span>}</div>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
@@ -242,6 +257,7 @@ async function Stages({ id, manage, stages, stage, teams }: { id: number; manage
                 <strong>{x.name}</strong>
                 <div>{STAGE_FORMAT[x.format]}{x.format === "GROUPS" && x.groupsCount ? ` (${x.groupsCount})` : ""} — <Badge v={STAGE_STATUS[x.status]} /></div>
                 <div className="muted">{t?.n ?? 0} فريق — {c?.done ?? 0}/{c?.n ?? 0} مباراة</div>
+                <div className="muted" style={{ fontSize: ".75rem" }}>{stageSummary(x)}</div>
               </Link>
             </span>
           );
@@ -258,6 +274,7 @@ async function Stages({ id, manage, stages, stage, teams }: { id: number; manage
         )}
       </div>
 
+      <datalist id="stadiums-list">{(await db.select({ name: stadiums.name, city: stadiums.city }).from(stadiums).orderBy(stadiums.name)).map((x) => <option key={x.name} value={x.name}>{x.city ?? ""}</option>)}</datalist>
       <div className="grid g2">
         <div className="card table-wrap">
           <h3>فرق «{stage.name}» ({st.length})</h3>
@@ -307,11 +324,22 @@ async function Stages({ id, manage, stages, stage, teams }: { id: number; manage
                   <span className="muted" style={{ fontSize: ".8rem" }}>تُحدَّد منطقة النادي من الإدارة ← الأندية</span>
                 </form>
               )}
+              {stage.format === "KNOCKOUT" && !scheduled && stage.koPairing === "MANUAL" && st.length >= 2 && (
+                <form action={stageManualPairs} className="mt">
+                  <input type="hidden" name="stageId" value={stage.id} />
+                  <strong>المواجهات يدويًا</strong>
+                  <table className="t"><tbody>{Array.from({ length: Math.floor(st.length / 2) }, (_, i) => (
+                    <tr key={i}><td className="num">{i + 1}</td>
+                      {["a", "b"].map((side) => <td key={side}><select name={`${side}_${i}`} defaultValue=""><option value="">— {side === "a" ? "الأرض" : "الضيف"} —</option>{st.map((x) => <option key={x.t.clubId} value={x.t.clubId}>{x.name}{x.t.fromGroup ? ` (${x.t.fromGroup}${x.t.seed})` : ""}</option>)}</select></td>)}</tr>
+                  ))}</tbody></table>
+                  <Submit confirm="إنشاء مباريات الدور الأول بهذه المواجهات؟">⚙ إنشاء المواجهات</Submit>
+                </form>
+              )}
               <div className="row mt">
-                {!scheduled ? (
+                {!scheduled && !(stage.format === "KNOCKOUT" && stage.koPairing === "MANUAL") ? (
                   <form action={makeFixtures}><input type="hidden" name="id" value={id} /><input type="hidden" name="stageId" value={stage.id} />
                     <Submit confirm={`إنشاء جدول «${stage.name}»؟`}>⚙ إنشاء جدول المرحلة</Submit></form>
-                ) : (
+                ) : scheduled && (
                   <form action={clearFixtures}><input type="hidden" name="id" value={id} /><input type="hidden" name="stageId" value={stage.id} />
                     <Submit className="btn btn-ghost" confirm="حذف كل مباريات المرحلة؟">حذف جدول المرحلة</Submit></form>
                 )}
@@ -328,7 +356,8 @@ async function Stages({ id, manage, stages, stage, teams }: { id: number; manage
                 <form action={stageQualify} className="row mt">
                   <input type="hidden" name="stageId" value={stage.id} />
                   <Field label={`المتأهلون من ${stage.format === "GROUPS" ? "كل مجموعة" : "الترتيب"}`}><input type="number" name="perGroup" min={1} defaultValue={stage.qualifyPerGroup ?? 2} style={{ width: 90 }} /></Field>
-                  <Submit confirm={`تأهيل الأوائل إلى «${next.name}»؟ تُعتبر هذه المرحلة منتهية.`}>✅ تأهيل إلى «{next.name}»</Submit>
+                  {stage.format === "GROUPS" && <Field label="+ أفضل أصحاب المركز التالي"><input type="number" name="best" min={0} defaultValue={stage.qualifyBest ?? 0} style={{ width: 90 }} /></Field>}
+                  <Submit confirm={`تأهيل الأوائل إلى «${next.name}»؟ تُعتبر هذه المرحلة منتهية.${next.carryPoints !== "NONE" ? ` (${CARRY_POINTS[next.carryPoints]})` : ""}`}>✅ تأهيل إلى «{next.name}»</Submit>
                 </form>
               )}
             </div>
@@ -350,6 +379,20 @@ async function Stages({ id, manage, stages, stage, teams }: { id: number; manage
   );
 }
 
+function stageSummary(x: Stage) {
+  const p: string[] = [];
+  if (x.pointsWin != null || x.pointsDraw != null) p.push(`النقاط ${x.pointsWin ?? "—"}/${x.pointsDraw ?? "—"}`);
+  if (x.carryPoints !== "NONE") p.push(x.carryPoints === "FULL" ? "ترحيل كامل" : "ترحيل النصف");
+  if (x.format !== "KNOCKOUT" && x.qualifyPerGroup) p.push(`يتأهل ${x.qualifyPerGroup}${x.qualifyBest ? ` + أفضل ${x.qualifyBest}` : ""}`);
+  if (x.format === "KNOCKOUT") {
+    p.push(x.koPairing === "DRAW" ? "قرعة" : x.koPairing === "MANUAL" ? "إقران يدوي" : "بالتصنيف");
+    p.push(x.tieDecider === "PENS" ? "ترجيح مباشر" : "إضافي + ترجيح");
+    if (x.thirdPlace) p.push("مباراة الثالث");
+    if (x.finalVenue) p.push(`النهائي: ${x.finalVenue}`);
+  }
+  return p.join(" · ");
+}
+
 function StageFields({ s }: { s?: Stage }) {
   return (
     <div className="form f2">
@@ -359,6 +402,18 @@ function StageFields({ s }: { s?: Stage }) {
       <Field label="النهائي (خروج المغلوب)"><select name="finalLegs" defaultValue={s?.finalLegs ?? 1}><option value="1">مباراة واحدة</option><option value="2">ذهاب وإياب</option></select></Field>
       <Field label="عدد المجموعات"><input type="number" name="groupsCount" min={2} max={12} defaultValue={s?.groupsCount ?? ""} /></Field>
       <Field label="المتأهلون للمرحلة التالية" hint="من كل مجموعة أو من الترتيب"><input type="number" name="qualifyPerGroup" min={1} defaultValue={s?.qualifyPerGroup ?? ""} /></Field>
+      <Field label="متأهلون إضافيون من أفضل أصحاب المركز التالي" hint="المجموعات: مثل أفضل الثوالث — 0 أو فارغ = لا"><input type="number" name="qualifyBest" min={0} defaultValue={s?.qualifyBest ?? ""} /></Field>
+      <Field label="نقاط الفوز في هذه المرحلة" hint="فارغ = نقاط المسابقة"><input type="number" name="pointsWin" min={0} max={10} defaultValue={s?.pointsWin ?? ""} /></Field>
+      <Field label="نقاط التعادل في هذه المرحلة" hint="فارغ = نقاط المسابقة"><input type="number" name="pointsDraw" min={0} max={10} defaultValue={s?.pointsDraw ?? ""} /></Field>
+      <Field label="ترحيل نقاط المرحلة السابقة" hint="دوري/مجموعات — يُطبَّق عند تأهيل الفرق إلى هذه المرحلة"><select name="carryPoints" defaultValue={s?.carryPoints ?? "NONE"}><Options map={CARRY_POINTS} /></select></Field>
+      <fieldset className="full box" style={{ padding: ".4rem .7rem" }}><legend style={{ fontSize: ".85rem" }}>خروج المغلوب</legend>
+        <div className="form f2">
+          <Field label="إقران المواجهات"><select name="koPairing" defaultValue={s?.koPairing ?? "SEEDED"}><Options map={KO_PAIRING} /></select></Field>
+          <Field label="حسم التعادل"><select name="tieDecider" defaultValue={s?.tieDecider ?? "ET_PENS"}><Options map={TIE_DECIDER} /></select></Field>
+          <Field label="ملعب محايد للنهائي" hint="فارغ = ملعب الفريق الأول"><input type="text" name="finalVenue" list="stadiums-list" defaultValue={s?.finalVenue ?? ""} /></Field>
+          <label className="check" style={{ alignSelf: "end" }}><input type="checkbox" name="thirdPlace" value="1" defaultChecked={s?.thirdPlace} /> مباراة تحديد المركز الثالث</label>
+        </div>
+      </fieldset>
     </div>
   );
 }

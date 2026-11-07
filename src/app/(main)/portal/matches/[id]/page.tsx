@@ -2,13 +2,17 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, eq, asc, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { assignments, matches, clubs, competitions, matchSquads, matchEvents, players, officials, evaluations, commissionerReports } from "@/db/schema";
+import { assignments, matches, clubs, competitions, matchSquads, matchEvents, players, officials, evaluations, matchReportForms, reportFiles } from "@/db/schema";
+import { getTemplate } from "@/lib/reports";
+import { fileUrl } from "@/lib/storage";
+import { ReportFields } from "@/components/ReportFields";
+import { ReportFileUploader } from "@/components/ReportFileUploader";
 import { requireOfficialUser } from "@/lib/auth";
 import { ASSIGN_ROLE, EVENT_TYPE, REPORT_STATUS } from "@/lib/labels";
 import { fmtDateTime } from "@/lib/util";
 import { PageHead, Flash, Badge, Field, Options, Empty, type SP } from "@/components/ui";
 import { Submit } from "@/components/Client";
-import { refAddEvent, refDeleteEvent, refSaveReport, saveEvaluation, saveCommissionerReport, declineAssignment } from "../../actions";
+import { refAddEvent, refDeleteEvent, refSaveReport, saveEvaluation, saveCommissionerReport, declineAssignment, deleteReportFile } from "../../actions";
 
 export default async function PortalMatch({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const u = await requireOfficialUser();
@@ -33,7 +37,7 @@ export default async function PortalMatch({ params, searchParams }: { params: Pr
         <div className="tag-list mt">{crew.map((x) => <span key={x.a.id} className="b b-gray">{ASSIGN_ROLE[x.a.role]}: {x.name}</span>)}</div>
       </div>
       {roles.includes("REFEREE") && <RefereeReport m={m} name={name} />}
-      {roles.some((r) => r === "COMMISSIONER" || r === "REF_OBSERVER") && <CommReport matchId={id} />}
+      {roles.includes("COMMISSIONER") && <CommReport matchId={id} />}
       {roles.some((r) => r === "COMMISSIONER" || r === "REF_OBSERVER") && <ObserverEval matchId={id} observerId={u.officialId} crew={crew.filter((x) => ["REFEREE", "AR1", "AR2", "FOURTH", "VAR"].includes(x.a.role))} />}
       {!roles.some((r) => ["REFEREE", "REF_OBSERVER", "COMMISSIONER"].includes(r)) && <div className="alert info">لا يُطلب منك تقرير في هذه المباراة — يكتب حكم الساحة تقرير المباراة.</div>}
       {m.status === "SCHEDULED" && (!m.kickoff || m.kickoff.getTime() > Date.now()) && (
@@ -53,6 +57,8 @@ async function RefereeReport({ m, name }: { m: typeof matches.$inferSelect; name
   const squad = await db.select({ s: matchSquads, n: players.fullName }).from(matchSquads).innerJoin(players, eq(players.id, matchSquads.playerId)).where(eq(matchSquads.matchId, m.id)).orderBy(asc(matchSquads.shirtNumber));
   const evs = await db.select({ e: matchEvents, n: players.fullName }).from(matchEvents).leftJoin(players, eq(players.id, matchEvents.playerId)).where(eq(matchEvents.matchId, m.id)).orderBy(asc(matchEvents.minute), asc(matchEvents.id));
   const edit = m.reportStatus === "NONE" || m.reportStatus === "RETURNED";
+  const tpl = await getTemplate("REFEREE");
+  const [form] = await db.select().from(matchReportForms).where(and(eq(matchReportForms.matchId, m.id), eq(matchReportForms.kind, "REFEREE")));
   return (
     <>
       <div className="card">
@@ -93,10 +99,12 @@ async function RefereeReport({ m, name }: { m: typeof matches.$inferSelect; name
         </div>
         <div className="form">
           <Field label="الحضور الجماهيري التقريبي"><input type="number" name="attendance" defaultValue={m.attendance ?? ""} disabled={!edit} /></Field>
-          <Field label="ملاحظات الحكم (حالات الطرد، الشغب، الإصابات، التأخير...)" full><textarea className="tall" name="reportNotes" defaultValue={m.reportNotes ?? ""} disabled={!edit} /></Field>
         </div>
+        <h3 className="mt">{tpl.title}</h3>
+        <ReportFields fields={form?.isSubmitted && !edit ? form.fields : tpl.fields} answers={form?.answers ?? {}} disabled={!edit} />
         {edit && <div className="btn-row mt"><Submit className="btn btn-light" name="submit" value="0">💾 حفظ مسودة</Submit><Submit name="submit" value="1" confirm="إرسال التقرير للجنة المسابقات؟ لن تتمكن من التعديل بعد الإرسال.">📤 إرسال التقرير</Submit></div>}
       </form>
+      <Attachments matchId={m.id} kind="REFEREE" edit={edit} required={tpl.requireAttachment} />
     </>
   );
 }
@@ -134,22 +142,35 @@ async function ObserverEval({ matchId, observerId, crew }: { matchId: number; ob
 }
 
 async function CommReport({ matchId }: { matchId: number }) {
-  const [r] = await db.select().from(commissionerReports).where(eq(commissionerReports.matchId, matchId));
+  const tpl = await getTemplate("COMMISSIONER");
+  const [r] = await db.select().from(matchReportForms).where(and(eq(matchReportForms.matchId, matchId), eq(matchReportForms.kind, "COMMISSIONER")));
   const dis = !!r?.isSubmitted;
   return (
-    <form action={saveCommissionerReport} className="card">
-      <input type="hidden" name="matchId" value={matchId} />
-      <div className="card-head"><h2>تقرير مراقب المباراة (يُرسل للجنة المسابقات)</h2>{dis && <span className="b b-green">مُرسل</span>}</div>
-      <div className="form">
-        <Field label="وقت الانطلاق الفعلي"><input type="time" name="actualKickoff" defaultValue={r?.actualKickoff ?? ""} disabled={dis} /></Field>
-        <Field label="الحضور الجماهيري"><input type="number" name="attendance" defaultValue={r?.attendance ?? ""} disabled={dis} /></Field>
-        <Field label="حالة الملعب وأرضيته" full><textarea name="pitch" defaultValue={r?.pitch ?? ""} disabled={dis} /></Field>
-        <Field label="التنظيم (غرف الملابس، الإعلام، الإسعاف...)" full><textarea name="organization" defaultValue={r?.organization ?? ""} disabled={dis} /></Field>
-        <Field label="الأمن والجماهير" full><textarea name="security" defaultValue={r?.security ?? ""} disabled={dis} /></Field>
-        <Field label="الحوادث والمخالفات" full><textarea name="incidents" defaultValue={r?.incidents ?? ""} disabled={dis} /></Field>
-        <Field label="التوصيات" full><textarea name="recommendations" defaultValue={r?.recommendations ?? ""} disabled={dis} /></Field>
-      </div>
-      {!dis && <div className="btn-row mt"><Submit className="btn btn-light" name="submit" value="0">💾 حفظ مسودة</Submit><Submit name="submit" value="1" confirm="إرسال التقرير نهائيًا؟">📤 إرسال التقرير</Submit></div>}
-    </form>
+    <>
+      <form action={saveCommissionerReport} className="card">
+        <input type="hidden" name="matchId" value={matchId} />
+        <div className="card-head"><h2>{tpl.title} (يُرسل للجنة المسابقات)</h2>{dis && <span className="b b-green">مُرسل</span>}</div>
+        <ReportFields fields={dis ? r!.fields : tpl.fields} answers={r?.answers ?? {}} disabled={dis} />
+        {!dis && <div className="btn-row mt"><Submit className="btn btn-light" name="submit" value="0">💾 حفظ مسودة</Submit><Submit name="submit" value="1" confirm="إرسال التقرير نهائيًا للجنة المسابقات؟">📤 إرسال التقرير</Submit></div>}
+      </form>
+      <Attachments matchId={matchId} kind="COMMISSIONER" edit={!dis} required={tpl.requireAttachment} />
+    </>
+  );
+}
+
+/** مرفقات التقرير (التقرير الورقي صورةً أو PDF) */
+async function Attachments({ matchId, kind, edit, required }: { matchId: number; kind: "REFEREE" | "COMMISSIONER"; edit: boolean; required: boolean }) {
+  const files = await db.select().from(reportFiles).where(and(eq(reportFiles.matchId, matchId), eq(reportFiles.kind, kind))).orderBy(asc(reportFiles.id));
+  return (
+    <div className="card">
+      <h3>📎 مرفقات التقرير{required && <span className="danger-text" style={{ fontSize: ".85rem" }}> — إلزامية قبل الإرسال</span>}</h3>
+      {files.length === 0 ? <p className="muted">لا مرفقات</p> : (
+        <table className="t"><tbody>{files.map((x) => (
+          <tr key={x.id}><td><a href={fileUrl(x.fileKey)!} target="_blank" rel="noreferrer">{x.mime.startsWith("image/") ? "🖼" : "📄"} {x.originalName}</a></td>
+            <td style={{ width: 80 }}>{edit && <form action={deleteReportFile}><input type="hidden" name="matchId" value={matchId} /><input type="hidden" name="id" value={x.id} /><Submit className="btn btn-sm btn-ghost" confirm="حذف المرفق؟">حذف</Submit></form>}</td></tr>
+        ))}</tbody></table>
+      )}
+      {edit && <ReportFileUploader matchId={matchId} kind={kind} />}
+    </div>
   );
 }

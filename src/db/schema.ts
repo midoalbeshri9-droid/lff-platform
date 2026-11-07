@@ -361,6 +361,14 @@ export const competitionStages = pgTable("competition_stages", {
   finalLegs: integer("final_legs").notNull().default(1), // خروج المغلوب: النهائي مباراة واحدة أو ذهاب وإياب
   groupsCount: integer("groups_count"),
   qualifyPerGroup: integer("qualify_per_group"), // عدد المتأهلين من كل مجموعة للمرحلة التالية
+  qualifyBest: integer("qualify_best"), // متأهلون إضافيون: أفضل أصحاب المركز التالي من كل المجموعات (مثل أفضل الثوالث)
+  pointsWin: integer("points_win"), // نقاط الفوز في هذه المرحلة (فارغ = نقاط المسابقة)
+  pointsDraw: integer("points_draw"),
+  carryPoints: text("carry_points").notNull().default("NONE"), // ترحيل نقاط المرحلة السابقة: NONE | FULL | HALF (نصفها مقربًا لأعلى)
+  koPairing: text("ko_pairing").notNull().default("SEEDED"), // خروج المغلوب: SEEDED (أول × ثاني المجموعة المجاورة) | DRAW (قرعة) | MANUAL (يدوي)
+  tieDecider: text("tie_decider").notNull().default("ET_PENS"), // حسم التعادل: ET_PENS (وقت إضافي ثم ترجيح) | PENS (ترجيح مباشرة)
+  thirdPlace: boolean("third_place").notNull().default(false), // مباراة تحديد المركز الثالث
+  finalVenue: text("final_venue"), // ملعب محايد للنهائي (فارغ = ملعب الفريق الأول)
   status: stageStatusEnum("status").notNull().default("PENDING"),
   notes: text("notes"),
 }, (t) => [index("stage_comp_idx").on(t.competitionId, t.seq)]);
@@ -372,6 +380,7 @@ export const stageTeams = pgTable("stage_teams", {
   groupName: text("group_name"),
   seed: integer("seed"), // الترتيب في المرحلة السابقة (1 = الأول)
   fromGroup: text("from_group"), // المجموعة التي تأهل منها
+  bonusPts: integer("bonus_pts").notNull().default(0), // نقاط مرحّلة من المرحلة السابقة
 }, (t) => [uniqueIndex("stage_team_uq").on(t.stageId, t.clubId)]);
 
 export const matchStatusEnum = pgEnum("match_status", ["SCHEDULED", "PLAYED", "POSTPONED", "CANCELLED", "FORFEIT"]);
@@ -386,6 +395,7 @@ export const matches = pgTable("matches", {
   groupName: text("group_name"),
   tieNo: integer("tie_no"), // رقم المواجهة في خروج المغلوب (يجمع الذهاب والإياب)
   leg: integer("leg"),
+  isThirdPlace: boolean("is_third_place").notNull().default(false), // مباراة المركز الثالث (خارج شجرة الأدوار)
   homePens: integer("home_pens"),
   awayPens: integer("away_pens"),
   homeClubId: integer("home_club_id").notNull().references(() => clubs.id),
@@ -515,6 +525,46 @@ export const commissionerReports = pgTable("commissioner_reports", {
   isSubmitted: boolean("is_submitted").notNull().default(false),
   submittedAt: ts("submitted_at"),
 });
+
+// نماذج التقارير التي تصممها لجنة المسابقات (تقرير الحكم وتقرير مراقب المباراة)
+export type ReportField = {
+  id: string;
+  type: "section" | "text" | "textarea" | "number" | "yesno" | "select" | "time" | "date" | "rating";
+  label: string; required?: boolean; options?: string[]; help?: string;
+};
+export const reportKindEnum = pgEnum("report_kind", ["REFEREE", "COMMISSIONER"]);
+export const reportTemplates = pgTable("report_templates", {
+  id: serial("id").primaryKey(),
+  kind: reportKindEnum("kind").notNull().unique(), // نموذج عام واحد لكل نوع
+  title: text("title").notNull(),
+  fields: jsonb("fields").$type<ReportField[]>().notNull(),
+  requireAttachment: boolean("require_attachment").notNull().default(false), // إلزام إرفاق التقرير الورقي (صورة/PDF)
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+  updatedBy: text("updated_by"),
+});
+// التقرير المعبأ: يحتفظ بنسخة من خانات النموذج وقت كتابته (تعديل النموذج لاحقًا لا يغيّر التقارير السابقة)
+export const matchReportForms = pgTable("match_report_forms", {
+  id: serial("id").primaryKey(),
+  matchId: integer("match_id").notNull().references(() => matches.id, { onDelete: "cascade" }),
+  kind: reportKindEnum("kind").notNull(),
+  officialId: integer("official_id").notNull().references(() => officials.id),
+  fields: jsonb("fields").$type<ReportField[]>().notNull(),
+  answers: jsonb("answers").$type<Record<string, string>>().notNull(),
+  isSubmitted: boolean("is_submitted").notNull().default(false),
+  submittedAt: ts("submitted_at"),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+}, (t) => [uniqueIndex("match_report_form_uq").on(t.matchId, t.kind)]);
+export const reportFiles = pgTable("report_files", {
+  id: serial("id").primaryKey(),
+  matchId: integer("match_id").notNull().references(() => matches.id, { onDelete: "cascade" }),
+  kind: reportKindEnum("kind").notNull(),
+  officialId: integer("official_id").notNull().references(() => officials.id),
+  fileKey: text("file_key").notNull(),
+  originalName: text("original_name").notNull(),
+  mime: text("mime").notNull(),
+  size: integer("size").notNull(),
+  uploadedAt: ts("uploaded_at").notNull().defaultNow(),
+}, (t) => [index("report_files_match_idx").on(t.matchId, t.kind)]);
 
 // ======================= المرحلة الثانية =======================
 

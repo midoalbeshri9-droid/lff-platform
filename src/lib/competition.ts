@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql, lte } from "drizzle-orm";
 import { db, type Tx } from "@/db";
 import { competitions, matches, matchEvents, suspensions, clubs, registrations, stageTeams } from "@/db/schema";
 import { UserError, dayOf } from "./util";
@@ -37,27 +37,30 @@ function tally(rows: Map<number, StandingRow>, ms: MRow[], win: number, draw: nu
  * جدول الترتيب لمرحلة (دوري أو مجموعات). بدون stageId: أول مرحلة دوري/مجموعات غير منتهية، وإلا آخر واحدة.
  * كسر التعادل: GD = النقاط ← فارق الأهداف ← الأهداف ← المواجهات المباشرة. H2H = النقاط ← المواجهات المباشرة ← فارق الأهداف ← الأهداف.
  */
-export async function standings(competitionId: number, stageId?: number): Promise<StandingRow[]> {
+export async function standings(competitionId: number, stageId?: number, opts: { uptoRound?: number } = {}): Promise<StandingRow[]> {
   const [c] = await db.select().from(competitions).where(eq(competitions.id, competitionId));
   const stages = await ensureStages(competitionId);
   const tableStages = stages.filter((x) => x.format !== "KNOCKOUT");
   const st = stageId ? stages.find((x) => x.id === stageId) : tableStages.find((x) => x.status !== "DONE") ?? tableStages[tableStages.length - 1];
   if (!st || st.format === "KNOCKOUT") return [];
   const teams = await db
-    .select({ clubId: stageTeams.clubId, name: clubs.name, group: stageTeams.groupName })
+    .select({ clubId: stageTeams.clubId, name: clubs.name, group: stageTeams.groupName, bonus: stageTeams.bonusPts })
     .from(stageTeams).innerJoin(clubs, eq(clubs.id, stageTeams.clubId))
     .where(eq(stageTeams.stageId, st.id));
   const ms = await db.select().from(matches)
-    .where(and(eq(matches.stageId, st.id), inArray(matches.status, ["PLAYED", "FORFEIT"])));
+    .where(and(eq(matches.stageId, st.id), inArray(matches.status, ["PLAYED", "FORFEIT"]), opts.uptoRound ? lte(matches.round, opts.uptoRound) : undefined));
   const t = new Map<number, StandingRow>();
   teams.forEach((x) => t.set(x.clubId, { clubId: x.clubId, name: x.name, group: st.format === "GROUPS" ? x.group : null, p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, gd: 0, pts: 0, deducted: 0 }));
-  tally(t, ms, c.pointsWin, c.pointsDraw);
+  // نقاط المرحلة (إن حُددت لها) وإلا نقاط المسابقة
+  const win = st.pointsWin ?? c.pointsWin, draw = st.pointsDraw ?? c.pointsDraw;
+  tally(t, ms, win, draw);
   const ded = await pointsDeducted(competitionId, st.id, tableStages[0]?.id === st.id);
-  const rows = [...t.values()].map((r) => ({ ...r, gd: r.gf - r.ga, deducted: ded.get(r.clubId) ?? 0, pts: r.pts - (ded.get(r.clubId) ?? 0) }));
+  const bonus = new Map(teams.map((x) => [x.clubId, x.bonus]));
+  const rows = [...t.values()].map((r) => ({ ...r, gd: r.gf - r.ga, deducted: ded.get(r.clubId) ?? 0, carried: bonus.get(r.clubId) ?? 0, pts: r.pts + (bonus.get(r.clubId) ?? 0) - (ded.get(r.clubId) ?? 0) }));
 
   if (c.tiebreak === "LFF") {
     const groups = [...new Set(rows.map((r) => r.group ?? ""))].sort((a, b) => a.localeCompare(b, "ar"));
-    return groups.flatMap((g) => lffRank(rows.filter((r) => (r.group ?? "") === g), ms, c.pointsWin, c.pointsDraw, st.legs));
+    return groups.flatMap((g) => lffRank(rows.filter((r) => (r.group ?? "") === g), ms, win, draw, st.legs));
   }
 
   // المواجهات المباشرة بين الفرق المتساوية في النقاط داخل المجموعة نفسها
@@ -69,7 +72,7 @@ export async function standings(competitionId: number, stageId?: number): Promis
     const ids = new Set(tied.map((x) => x.clubId));
     const mini = new Map<number, StandingRow>();
     tied.forEach((x) => mini.set(x.clubId, { ...x, p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, gd: 0, pts: 0 }));
-    tally(mini, ms.filter((m) => ids.has(m.homeClubId) && ids.has(m.awayClubId)), c.pointsWin, c.pointsDraw);
+    tally(mini, ms.filter((m) => ids.has(m.homeClubId) && ids.has(m.awayClubId)), win, draw);
     mini.forEach((v, k) => h2h.set(k, { pts: v.pts, gd: v.gf - v.ga, gf: v.gf }));
   }
   const H = (r: StandingRow) => h2h.get(r.clubId) ?? { pts: 0, gd: 0, gf: 0 };
