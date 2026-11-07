@@ -85,15 +85,15 @@ export function cardColumn(cells: SheetData["cells"]) {
 }
 
 /** تصغير الصورة وتحويلها إلى JPEG (حجم أصغر وشكل موحد) */
-export async function toJpeg(blob: Blob): Promise<Blob> {
+export async function toJpeg(blob: Blob, maxDim = 600, quality = 0.9): Promise<Blob> {
   const bmp = await createImageBitmap(blob);
-  const s = Math.min(1, 600 / Math.max(bmp.width, bmp.height));
+  const s = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
   const c = document.createElement("canvas");
   c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
   const g = c.getContext("2d")!;
   g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
   g.drawImage(bmp, 0, 0, c.width, c.height);
-  return new Promise((ok, no) => c.toBlob((b) => (b ? ok(b) : no(new Error("jpeg"))), "image/jpeg", 0.9));
+  return new Promise((ok, no) => c.toBlob((b) => (b ? ok(b) : no(new Error("jpeg"))), "image/jpeg", quality));
 }
 
 /** تاريخ الميلاد من خلية Excel: رقم تسلسلي أو نص بصيغ شائعة ← YYYY-MM-DD أو null */

@@ -12,6 +12,7 @@ import { fileUrl } from "@/lib/storage";
 import { PageHead, Flash, Badge, Field, type SP } from "@/components/ui";
 import { Submit } from "@/components/Client";
 import { PlayerFields } from "@/components/PlayerForm";
+import { PlayerFilesUploader } from "@/components/PlayerFilesUploader";
 import { editPlayer, setPlayerStatus, addSuspension, liftSuspension, uploadPlayerDocs, deletePlayerDoc } from "../../actions";
 
 export default async function PlayerFile({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
@@ -78,16 +79,8 @@ export default async function PlayerFile({ params, searchParams }: { params: Pro
             )}
             {u.can("reg.edit") && regs.length > 0 && (
               <details className="mt" open={docs.length === 0}>
-                <summary>+ إضافة مستندات</summary>
-                <form action={uploadPlayerDocs} className="form f3 mt">
-                  <input type="hidden" name="playerId" value={id} />
-                  <Field label="نوع المستند"><select name="documentTypeId" required defaultValue="">
-                    <option value="" disabled>— اختر —</option>{types.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>
-                  <Field label="يُلحق بقيد"><select name="registrationId" defaultValue={regs[0].r.id}>
-                    {regs.map(({ r, club, season }) => <option key={r.id} value={r.id}>{season} — {club}</option>)}</select></Field>
-                  <Field label="الملفات" hint="PDF أو صور — حتى 10 ملفات"><input type="file" name="files" multiple required accept="application/pdf,image/jpeg,image/png,image/webp" /></Field>
-                  <div className="full"><Submit>📎 رفع المستندات</Submit></div>
-                </form>
+                <summary>+ رفع ملفات اللاعب (صورة، جواز، عقد، كشف طبي، ITC...)</summary>
+                <div className="mt"><PlayerFilesUploader types={types} playerId={id} /></div>
               </details>
             )}
           </div>}
