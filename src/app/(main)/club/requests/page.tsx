@@ -28,7 +28,7 @@ export default async function ClubRequests({ searchParams }: { searchParams: SP 
       <div className="card table-wrap">
         {rows.length === 0 ? <Empty>لا توجد طلبات</Empty> : (
           <table className="t">
-            <thead><tr><th>#</th><th>اللاعب</th><th>النوع</th><th>الحالة</th><th>النادي السابق</th><th>آخر تحديث</th><th></th></tr></thead>
+            <thead><tr><th>رقم الطلب</th><th>اللاعب</th><th>النوع</th><th>الحالة</th><th>النادي السابق</th><th>آخر تحديث</th><th></th></tr></thead>
             <tbody>{rows.map(({ r, name }) => (
               <tr key={r.id} className={r.status === "NEEDS_CORRECTION" ? "hl" : ""}>
                 <td>{r.id}</td><td><strong>{name}</strong>{r.decisionReason && r.status !== "APPROVED" && <div className="danger-text" style={{ fontSize: ".82rem" }}>{r.decisionReason}</div>}</td>

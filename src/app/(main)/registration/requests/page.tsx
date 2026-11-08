@@ -51,7 +51,7 @@ export default async function Requests({ searchParams }: { searchParams: SP }) {
       <div className="card table-wrap">
         {rows.length === 0 ? <Empty>لا توجد طلبات</Empty> : (
           <table className="t">
-            <thead><tr><th>#</th><th>اللاعب</th><th>النادي</th><th>النوع</th><th>النادي السابق</th><th>مستندات معلقة</th><th>أُرسل</th><th>الحالة</th><th></th></tr></thead>
+            <thead><tr><th>رقم الطلب</th><th>اللاعب</th><th>النادي</th><th>النوع</th><th>النادي السابق</th><th>مستندات معلقة</th><th>أُرسل</th><th>الحالة</th><th></th></tr></thead>
             <tbody>{rows.map(({ r, name, nid, club, from, docs }) => (
               <tr key={r.id} className={r.possibleDuplicates ? "hl" : ""}>
                 <td>{r.id}</td>

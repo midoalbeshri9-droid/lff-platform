@@ -44,7 +44,7 @@ export function ObserverReportForm({ initial, home, away, squad, crew, category,
     return (
       <div className="mt">
         <h3 style={{ borderInlineStart: `8px solid ${color}`, paddingInlineStart: ".5rem" }}>{title} <span className="muted" style={{ fontSize: ".8rem" }}>({rows.length})</span></h3>
-        <div className="table-wrap"><table className="t">
+        <div className="table-wrap"><table className="t no-num">
           <thead><tr><th style={{ width: 28 }}>ت</th><th style={{ minWidth: 220 }}>اسم الرياضي رباعيًا</th><th>بطاقة رياضية</th><th>الفريق</th><th>الفئة</th><th style={{ minWidth: 170 }}>السبب</th><th style={{ width: 70 }}>الوقت</th><th style={{ width: 30 }}></th></tr></thead>
           <tbody>{rows.map((r, i) => (
             <tr key={i}>
@@ -75,7 +75,7 @@ export function ObserverReportForm({ initial, home, away, squad, crew, category,
     return (
       <div>
         <strong>لفريق {t.name}</strong>
-        <table className="t"><thead><tr><th style={{ width: 28 }}>ت</th><th style={{ width: 80 }}>فانلة رقم</th><th style={{ width: 70 }}>الأهداف</th><th>الوقت والملاحظات</th><th style={{ width: 30 }}></th></tr></thead>
+        <table className="t no-num"><thead><tr><th style={{ width: 28 }}>ت</th><th style={{ width: 80 }}>فانلة رقم</th><th style={{ width: 70 }}>الأهداف</th><th>الوقت والملاحظات</th><th style={{ width: 30 }}></th></tr></thead>
           <tbody>{rows.map(({ r, i }, n) => (
             <tr key={i}><td>{n + 1}</td>
               <td><input type="text" inputMode="numeric" value={r.shirt} disabled={disabled} onChange={(e) => set(i, { shirt: e.target.value })} style={{ width: 60 }} /></td>

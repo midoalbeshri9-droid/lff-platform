@@ -12,7 +12,7 @@ function Rows({ cols, rows, onChange, addLabel }: { cols: Col[]; rows: DecisionR
   const move = (i: number, d: number) => { const n = [...rows]; const j = i + d; if (j < 0 || j >= n.length) return; [n[i], n[j]] = [n[j], n[i]]; onChange(n); };
   return (
     <div className="table-wrap">
-      <table className="t dec-t"><thead><tr><th style={{ width: 34 }}>ت</th>{cols.map((c) => <th key={c.k} style={c.w ? { width: c.w } : undefined}>{c.label}</th>)}<th style={{ width: 86 }}></th></tr></thead>
+      <table className="t dec-t no-num"><thead><tr><th style={{ width: 34 }}>ت</th>{cols.map((c) => <th key={c.k} style={c.w ? { width: c.w } : undefined}>{c.label}</th>)}<th style={{ width: 86 }}></th></tr></thead>
         <tbody>{rows.map((r, i) => (
           <tr key={i} style={r.manual ? { background: "#fffbe6" } : undefined}>
             <td className="num">{i + 1}</td>

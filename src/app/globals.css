@@ -441,3 +441,12 @@ tr.ok-row td { background: var(--green-l); }
 .arch-cat:hover { text-decoration: none; border-color: var(--gold); }
 .arch-other { margin: 0; padding-inline-start: 1.1rem; line-height: 2; }
 tr.warn-row td { background: #fff7e6; }
+
+/* ترقيم تسلسلي تلقائي لكل القوائم (الجداول ذات العناوين) — يُستثنى الجدول بالصنف no-num */
+table.t:has(> thead):not(.no-num) > tbody { counter-reset: rn; }
+table.t:has(> thead):not(.no-num) > tbody > tr { counter-increment: rn; }
+table.t:has(> thead):not(.no-num) > thead > tr::before { content: ""; display: table-cell; background: #f4f2ec; border-bottom: 1px solid var(--line); padding: .55rem .4rem; width: 1%; }
+table.t:has(> thead):not(.no-num) > thead > tr:first-child::before { content: "ت"; color: var(--ink-2); font-weight: 600; text-align: center; }
+table.t:has(> thead):not(.no-num) > tbody > tr::before { content: counter(rn); display: table-cell; padding: .55rem .4rem; border-bottom: 1px solid var(--line); text-align: center; color: var(--muted, #888); font-size: .8rem; vertical-align: top; white-space: nowrap; }
+table.t:has(> thead):not(.no-num) > tfoot > tr::before { content: ""; display: table-cell; border-bottom: 1px solid var(--line); }
+@media print { table.t:has(> thead):not(.no-num) > tbody > tr::before { color: #000; } }

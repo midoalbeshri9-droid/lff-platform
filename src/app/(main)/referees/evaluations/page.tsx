@@ -27,7 +27,7 @@ export default async function Evaluations({ searchParams }: { searchParams: SP }
       <form className="filters"><div className="field"><label>الموسم</label><select name="season" defaultValue={String(seasonId)}>{ss.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div><button className="btn btn-light">عرض</button></form>
       <div className="card table-wrap">
         {rows.length === 0 ? <Empty>لا تقييمات مرسلة</Empty> : (
-          <table className="t"><thead><tr><th>#</th><th>الحكم</th><th>النوع</th><th>الدرجة</th><th className="num">عدد التقييمات</th><th className="num">المتوسط</th><th className="num">الأدنى</th><th className="num">الأعلى</th></tr></thead>
+          <table className="t no-num"><thead><tr><th>#</th><th>الحكم</th><th>النوع</th><th>الدرجة</th><th className="num">عدد التقييمات</th><th className="num">المتوسط</th><th className="num">الأدنى</th><th className="num">الأعلى</th></tr></thead>
             <tbody>{rows.map(({ o, n, avg, min, max }, i) => (
               <tr key={o.id}><td>{i + 1}</td><td><Link href={`/referees/${o.id}`}><strong>{o.fullName}</strong></Link></td><td>{OFFICIAL_TYPE[o.type]}</td><td>{OFFICIAL_GRADE[o.grade]}</td>
                 <td className="num">{n}</td><td className="num"><strong>{avg}</strong></td><td className="num">{min}</td><td className="num">{max}</td></tr>

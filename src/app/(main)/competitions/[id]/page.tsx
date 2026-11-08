@@ -176,7 +176,7 @@ async function StageTable({ id, stage }: { id: number; stage: Stage }) {
       {groups.map((g) => (
         <div key={g} className="card table-wrap">
           {g && <h3>المجموعة {g}</h3>}
-          <table className="t"><thead><tr><th>#</th><th>الفريق</th><th className="num">لعب</th><th className="num">فاز</th><th className="num">تعادل</th><th className="num">خسر</th><th className="num">له</th><th className="num">عليه</th><th className="num">الفارق</th>{anyCarry && <th className="num">مرحّل</th>}<th className="num">النقاط</th><th className="num">مخصوم</th></tr></thead>
+          <table className="t no-num"><thead><tr><th>#</th><th>الفريق</th><th className="num">لعب</th><th className="num">فاز</th><th className="num">تعادل</th><th className="num">خسر</th><th className="num">له</th><th className="num">عليه</th><th className="num">الفارق</th>{anyCarry && <th className="num">مرحّل</th>}<th className="num">النقاط</th><th className="num">مخصوم</th></tr></thead>
             <tbody>{rows.filter((r) => (r.group ?? "") === g).map((r, i) => (
               <tr key={r.clubId} className={i < q ? "ok-row" : ""} style={bestIds.has(r.clubId) ? { outline: "2px dashed var(--lff-gold, #c9a227)" } : undefined}><td>{i + 1}</td><td><strong>{r.name}</strong>{r.playoff && <span className="b b-amber" style={{ marginInlineStart: 6 }} title="تساوٍ تام وفق م24 — تُجرى مباراة فاصلة">مباراة فاصلة</span>}</td><td className="num">{r.p}</td><td className="num">{r.w}</td><td className="num">{r.d}</td><td className="num">{r.l}</td>
                 <td className="num">{r.gf}</td><td className="num">{r.ga}</td><td className="num">{r.gd > 0 ? "+" : ""}{r.gd}</td>{anyCarry && <td className="num">{r.carried || ""}</td>}<td className="num"><strong>{r.pts}</strong></td><td className="num">{r.deducted ? <span className="danger-text">−{r.deducted}</span> : ""}</td></tr>
@@ -429,7 +429,7 @@ async function Scorers({ id }: { id: number }) {
   return (
     <div className="card table-wrap">
       {rows.length === 0 ? <Empty>لا أهداف مسجلة بعد</Empty> : (
-        <table className="t"><thead><tr><th>#</th><th>اللاعب</th><th>النادي</th><th className="num">الأهداف</th></tr></thead>
+        <table className="t no-num"><thead><tr><th>#</th><th>اللاعب</th><th>النادي</th><th className="num">الأهداف</th></tr></thead>
           <tbody>{rows.map((r, i) => <tr key={r.playerId}><td>{i + 1}</td><td><Link href={`/registration/players/${r.playerId}`}>{r.name}</Link></td><td>{r.club}</td><td className="num"><strong>{r.goals}</strong></td></tr>)}</tbody></table>
       )}
     </div>
@@ -531,7 +531,7 @@ async function FairPlay({ id }: { id: number }) {
     <div className="card table-wrap">
       <p className="muted">ترتيب اللعب النظيف: إنذار = 1، إنذار ثانٍ = 3، طرد مباشر = 4 (الأقل نقاطًا هو الأنظف).</p>
       {scored.length === 0 ? <Empty>لا بيانات بعد</Empty> : (
-        <table className="t"><thead><tr><th>#</th><th>النادي</th><th className="num">🟨</th><th className="num">🟨🟥</th><th className="num">🟥</th><th className="num">النقاط</th></tr></thead>
+        <table className="t no-num"><thead><tr><th>#</th><th>النادي</th><th className="num">🟨</th><th className="num">🟨🟥</th><th className="num">🟥</th><th className="num">النقاط</th></tr></thead>
           <tbody>{scored.map((x, i) => <tr key={x.club}><td>{i + 1}</td><td><strong>{x.club}</strong></td><td className="num">{x.y}</td><td className="num">{x.r2}</td><td className="num">{x.r}</td><td className="num"><strong>{x.pts}</strong></td></tr>)}</tbody></table>
       )}
     </div>
