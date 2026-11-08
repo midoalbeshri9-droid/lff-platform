@@ -40,14 +40,14 @@ async function updateContact(f: FormData) {
   const u = await requireUser();
   await attempt("/profile", async () => {
     const [row] = await db.select().from(users).where(eq(users.id, u.id));
-    const phone = reqPhone(f), email = reqEmail(f);
+    const phone = reqPhone(f), email = u.role === "OBSERVER" && !f.get("email")?.toString().trim() ? null : reqEmail(f);
     await ensureUniqueContact(email, phone, u.id);
     const msgs: string[] = [];
     if (phone !== row.phone) {
       await db.update(users).set({ phone }).where(eq(users.id, u.id));
       msgs.push("تم تحديث رقم الهاتف");
     }
-    if (email !== (row.email ?? "").toLowerCase()) {
+    if (email && email !== (row.email ?? "").toLowerCase()) {
       if (!row.email) {
         await db.update(users).set({ email }).where(eq(users.id, u.id));
         msgs.push("تم حفظ البريد");
@@ -82,9 +82,9 @@ export default async function Profile({ searchParams }: { searchParams: SP }) {
       </div>
       <div className="card" style={{ maxWidth: 560 }}>
         <h2>بيانات التواصل</h2>
-        {(!me.email || !me.phone) && <div className="alert warn">يجب إدخال البريد الإلكتروني ورقم الهاتف لإكمال حسابك.</div>}
+        {((!me.email && u.role !== "OBSERVER") || !me.phone) && <div className="alert warn">يجب إدخال البريد الإلكتروني ورقم الهاتف لإكمال حسابك.</div>}
         <form action={updateContact} className="form f1">
-          <Field label="البريد الإلكتروني"><input type="email" name="email" dir="ltr" defaultValue={me.email ?? ""} required placeholder="name@gmail.com" /></Field>
+          <Field label={u.role === "OBSERVER" ? "البريد الإلكتروني (اختياري)" : "البريد الإلكتروني"}><input type="email" name="email" dir="ltr" defaultValue={me.email ?? ""} required={u.role !== "OBSERVER"} placeholder="name@gmail.com" /></Field>
           <Field label="رقم الهاتف"><input type="tel" name="phone" dir="ltr" defaultValue={me.phone ?? ""} required placeholder="0912345678" /></Field>
           <div><Submit>حفظ</Submit></div>
         </form>

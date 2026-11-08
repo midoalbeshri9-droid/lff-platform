@@ -5,7 +5,8 @@ import { officials, users, assignments, matches } from "@/db/schema";
 import { guard, inScopeOfficial } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-import { attempt, str, req, int, UserError, reqEmail, reqPhone } from "@/lib/util";
+import bcrypt from "bcryptjs";
+import { attempt, str, req, int, UserError, reqEmail, reqPhone, checkPassword } from "@/lib/util";
 import { ensureUniqueContact, sentMsg } from "@/lib/users";
 import { sendActivation, sendReset, unusableHash } from "@/lib/tokens";
 
@@ -66,6 +67,14 @@ export async function observerAccount(f: FormData) {
     const [ex] = await db.select().from(users).where(eq(users.officialId, id));
     if (f.get("op") === "reset") {
       if (!ex) throw new UserError("لا حساب لهذا المراقب");
+      // مراقب بلا بريد: اللجنة تعيّن كلمة مرور مؤقتة يغيّرها عند أول دخول
+      if (!ex.email) {
+        const pw = str(f, "password") ?? "";
+        checkPassword(pw, str(f, "confirm") ?? "");
+        await db.update(users).set({ passwordHash: await bcrypt.hash(pw, 10), mustChangePassword: true, isVerified: true, verifiedAt: ex.verifiedAt ?? new Date(), sessionVersion: ex.sessionVersion + 1, failedLogins: 0, lockedUntil: null }).where(eq(users.id, ex.id));
+        await audit(u, "تعيين كلمة مرور مؤقتة لمراقب", "User", ex.id, o.fullName);
+        return "تم تعيين كلمة المرور المؤقتة — سلّمها للمراقب، وسيُطلب منه تغييرها عند أول دخول";
+      }
       const r = ex.isVerified ? await sendReset(ex) : await sendActivation(ex);
       await audit(u, "إرسال رابط دخول لمراقب", "User", ex.id, o.fullName);
       return `تم الإرسال — ${sentMsg(r.sent)}`;
@@ -73,8 +82,18 @@ export async function observerAccount(f: FormData) {
     if (ex) throw new UserError("للمراقب حساب مسبقًا: " + ex.username);
     const username = req(f, "username", "اسم المستخدم").toLowerCase();
     if (!/^[a-z0-9._-]{3,40}$/.test(username)) throw new UserError("اسم المستخدم: حروف إنجليزية وأرقام");
-    const email = reqEmail(f), phone = reqPhone(f);
+    // البريد اختياري للمراقبين: بدونه تفتح اللجنة الحساب بكلمة مرور مؤقتة
+    const email = str(f, "email") ? reqEmail(f) : null, phone = reqPhone(f);
     await ensureUniqueContact(email, phone);
+    if (!email) {
+      const pw = str(f, "password") ?? "";
+      if (!pw) throw new UserError("أدخل بريد المراقب، أو كلمة مرور مؤقتة إن لم يكن له بريد");
+      checkPassword(pw, str(f, "confirm") ?? "");
+      const [n] = await db.insert(users).values({ username, fullName: o.fullName, phone, email: null, role: "OBSERVER", officialId: id, passwordHash: await bcrypt.hash(pw, 10), isVerified: true, verifiedAt: new Date(), mustChangePassword: true }).returning();
+      await db.update(officials).set({ phone }).where(eq(officials.id, id));
+      await audit(u, "إنشاء حساب مراقب مباراة (بدون بريد)", "User", n.id, { username, official: id });
+      return `تم إنشاء الحساب (${username}) — سلّم اسم المستخدم وكلمة المرور المؤقتة للمراقب، وسيُطلب منه تغييرها عند أول دخول`;
+    }
     const [n] = await db.insert(users).values({ username, fullName: o.fullName, phone, email, role: "OBSERVER", officialId: id, passwordHash: unusableHash(), isVerified: false }).returning();
     await db.update(officials).set({ email, phone }).where(eq(officials.id, id));
     const r = await sendActivation(n);

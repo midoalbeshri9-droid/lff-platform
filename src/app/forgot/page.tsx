@@ -26,6 +26,7 @@ export default function Forgot() {
         <div className="field"><label>البريد الإلكتروني</label><input type="email" name="email" dir="ltr" required autoFocus placeholder="name@gmail.com" /></div>
         <Submit>إرسال رابط الاستعادة</Submit>
       </form>
+      <p className="muted" style={{ textAlign: "center", marginTop: "1rem", fontSize: ".85rem" }}>مراقبو المباريات بدون بريد: تواصلوا مع لجنة المسابقات لتعيين كلمة مرور جديدة.</p>
       <p style={{ textAlign: "center", marginTop: "1rem" }}><a href="/login">العودة لتسجيل الدخول</a></p>
     </AuthShell>
   );

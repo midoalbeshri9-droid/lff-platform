@@ -170,7 +170,7 @@ export default async function MainLayout({ children }: { children: React.ReactNo
     count(db.select({ n: sql<number>`count(*)::int` }).from(notifications).where(and(eq(notifications.userId, u.id), eq(notifications.isRead, false)))),
   ]);
   const [me] = await db.select({ email: users.email, phone: users.phone }).from(users).where(eq(users.id, u.id));
-  const missingContact = !me?.email || !me?.phone;
+  const missingContact = (!me?.email && u.role !== "OBSERVER") || !me?.phone; // البريد اختياري لمراقبي المباريات
   const sub = u.isClub ? `بوابة الأندية — ${u.clubName}` : u.isOfficial ? "بوابة الحكام والمراقبين" : "منظومة القيد والمسابقات والحكام";
 
   return (

@@ -15,7 +15,7 @@ export default async function Observers({ searchParams }: { searchParams: SP }) 
   const u = await requireUser("comp.observers");
   const sp = await searchParams;
   const sc = await scopeOf(u);
-  const rows = await db.select({ o: officials, acc: users.username, verified: users.isVerified }).from(officials)
+  const rows = await db.select({ o: officials, acc: users.username, verified: users.isVerified, accEmail: users.email, temp: users.mustChangePassword }).from(officials)
     .leftJoin(users, eq(users.officialId, officials.id))
     .where(and(eq(officials.type, "COMMISSIONER"), officialIn(sc, officials.id))).orderBy(officials.status, officials.fullName);
   const ids = rows.map((r) => r.o.id);
@@ -48,7 +48,7 @@ export default async function Observers({ searchParams }: { searchParams: SP }) 
       <div className="card table-wrap">
         {rows.length === 0 ? <Empty>لا مراقبين معتمدين بعد</Empty> : (
           <table className="t"><thead><tr><th>المراقب</th><th>القائمة</th><th>المدينة</th><th>الاعتماد</th><th>الحالة</th><th>التعيينات (قادمة)</th><th>حساب البوابة</th><th></th></tr></thead>
-            <tbody>{rows.map(({ o, acc, verified }) => {
+            <tbody>{rows.map(({ o, acc, verified, accEmail, temp }) => {
               const l = load.find((x) => x.id === o.id);
               return (
                 <tr key={o.id} className={o.status === "ACTIVE" ? "" : "muted"}>
@@ -58,7 +58,7 @@ export default async function Observers({ searchParams }: { searchParams: SP }) 
                   <td style={{ fontSize: ".85rem" }}>{o.licenseNo}{o.licenseExpiry && <div className="muted">حتى {fmtDate(o.licenseExpiry)}</div>}</td>
                   <td><Badge v={OFFICIAL_STATUS[o.status]} />{o.suspendedUntil && <div className="muted" style={{ fontSize: ".75rem" }}>حتى {fmtDate(o.suspendedUntil)}</div>}</td>
                   <td className="num">{l?.all ?? 0} ({l?.next ?? 0})</td>
-                  <td>{acc ? <><span className="kbd">{acc}</span> {verified ? <span className="b b-green">مفعّل</span> : <span className="b b-amber">بانتظار التفعيل</span>}</> : <span className="muted">لا يوجد</span>}</td>
+                  <td>{acc ? <><span className="kbd">{acc}</span> {!verified ? <span className="b b-amber">بانتظار التفعيل</span> : temp ? <span className="b b-amber">كلمة مرور مؤقتة</span> : <span className="b b-green">مفعّل</span>}{!accEmail && <span className="b" title="الحساب بدون بريد — تعيد اللجنة كلمة المرور عند نسيانها">بدون بريد</span>}</> : <span className="muted">لا يوجد</span>}</td>
                   <td>{canEdit(o) && (
                     <details><summary className="btn btn-sm btn-light">إدارة</summary>
                       <div style={{ minWidth: 360 }}>
@@ -74,13 +74,20 @@ export default async function Observers({ searchParams }: { searchParams: SP }) 
                             <input type="hidden" name="officialId" value={o.id} />
                             <strong style={{ fontSize: ".9rem" }}>إنشاء حساب البوابة</strong>
                             <Field label="اسم المستخدم *"><input type="text" name="username" dir="ltr" required /></Field>
-                            <Field label="البريد *" hint="يصله رابط التفعيل"><input type="email" name="email" dir="ltr" defaultValue={o.email ?? ""} required /></Field>
                             <Field label="الهاتف *"><input type="tel" name="phone" dir="ltr" defaultValue={o.phone ?? ""} required /></Field>
-                            <Submit className="btn btn-sm btn-gold">إنشاء وإرسال التفعيل</Submit>
+                            <Field label="البريد (اختياري)" hint="إن وُجد يصله رابط التفعيل ولا حاجة لكلمة مرور"><input type="email" name="email" dir="ltr" defaultValue={o.email ?? ""} /></Field>
+                            <Field label="كلمة مرور مؤقتة" hint="عند عدم وجود بريد — 8 أحرف على الأقل، حروف وأرقام، يغيّرها المراقب عند أول دخول"><input type="password" name="password" dir="ltr" autoComplete="new-password" /></Field>
+                            <Field label="تأكيد كلمة المرور"><input type="password" name="confirm" dir="ltr" autoComplete="new-password" /></Field>
+                            <Submit className="btn btn-sm btn-gold">إنشاء الحساب</Submit>
                           </form>
                         ) : (
-                          <form action={observerAccount} className="mt"><input type="hidden" name="officialId" value={o.id} /><input type="hidden" name="op" value="reset" />
+                          accEmail ? <form action={observerAccount} className="mt"><input type="hidden" name="officialId" value={o.id} /><input type="hidden" name="op" value="reset" />
                             <Submit className="btn btn-sm btn-light">{verified ? "إرسال رابط كلمة مرور جديدة" : "إعادة إرسال التفعيل"}</Submit></form>
+                          : <form action={observerAccount} className="form f1 mt"><input type="hidden" name="officialId" value={o.id} /><input type="hidden" name="op" value="reset" />
+                            <strong style={{ fontSize: ".9rem" }}>تعيين كلمة مرور مؤقتة جديدة</strong>
+                            <Field label="كلمة المرور المؤقتة" hint="8 أحرف على الأقل، حروف وأرقام"><input type="password" name="password" dir="ltr" autoComplete="new-password" required /></Field>
+                            <Field label="تأكيد كلمة المرور"><input type="password" name="confirm" dir="ltr" autoComplete="new-password" required /></Field>
+                            <Submit className="btn btn-sm btn-light">تعيين</Submit></form>
                         )}
                       </div>
                     </details>)}</td>

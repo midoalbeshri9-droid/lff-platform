@@ -5,10 +5,10 @@ import { users } from "@/db/schema";
 import { UserError } from "./util";
 
 /** يتحقق أن البريد والهاتف غير مستخدمين في حساب آخر */
-export async function ensureUniqueContact(email: string, phone: string, exceptId?: number | null) {
+export async function ensureUniqueContact(email: string | null, phone: string, exceptId?: number | null) {
   const rows = await db.select({ id: users.id, email: users.email, phone: users.phone }).from(users)
-    .where(and(or(eq(sql`lower(${users.email})`, email), eq(users.phone, phone)), exceptId ? ne(users.id, exceptId) : undefined));
-  if (rows.some((r) => r.email?.toLowerCase() === email)) throw new UserError("البريد الإلكتروني مستخدم في حساب آخر");
+    .where(and(or(email ? eq(sql`lower(${users.email})`, email) : undefined, eq(users.phone, phone)), exceptId ? ne(users.id, exceptId) : undefined));
+  if (email && rows.some((r) => r.email?.toLowerCase() === email)) throw new UserError("البريد الإلكتروني مستخدم في حساب آخر");
   if (rows.some((r) => r.phone === phone)) throw new UserError("رقم الهاتف مستخدم في حساب آخر");
 }
 
