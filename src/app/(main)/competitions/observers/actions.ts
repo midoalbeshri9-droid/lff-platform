@@ -13,10 +13,15 @@ import { sendActivation, sendReset, unusableHash } from "@/lib/tokens";
 const BACK = "/competitions/observers";
 
 /** مراقبو المباريات المعتمدون لدى لجنة المسابقات — تضيفهم وتعدّلهم وتنشئ حساباتهم */
+// رئيس لجنة المسابقات وموظفوها يديرون مراقبي القائمة الاتحادية أيضًا (وإن كان حسابهم مرتبطًا بدرجة)
+const FED_ROLES = ["COMP_HEAD", "COMP_STAFF"];
+async function canManageObserver(u: { role: string; divisionId: number | null }, divisionId: number | null) {
+  return !u.divisionId || divisionId === u.divisionId || (divisionId == null && FED_ROLES.includes(u.role));
+}
 async function ownObserver(u: Awaited<ReturnType<typeof requireUser>>, id: number) {
-  guard(await inScopeOfficial(u, id, true));
   const [o] = await db.select().from(officials).where(eq(officials.id, id));
   if (!o || o.type !== "COMMISSIONER") throw new UserError("ليس مراقب مباراة");
+  if (!(await canManageObserver(u, o.divisionId))) guard(await inScopeOfficial(u, id, true));
   return o;
 }
 
@@ -24,11 +29,12 @@ export async function saveObserver(f: FormData) {
   const u = await requireUser("comp.observers");
   const id = int(f, "id");
   await attempt(BACK, async () => {
-    if (id) await ownObserver(u, id);
+    const old = id ? await ownObserver(u, id) : null;
     const data = {
       fullName: req(f, "fullName", "الاسم"), type: "COMMISSIONER" as const,
       city: str(f, "city"), phone: str(f, "phone"), email: str(f, "email"), licenseNo: str(f, "licenseNo"), licenseExpiry: str(f, "licenseExpiry"), notes: str(f, "notes"),
-      divisionId: u.divisionId ?? int(f, "divisionId"),
+      // تعديل مراقب اتحادي من حساب مرتبط بدرجة: يبقى في القائمة الاتحادية
+      divisionId: u.divisionId ? (old ? old.divisionId : u.divisionId) : int(f, "divisionId"),
     };
     let nid = id;
     if (id) await db.update(officials).set(data).where(eq(officials.id, id));

@@ -23,7 +23,7 @@ export default async function Observers({ searchParams }: { searchParams: SP }) 
     .from(assignments).innerJoin(matches, eq(matches.id, assignments.matchId))
     .where(and(inArray(assignments.officialId, ids), inArray(assignments.status, ["DRAFT", "APPROVED"]))).groupBy(assignments.officialId) : [];
   const dv = await db.select().from(divisions).orderBy(divisions.level);
-  const canEdit = (o: typeof officials.$inferSelect) => !u.divisionId || o.divisionId === u.divisionId;
+  const canEdit = (o: typeof officials.$inferSelect) => !u.divisionId || o.divisionId === u.divisionId || (o.divisionId == null && ["COMP_HEAD", "COMP_STAFF"].includes(u.role));
   const fields = (o?: typeof officials.$inferSelect) => (
     <>
       {o && <input type="hidden" name="id" value={o.id} />}
