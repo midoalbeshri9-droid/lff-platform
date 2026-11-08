@@ -19,6 +19,7 @@ export default async function PlayersList({ searchParams }: { searchParams: SP }
     .select({
       p: players,
       club: sql<string | null>`(select c.name from registrations r join clubs c on c.id = r.club_id where r.player_id = "players"."id" and r.status = 'APPROVED' order by r.id desc limit 1)`,
+      shirt: sql<number | null>`(select r.shirt_number from registrations r where r.player_id = "players"."id" and r.status = 'APPROVED' order by r.id desc limit 1)`,
     })
     .from(players)
     .where(and(
@@ -45,11 +46,12 @@ export default async function PlayersList({ searchParams }: { searchParams: SP }
       <div className="card table-wrap">
         {rows.length === 0 ? <Empty>لا نتائج</Empty> : (
           <table className="t">
-            <thead><tr><th></th><th>الاسم</th><th>رقم البطاقة / الوطني</th><th>الميلاد</th><th>المركز</th><th>النادي (قيد ساري)</th><th>الحالة</th><th></th></tr></thead>
-            <tbody>{rows.map(({ p, club }) => (
+            <thead><tr><th></th><th>الاسم</th><th className="num">رقم الغلالة</th><th>رقم البطاقة / الوطني</th><th>الميلاد</th><th>المركز</th><th>النادي (قيد ساري)</th><th>الحالة</th><th></th></tr></thead>
+            <tbody>{rows.map(({ p, club, shirt }) => (
               <tr key={p.id}>
                 <td>{p.photoKey ? <img className="thumb" src={fileUrl(p.photoKey)!} alt="" /> : <span className="ph">👤</span>}</td>
                 <td><strong>{p.fullName}</strong>{p.isForeign && <span className="b b-purple" style={{ marginInlineStart: 6 }}>أجنبي</span>}</td>
+                <td className="num"><strong>{shirt ?? <span className="muted">—</span>}</strong></td>
                 <td className="kbd">{p.cardNo ?? p.nationalId ?? p.passportNo ?? "—"}</td><td>{fmtDate(p.dateOfBirth)}{p.notes?.includes("تاريخ الميلاد تقريبي") && <span className="b b-amber" style={{ marginInlineStart: 4 }}>تقريبي</span>}</td><td>{POSITION[p.position]}</td>
                 <td>{club ?? <span className="muted">—</span>}</td><td><Badge v={PLAYER_STATUS[p.status]} /></td>
                 <td><Link href={`/registration/players/${p.id}`}>الملف</Link></td>
