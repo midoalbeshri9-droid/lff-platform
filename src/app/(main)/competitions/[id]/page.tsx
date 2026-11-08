@@ -576,24 +576,40 @@ async function DangerZone({ c }: { c: typeof competitions.$inferSelect }) {
   );
 }
 
-/** قرارات لجنة المسابقات لكل جولة */
+/** قرارات لجنة المسابقات لكل جولة (ولكل مجموعة) — والقرار التالي للجولة نفسها يشمل المباريات المؤجلة */
 async function Decisions({ id, stages, stage, manage }: { id: number; stages: Stage[]; stage: Stage; manage: boolean }) {
-  const rounds = await db.select({ round: matches.round, n: sql<number>`count(*)::int`, played: sql<number>`count(*) filter (where ${matches.status} in ('PLAYED','FORFEIT'))::int`, approved: sql<number>`count(*) filter (where ${matches.reportStatus} = 'APPROVED')::int`, from: sql<Date>`min(${matches.kickoff})` })
-    .from(matches).where(eq(matches.stageId, stage.id)).groupBy(matches.round).orderBy(matches.round);
-  const ds = await db.select().from(roundDecisions).where(eq(roundDecisions.stageId, stage.id));
+  const ms = await db.select({ id: matches.id, round: matches.round, group: matches.groupName, status: matches.status, rs: matches.reportStatus, k: matches.kickoff })
+    .from(matches).where(eq(matches.stageId, stage.id)).orderBy(matches.round);
+  const ds = await db.select().from(roundDecisions).where(eq(roundDecisions.stageId, stage.id)).orderBy(roundDecisions.id);
+  const keys = [...new Map(ms.map((m) => [`${m.round}|${m.group ?? ""}`, { round: m.round, group: m.group ?? "" }])).values()]
+    .sort((a, b) => a.round - b.round || a.group.localeCompare(b.group, "ar"));
+  const GN: Record<string, string> = { "أ": "الأولى", "ب": "الثانية", "ج": "الثالثة", "د": "الرابعة" };
   return (
     <>
       <StageTabs stages={stages} stage={stage} tab="decisions" />
       <div className="card table-wrap">
-        <p className="muted" style={{ fontSize: ".85rem" }}>قرار اعتماد نتائج كل جولة وبطاقات الإنذار (اللاعبون والمرافقون) وعقوبات الأندية — يُولَّد من بيانات المنظومة ويُعدَّل قبل الإصدار ويُطبع بقالب قرارات اللجنة.</p>
-        {rounds.length === 0 ? <Empty>لا مباريات مجدولة في هذه المرحلة</Empty> : (
-          <table className="t"><thead><tr><th>الجولة</th><th>التاريخ</th><th>المباريات</th><th>لُعبت / اعتُمدت</th><th>القرار</th><th></th></tr></thead>
-            <tbody>{rounds.map((r) => { const d = ds.find((x) => x.round === r.round); return (
-              <tr key={r.round}><td>الجولة {r.round}</td><td>{r.from ? fmtDate(new Date(r.from)) : "—"}</td><td className="num">{r.n}</td><td className="num">{r.played} / {r.approved}</td>
-                <td>{!d ? <span className="muted">—</span> : d.status === "ISSUED" ? <span className="b b-green">صادر رقم ({d.number}) {fmtDate(d.issueDate)}</span> : <span className="b b-amber">مسودة</span>}</td>
-                <td className="row">{d ? <><Link className="btn btn-sm btn-light" href={`/competitions/decisions/${d.id}`}>{d.status === "ISSUED" || !manage ? "عرض" : "تعديل"}</Link><Link className="btn btn-sm btn-light" href={`/print/decision/${d.id}`} target="_blank">🖨</Link></>
-                  : manage && <form action={createDecision}><input type="hidden" name="stageId" value={stage.id} /><input type="hidden" name="round" value={r.round} />
-                    <Submit className="btn btn-sm btn-gold" confirm={r.approved < r.n ? `لم تُعتمد كل مباريات الجولة (${r.approved} من ${r.n}) — إنشاء المسودة الآن؟ يمكنك تحديثها لاحقًا.` : undefined}>📝 إعداد القرار</Submit></form>}</td></tr>); })}</tbody></table>
+        <p className="muted" style={{ fontSize: ".85rem" }}>قرار اعتماد النتائج والإنذارات والعقوبات لكل جولة ولكل مجموعة — والمباريات المؤجلة يصدر لها قرار تالٍ للجولة نفسها. يُولَّد من بيانات المنظومة ويُعدَّل قبل الإصدار.</p>
+        {keys.length === 0 ? <Empty>لا مباريات مجدولة في هذه المرحلة</Empty> : (
+          <table className="t"><thead><tr><th>الجولة</th>{stage.format === "GROUPS" && <th>المجموعة</th>}<th>المباريات</th><th>لُعبت / اعتُمدت</th><th>القرارات</th><th></th></tr></thead>
+            <tbody>{keys.map(({ round, group }) => {
+              const rm = ms.filter((m) => m.round === round && (m.group ?? "") === group);
+              const rd = ds.filter((d) => d.round === round && (d.groupName ?? "") === group);
+              const covered = new Set(rd.flatMap((d) => d.matchIds ?? []));
+              const pendingPlayed = rm.filter((m) => !covered.has(m.id) && ["PLAYED", "FORFEIT"].includes(m.status)).length;
+              const canNew = manage && !rd.some((d) => d.status === "DRAFT") && (rd.length === 0 || pendingPlayed > 0);
+              const played = rm.filter((m) => ["PLAYED", "FORFEIT"].includes(m.status)).length, approved = rm.filter((m) => m.rs === "APPROVED").length;
+              return (
+                <tr key={`${round}${group}`}><td>الأسبوع {round}</td>{stage.format === "GROUPS" && <td>{group ? `المجموعة ${GN[group] ?? group}` : "—"}</td>}<td className="num">{rm.length}</td><td className="num">{played} / {approved}</td>
+                  <td>{rd.length === 0 ? <span className="muted">—</span> : rd.map((d) => (
+                    <div key={d.id} className="row" style={{ gap: ".3rem", marginBottom: 2 }}>
+                      {d.status === "ISSUED" ? <span className="b b-green">رقم ({d.number}) {fmtDate(d.issueDate)}</span> : <span className="b b-amber">مسودة</span>}
+                      <span className="muted" style={{ fontSize: ".75rem" }}>{(d.matchIds ?? []).length} مباريات</span>
+                      <Link className="btn btn-sm btn-light" href={`/competitions/decisions/${d.id}`}>{d.status === "ISSUED" || !manage ? "عرض" : "تعديل"}</Link>
+                      <Link className="btn btn-sm btn-light" href={`/print/decision/${d.id}`} target="_blank">🖨</Link>
+                    </div>))}</td>
+                  <td>{canNew && <form action={createDecision}><input type="hidden" name="stageId" value={stage.id} /><input type="hidden" name="round" value={round} /><input type="hidden" name="group" value={group} />
+                    <Submit className="btn btn-sm btn-gold" confirm={rd.length === 0 && approved < rm.length ? `لم تُعتمد كل مباريات الجولة (${approved} من ${rm.length}) — إعداد القرار الآن؟ يمكنك تحديثه لاحقًا.` : undefined}>{rd.length ? `📝 قرار المؤجلات (${pendingPlayed})` : "📝 إعداد القرار"}</Submit></form>}</td></tr>);
+            })}</tbody></table>
         )}
       </div>
     </>

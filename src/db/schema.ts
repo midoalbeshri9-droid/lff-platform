@@ -595,6 +595,8 @@ export const roundDecisions = pgTable("round_decisions", {
   competitionId: integer("competition_id").notNull().references(() => competitions.id, { onDelete: "cascade" }),
   stageId: integer("stage_id").notNull().references(() => competitionStages.id, { onDelete: "cascade" }),
   round: integer("round").notNull(),
+  groupName: text("group_name"), // المجموعة (قرار لكل مجموعة) — فارغ = كل مباريات الجولة
+  matchIds: jsonb("match_ids").$type<number[]>(), // مباريات القرار (القرار التالي للجولة نفسها يشمل المؤجلات فقط)
   number: text("number"), // رقم القرار (يُعطى عند الإصدار أو يُكتب يدويًا)
   issueDate: d("issue_date"),
   status: decisionStatusEnum("status").notNull().default("DRAFT"),
@@ -603,7 +605,7 @@ export const roundDecisions = pgTable("round_decisions", {
   issuedBy: text("issued_by"),
   issuedAt: ts("issued_at"),
   updatedAt: ts("updated_at").notNull().defaultNow(),
-}, (t) => [uniqueIndex("round_decision_uq").on(t.stageId, t.round)]);
+}, (t) => [index("round_decision_idx").on(t.stageId, t.round)]);
 
 // ======================= المرحلة الثانية =======================
 

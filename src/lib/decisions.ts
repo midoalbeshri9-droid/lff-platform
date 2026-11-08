@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/db";
-import { competitions, competitionStages, matches, matchSquads, clubs, matchEvents, players, staff, sanctions, suspensions, seasons, ageCategories, roundDecisions, settings, type DecisionContent, type DecisionRow } from "@/db/schema";
+import { stageTeams, competitions, competitionStages, matches, matchSquads, clubs, matchEvents, players, staff, sanctions, suspensions, seasons, ageCategories, roundDecisions, settings, type DecisionContent, type DecisionRow } from "@/db/schema";
 import { koRoundName } from "./competitionPure";
 import { STAFF_ROLE } from "./labels";
 import { dinarsWords } from "./tafqeet";
@@ -19,28 +19,39 @@ export const groupName = (g: string) => `المجموعة ${GROUP_ORD[g] ?? g}`;
 
 export const DEFAULT_PREAMBLE = [
   "على القانون رقم (23) لسنة 2023م ولائحته التنفيذية.",
-  "وعلى النظام الأساسي الموحد للاتحاد الليبي لكرة القدم المعتمد من قبل الجمعية العمومية.",
+  "وعلى النظام الأساسي الموحد للاتحاد الليبي لكرة القدم المعتمد من قبل الجمعية العمومية بتاريخ 2024/10/14م.",
+  "وعلى النتائج النهائية لانتخاب مجلس إدارة الاتحاد في الجلسة الانتخابية غير العادية للجمعية العمومية للاتحاد الليبي لكرة القدم المنعقدة بتاريخ يوم السبت الموافق 2025/01/04م.",
   "وعلى القانون الدولي للعبة كرة القدم وتعديلاته.",
   "وعلى اللوائح المنظمة للعبة كرة القدم المعمول بها لدى الاتحاد الليبي لكرة القدم والقرارات المتممة لها والتعليمات والتعميمات التنظيمية الصادرة عن مجلس إدارة الاتحاد الليبي لكرة القدم.",
-  "وعلى قرار مجلس إدارة الاتحاد الليبي لكرة القدم بشأن تنظيم المسابقة.",
+  "وعلى قرار مجلس إدارة الاتحاد الليبي لكرة القدم رقم (116) لسنة 2026 بشأن قرار تنظيم مسابقة الدوري الليبي الممتاز للموسم الرياضي 2027/2026م.",
+  "وعلى قرار مجلس إدارة الاتحاد الليبي لكرة القدم رقم (122) لسنة 2026م بشأن إعادة تشكيل لجنة تنظيم المسابقات للموسم الرياضي 2027/2026م.",
+  "وعلى قرار مجلس إدارة الاتحاد الليبي لكرة القدم رقم (131) لسنة 2026 بشأن تعديل فقرتين في قرار مجلس إدارة الاتحاد الليبي لكرة القدم رقم (116) لسنة 2026م الصادر بشأن قرار تنظيم مسابقة الدوري الليبي الممتاز للموسم الرياضي 2027/2026م.",
   "وعلى تقارير حكام ومراقبي المباريات.",
   "وعلى ما أقرته لجنة تنظيم المسابقات.",
 ];
 
 type Ctx = Awaited<ReturnType<typeof context>>;
-async function context(stageId: number, round: number) {
+export type Scope = { stageId: number; round: number; group?: string | null; matchIds?: number[] | null; postponed?: boolean };
+async function context({ stageId, round, group, matchIds, postponed }: Scope) {
   const [st] = await db.select().from(competitionStages).where(eq(competitionStages.id, stageId));
   const [c] = await db.select().from(competitions).where(eq(competitions.id, st.competitionId));
   const [season] = await db.select().from(seasons).where(eq(seasons.id, c.seasonId));
   const [cat] = c.categoryId ? await db.select().from(ageCategories).where(eq(ageCategories.id, c.categoryId)) : [];
   const stages = await db.select().from(competitionStages).where(eq(competitionStages.competitionId, c.id));
-  const ms = await db.select().from(matches).where(and(eq(matches.stageId, stageId), eq(matches.round, round))).orderBy(asc(matches.groupName), asc(matches.kickoff), asc(matches.id));
+  const ms = await db.select().from(matches).where(and(eq(matches.stageId, stageId), eq(matches.round, round), group ? eq(matches.groupName, group) : undefined, matchIds?.length ? inArray(matches.id, matchIds) : undefined))
+    .orderBy(asc(matches.groupName), asc(matches.kickoff), asc(matches.id));
   const name = new Map((await db.select({ id: clubs.id, name: clubs.name }).from(clubs)).map((x) => [x.id, x.name]));
   const ko = st.format === "KNOCKOUT";
   const roundLabel = ko ? (ms.some((m) => m.isThirdPlace) && ms.every((m) => m.isThirdPlace) ? "مباراة المركز الثالث" : koRoundName(new Set(ms.filter((m) => !m.isThirdPlace).map((m) => m.tieNo)).size * 2, round)) : weekName(round);
-  const leg = !ko && st.legs === 2 ? (round > (Math.max(0, ...(await db.select({ r: matches.round }).from(matches).where(eq(matches.stageId, stageId))).map((x) => x.r)) / 2) ? "الإياب" : "الذهاب") : "";
+  // الذهاب/الإياب: عدد جولات الدور = عدد فرق المجموعة − 1 (أو العدد نفسه إن كان فرديًا)
+  let leg = "";
+  if (!ko && st.legs === 2) {
+    const n = (await db.select({ id: stageTeams.id }).from(stageTeams).where(and(eq(stageTeams.stageId, stageId), group ? eq(stageTeams.groupName, group) : undefined))).length;
+    const perLeg = n % 2 ? n : n - 1;
+    leg = perLeg > 0 && round > perLeg ? "الإياب" : "الذهاب";
+  }
   const groups = [...new Set(ms.map((m) => m.groupName ?? ""))];
-  const scope = `${roundLabel}${leg ? ` لمرحلة ${leg}` : ""}${stages.length > 1 ? ` (${st.name})` : ""}${groups.length === 1 && groups[0] ? ` ${groupName(groups[0])}` : ""}`;
+  const scope = `${postponed ? "المؤجلة من " : ""}${roundLabel}${leg ? ` لمرحلة ${leg}` : ""}${stages.length > 1 ? ` (${st.name})` : ""}${groups.length === 1 && groups[0] ? ` ${groupName(groups[0])}` : ""}`;
   return { st, c, season, cat: cat?.name ?? "أكابر", ms, name, scope };
 }
 
@@ -147,8 +158,8 @@ function withArticle<T extends { playerSanctions: string[]; staffSanctions: stri
 export const recount = (intro: string, n: number) => intro.replace(/وعددهم \(\d+\)/, `وعددهم (${n})`);
 
 /** مسودة جديدة: المقدمة والتوقيع من آخر قرار للمسابقة أو من الإعدادات */
-export async function draftFor(stageId: number, round: number): Promise<DecisionContent> {
-  const x = await context(stageId, round);
+export async function draftFor(sc: Scope): Promise<DecisionContent> {
+  const x = await context(sc);
   const gen = await generate(x);
   const [prev] = await db.select().from(roundDecisions).where(eq(roundDecisions.competitionId, x.c.id)).orderBy(asc(roundDecisions.id)).limit(1000).then((r) => r.slice(-1));
   const set = Object.fromEntries((await db.select().from(settings).where(inArray(settings.key, ["decision_signer_name", "decision_signer_title"]))).map((s) => [s.key, s.value]));
@@ -165,8 +176,8 @@ export async function draftFor(stageId: number, round: number): Promise<Decision
 }
 
 /** إعادة التوليد من بيانات المنظومة مع الإبقاء على الصفوف اليدوية والمقدمة والمواد الإضافية والتوقيع */
-export async function regenerate(stageId: number, round: number, old: DecisionContent): Promise<DecisionContent> {
-  const gen = withArticle(await generate(await context(stageId, round)), old.banArticle);
+export async function regenerate(sc: Scope, old: DecisionContent): Promise<DecisionContent> {
+  const gen = withArticle(await generate(await context(sc)), old.banArticle);
   const keep = (rows: DecisionRow[]) => rows.filter((r) => r.manual);
   const players = [...gen.players, ...keep(old.players)], staffRows = [...gen.staff, ...keep(old.staff)];
   return {
