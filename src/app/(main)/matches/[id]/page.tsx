@@ -71,7 +71,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
         </form>
       )}
       {tab === "lineups" && <Lineups m={m} c={c} canEdit={u.can("comp.lineups") && m.reportStatus !== "APPROVED"} clubsList={[home, away]} />}
-      {tab === "officials" && <Officials id={id} canObserver={u.can("comp.observers") && m.reportStatus !== "APPROVED"} canAssign={u.can("ref.assign")} canEvals={u.canAny("ref.evals", "comp.view")} canReport={canSeeReports(u)} canSanction={u.can("comp.sanctions")} />}
+      {tab === "officials" && <Officials id={id} canObserver={u.can("comp.observers") && m.reportStatus !== "APPROVED"} canAssign={u.can("ref.assign")} canEvals={u.canAny("ref.evals", "comp.view")} canReport={canSeeReports(u)} canSanction={u.can("comp.sanctions")} canAdopt={u.can("comp.reports")} />}
       {tab === "report" && <MatchSanctions id={id} />}
       {tab === "info" && <Info m={m} home={home} away={away} canEdit={u.can("comp.manage")} />}
       {tab === "info" && <datalist id="stadiums-list">{(await allStadiums()).filter((x) => x.status !== "CLOSED").map((x) => <option key={x.id} value={x.name}>{x.city ?? ""}</option>)}</datalist>}
@@ -196,7 +196,7 @@ async function MatchSanctions({ id }: { id: number }) {
   );
 }
 
-async function Officials({ id, canObserver, canAssign, canEvals, canReport, canSanction }: { id: number; canObserver: boolean; canAssign: boolean; canEvals: boolean; canReport: boolean; canSanction: boolean }) {
+async function Officials({ id, canObserver, canAssign, canEvals, canReport, canSanction, canAdopt }: { id: number; canObserver: boolean; canAssign: boolean; canEvals: boolean; canReport: boolean; canSanction: boolean; canAdopt: boolean }) {
   const rows = await db.select({ a: assignments, name: officials.fullName }).from(assignments).innerJoin(officials, eq(officials.id, assignments.officialId)).where(eq(assignments.matchId, id));
   const [cr] = await db.select().from(commissionerReports).where(eq(commissionerReports.matchId, id));
   const ev = canEvals ? await db.select({ e: evaluations, name: officials.fullName }).from(evaluations).innerJoin(officials, eq(officials.id, evaluations.officialId)).where(eq(evaluations.matchId, id)) : [];
@@ -211,7 +211,7 @@ async function Officials({ id, canObserver, canAssign, canEvals, canReport, canS
       </div>
       <div>
         {canReport ? <>
-          <MatchReportView matchId={id} kind="COMMISSIONER" legacy={cr?.isSubmitted ? (
+          <MatchReportView matchId={id} kind="COMMISSIONER" canAdopt={canAdopt} legacy={cr?.isSubmitted ? (
             <dl className="dl">
               <dt>انطلاق فعلي</dt><dd>{cr.actualKickoff}</dd><dt>الحضور</dt><dd>{cr.attendance}</dd><dt>الملعب</dt><dd>{cr.pitch}</dd>
               <dt>التنظيم</dt><dd>{cr.organization}</dd><dt>الأمن والجماهير</dt><dd>{cr.security}</dd><dt>الحوادث</dt><dd>{cr.incidents}</dd><dt>التوصيات</dt><dd>{cr.recommendations}</dd>

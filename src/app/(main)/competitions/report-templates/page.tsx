@@ -18,6 +18,7 @@ export default async function ReportTemplates({ searchParams }: { searchParams: 
       <Flash sp={sp} />
       <div className="tabs">{(Object.keys(REPORT_KIND) as ReportKind[]).map((k) => <Link key={k} href={`?kind=${k}`} className={`tab ${k === kind ? "active" : ""}`}>{REPORT_KIND[k]}</Link>)}</div>
       {t.updatedBy && <p className="muted" style={{ fontSize: ".85rem" }}>آخر تعديل: {t.updatedBy} — {fmtDateTime(t.updatedAt)}</p>}
+      {kind === "COMMISSIONER" && <div className="alert info">يعبّئ المراقب الآن <strong>النموذج المعتمد لتقرير مراقب المباراة</strong> (النتائج، الإنذارات والطرد، الهدافون، التقييم الفني للطاقم، الملاحظات) ويُطبع بنفس الشكل الورقي. من هذه الصفحة يُضبط فقط خيار «إلزام إرفاق التقرير الورقي».</div>}
       {u.divisionId ? <div className="alert">النماذج عامة لكل الدرجات — تعدّلها لجنة المسابقات بالاتحاد.</div> : null}
       <ReportTemplateBuilder key={kind + t.updatedAt.toISOString()} kind={kind} title={t.title} fields={t.fields} requireAttachment={t.requireAttachment} action={saveReportTemplate} />
     </>

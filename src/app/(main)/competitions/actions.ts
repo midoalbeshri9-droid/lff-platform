@@ -1,7 +1,7 @@
 "use server";
 import { and, eq, ne, or } from "drizzle-orm";
 import { db } from "@/db";
-import { competitions, competitionTeams, matches, matchEvents, assignments, matchRequests, competitionSquads, matchSquads, registrations, clubs, competitionStages, stageTeams, settings, staff } from "@/db/schema";
+import { competitions, competitionTeams, matches, matchEvents, assignments, matchRequests, competitionSquads, matchSquads, registrations, clubs, competitionStages, stageTeams, settings, staff, matchReportForms, players } from "@/db/schema";
 import { addCharge } from "@/lib/finance";
 import { resolveStadium, stadiumBlock, blockWithHint } from "@/lib/stadiums";
 import { guard, inScopeClub, inScopeComp, inScopeMatch, inScopeStage, scopeOf } from "@/lib/scope";
@@ -609,5 +609,47 @@ export async function deleteCompetition(f: FormData) {
     await audit(u, "حذف مسابقة نهائيًا", "Competition", id, { name: c.name, ...counts });
     done = true;
     return `حُذفت المسابقة «${c.name}» نهائيًا مع ${counts.matches} مباراة و${counts.sanctions} عقوبة و${counts.charges} مستحقًا ماليًا`;
+  });
+}
+
+/** اعتماد إنذارات وطرد تقرير مراقب المباراة في أحداث المباراة (لتُبنى منها الإيقافات وقرار الجولة) */
+export async function adoptObserverCards(f: FormData) {
+  const u = await requireUser("comp.reports");
+  const matchId = int(f, "matchId")!;
+  await attempt(`/matches/${matchId}?tab=officials`, async () => {
+    guard(await inScopeMatch(u, matchId));
+    const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
+    if (m.reportStatus === "APPROVED") throw new UserError("تقرير المباراة معتمد — لا يمكن إضافة أحداث");
+    const [r] = await db.select().from(matchReportForms).where(and(eq(matchReportForms.matchId, matchId), eq(matchReportForms.kind, "COMMISSIONER")));
+    if (!r?.isSubmitted || !r.data) throw new UserError("لم يُرسل تقرير المراقب بالنموذج المعتمد");
+    const [c] = await db.select({ s: competitions.seasonId }).from(competitions).where(eq(competitions.id, m.competitionId));
+    const existing = await db.select({ p: matchEvents.playerId, t: matchEvents.type }).from(matchEvents).where(eq(matchEvents.matchId, matchId));
+    let added = 0, dup = 0;
+    const skipped: string[] = [];
+    const items = [...r.data.cautions.map((x) => ({ x, t: "YELLOW" as const })), ...r.data.sendoffs.map((x) => ({ x, t: /ثان|إنذارين|انذارين/.test(x.reason) ? "SECOND_YELLOW" as const : "RED" as const }))];
+    for (const { x, t } of items) {
+      if (!x.clubId || (x.clubId !== m.homeClubId && x.clubId !== m.awayClubId)) { skipped.push(x.name); continue; }
+      let playerId = x.playerId ?? null;
+      if (playerId) {
+        const [ok] = await db.select({ id: registrations.id }).from(registrations).where(and(eq(registrations.playerId, playerId), eq(registrations.clubId, x.clubId), eq(registrations.seasonId, c.s)));
+        if (!ok) playerId = null;
+      }
+      if (!playerId && x.cardNo) {
+        const [p] = await db.select({ id: registrations.playerId }).from(registrations).innerJoin(players, eq(players.id, registrations.playerId))
+          .where(and(eq(players.cardNo, x.cardNo), eq(registrations.clubId, x.clubId), eq(registrations.seasonId, c.s), eq(registrations.status, "APPROVED")));
+        playerId = p?.id ?? null;
+      }
+      if (!playerId) { skipped.push(x.name); continue; }
+      if (existing.some((e) => e.p === playerId && e.t === t)) { dup++; continue; }
+      const minute = parseInt(x.minute, 10);
+      await db.insert(matchEvents).values({ matchId, clubId: x.clubId, playerId, type: t, minute: Number.isFinite(minute) ? minute : null, note: x.reason || null });
+      existing.push({ p: playerId, t });
+      added++;
+    }
+    // النتيجة من تقرير المراقب إن لم تُسجَّل بعد
+    if (m.homeScore == null && r.data.ft[0] !== "" && r.data.ft[1] !== "") await db.update(matches).set({ homeScore: Number(r.data.ft[0]), awayScore: Number(r.data.ft[1]) }).where(eq(matches.id, matchId));
+    await db.update(matchReportForms).set({ adoptedAt: new Date(), adoptedBy: u.fullName }).where(eq(matchReportForms.id, r.id));
+    await audit(u, "اعتماد إنذارات تقرير المراقب", "Match", matchId, { added, dup, skipped });
+    return `أُضيف ${added} حدثًا${dup ? ` — ${dup} موجودة مسبقًا` : ""}${skipped.length ? ` — لم يُعتمد (لاعب غير مقيد أو بلا فريق): ${skipped.join("، ")}` : ""}`;
   });
 }

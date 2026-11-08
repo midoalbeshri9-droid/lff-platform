@@ -8,6 +8,7 @@ import { requireOfficialUser } from "@/lib/auth";
 import { audit, notifyRoles, notifyStaff } from "@/lib/audit";
 import { attempt, str, req, int, UserError } from "@/lib/util";
 import { foreignOnPitchCheck, subsLimitCheck } from "@/lib/competition";
+import { cleanReport, validateReport, draftError, evalTotal, CRITERIA, EVAL_ROLES, type EvalRole } from "@/lib/observerForm";
 
 /** يتحقق أن المستخدم معيّن (تعيينًا معتمدًا) في هذه المباراة بهذا الدور */
 async function myRole(officialId: number, matchId: number, roles: string[]) {
@@ -126,8 +127,27 @@ export async function saveCommissionerReport(f: FormData) {
     const [ex] = await db.select().from(matchReportForms).where(and(eq(matchReportForms.matchId, matchId), eq(matchReportForms.kind, "COMMISSIONER")));
     if (ex?.isSubmitted) throw new UserError("التقرير مُرسل مسبقًا");
     if (submit) { const [m] = await db.select({ k: matches.kickoff }).from(matches).where(eq(matches.id, matchId)); if (m?.k && m.k.getTime() > Date.now()) throw new UserError("لا يمكن إرسال التقرير قبل موعد المباراة"); }
-    await saveForm("COMMISSIONER", matchId, u.officialId, f, submit);
+    // النموذج المعتمد (الصفحات الأربع)
+    const [m] = await db.select({ h: matches.homeClubId, a: matches.awayClubId }).from(matches).where(eq(matches.id, matchId));
+    let raw: unknown = {};
+    try { raw = JSON.parse(String(f.get("data") ?? "{}")); } catch { throw new UserError("بيانات النموذج غير صالحة"); }
+    const data = cleanReport(raw, [m.h, m.a]);
+    const crew = await db.select({ role: assignments.role, id: assignments.officialId }).from(assignments)
+      .where(and(eq(assignments.matchId, matchId), eq(assignments.status, "APPROVED"), inArray(assignments.role, EVAL_ROLES)));
+    const err = submit ? validateReport(data, crew.map((c) => c.role as EvalRole)) : draftError(data);
+    if (err) throw new UserError(err);
+    await saveForm("COMMISSIONER", matchId, u.officialId, f, submit, data);
     if (submit) {
+      // درجات الطاقم تنتقل إلى تقييمات الحكام (من 10) — ما لم يرسل مراقب حكام تقييمه للفرد نفسه
+      for (const c of crew) {
+        const t = evalTotal(c.role as EvalRole, data.evals[c.role]?.s);
+        if (!t) continue;
+        const [ex] = await db.select().from(evaluations).where(and(eq(evaluations.matchId, matchId), eq(evaluations.officialId, c.id)));
+        if (ex?.isSubmitted && ex.observerId !== u.officialId) continue;
+        const notes = CRITERIA[c.role as EvalRole].map(([l], i) => (data.evals[c.role]?.n[i] ? `${l}: ${data.evals[c.role]!.n[i]}` : "")).filter(Boolean).join("\n");
+        const row = { matchId, observerId: u.officialId, officialId: c.id, role: c.role, score: Math.round(t.pct) / 10, notes: `${t.total} (${t.pct}%) — ${t.grade}${notes ? "\n" + notes : ""}`, isSubmitted: true, submittedAt: new Date() };
+        await db.insert(evaluations).values(row).onConflictDoUpdate({ target: [evaluations.matchId, evaluations.officialId], set: row });
+      }
       await notifyStaff(["COMP_HEAD", "COMP_STAFF"], "تقرير مراقب مباراة", u.fullName, `/matches/${matchId}?tab=officials`, { matchId });
       await audit(u, "إرسال تقرير مراقب المباراة", "Match", matchId);
     }
@@ -136,9 +156,9 @@ export async function saveCommissionerReport(f: FormData) {
 }
 
 /** حفظ خانات نموذج التقرير (نسخة من النموذج الحالي ما دام التقرير قابلًا للتعديل) */
-async function saveForm(kind: "REFEREE" | "COMMISSIONER", matchId: number, officialId: number, f: FormData, submit: boolean) {
+async function saveForm(kind: "REFEREE" | "COMMISSIONER", matchId: number, officialId: number, f: FormData, submit: boolean, data?: import("@/db/schema").ObserverReport) {
   const t = await getTemplate(kind);
-  const fields = t.fields;
+  const fields = data ? [] : t.fields; // تقرير المراقب: النموذج المعتمد بدل الخانات المصممة
   const answers = answersFrom(f, fields);
   if (submit) {
     requireAnswers(fields, answers);
@@ -147,7 +167,7 @@ async function saveForm(kind: "REFEREE" | "COMMISSIONER", matchId: number, offic
       if (!x) throw new UserError("أرفق التقرير الورقي (صورة أو PDF) قبل الإرسال");
     }
   }
-  const row = { matchId, kind, officialId, fields, answers, isSubmitted: submit, submittedAt: submit ? new Date() : null, updatedAt: new Date() };
+  const row = { matchId, kind, officialId, fields, answers, ...(data ? { data } : {}), isSubmitted: submit, submittedAt: submit ? new Date() : null, updatedAt: new Date() };
   await db.insert(matchReportForms).values(row).onConflictDoUpdate({ target: [matchReportForms.matchId, matchReportForms.kind], set: row });
 }
 

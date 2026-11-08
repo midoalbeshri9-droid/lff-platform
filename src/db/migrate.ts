@@ -124,6 +124,12 @@ export async function migrate() {
     for (const role of ["COMP_HEAD", "COMP_STAFF", "DIV_MANAGER"] as const) await db.insert(s.rolePermissions).values({ role, permission: "comp.reports.view" }).onConflictDoNothing();
     await db.insert(s.settings).values({ key: "mig_reports_view", value: new Date().toISOString() }).onConflictDoNothing();
   }
+  // 17) إدارة مراقبي المباريات وحساباتهم: لرئيس لجنة المسابقات وموظفيها — مرة واحدة
+  const [st17] = await db.select().from(s.settings).where(eq(s.settings.key, "mig_observers_perm"));
+  if (!st17) {
+    for (const role of ["COMP_HEAD", "COMP_STAFF"] as const) await db.insert(s.rolePermissions).values({ role, permission: "comp.observers" }).onConflictDoNothing();
+    await db.insert(s.settings).values({ key: "mig_observers_perm", value: new Date().toISOString() }).onConflictDoNothing();
+  }
   console.log("✓ اكتمل ترحيل البيانات");
 }
 

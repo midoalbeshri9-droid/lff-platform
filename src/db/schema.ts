@@ -531,6 +531,16 @@ export const commissionerReports = pgTable("commissioner_reports", {
   submittedAt: ts("submitted_at"),
 });
 
+// نموذج تقرير مراقب المباراة المعتمد (4 صفحات): النتائج، الإنذارات والطرد، الهدافون، التقييم الفني للطاقم، الملاحظات
+export type ObserverCard = { playerId?: number | null; name: string; cardNo?: string; clubId: number | null; category?: string; reason: string; minute: string };
+export type ObserverReport = {
+  ht: [string, string]; ft: [string, string]; et: [string, string]; pens: [string, string];
+  cautions: ObserverCard[]; sendoffs: ObserverCard[];
+  scorers: { clubId: number; shirt: string; goals: string; notes: string }[];
+  evals: Record<string, { s: string[]; n: string[] }>; // REFEREE | AR1 | AR2 | FOURTH → درجات وملاحظات البنود
+  adminNotes: string; generalNotes: string;
+};
+
 // نماذج التقارير التي تصممها لجنة المسابقات (تقرير الحكم وتقرير مراقب المباراة)
 export type ReportField = {
   id: string;
@@ -555,6 +565,8 @@ export const matchReportForms = pgTable("match_report_forms", {
   officialId: integer("official_id").notNull().references(() => officials.id),
   fields: jsonb("fields").$type<ReportField[]>().notNull(),
   answers: jsonb("answers").$type<Record<string, string>>().notNull(),
+  data: jsonb("data").$type<ObserverReport>(), // نموذج تقرير مراقب المباراة المعتمد (للمراقب فقط)
+  adoptedAt: ts("adopted_at"), adoptedBy: text("adopted_by"), // اعتماد إنذارات المراقب في أحداث المباراة
   isSubmitted: boolean("is_submitted").notNull().default(false),
   submittedAt: ts("submitted_at"),
   updatedAt: ts("updated_at").notNull().defaultNow(),

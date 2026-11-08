@@ -7,8 +7,11 @@ import { getTemplate } from "@/lib/reports";
 import { fileUrl } from "@/lib/storage";
 import { ReportFields } from "@/components/ReportFields";
 import { ReportFileUploader } from "@/components/ReportFileUploader";
+import { ObserverReportForm } from "@/components/ObserverReportForm";
+import { observerContext } from "@/lib/observerReport";
+import { emptyReport } from "@/lib/observerForm";
 import { requireOfficialUser } from "@/lib/auth";
-import { ASSIGN_ROLE, EVENT_TYPE, REPORT_STATUS } from "@/lib/labels";
+import { ASSIGN_ROLE, EVENT_TYPE, REPORT_STATUS, CARD_REASONS } from "@/lib/labels";
 import { fmtDateTime } from "@/lib/util";
 import { PageHead, Flash, Badge, Field, Options, Empty, type SP } from "@/components/ui";
 import { Submit } from "@/components/Client";
@@ -38,7 +41,7 @@ export default async function PortalMatch({ params, searchParams }: { params: Pr
       </div>
       {roles.includes("REFEREE") && <RefereeReport m={m} name={name} />}
       {roles.includes("COMMISSIONER") && <CommReport matchId={id} />}
-      {roles.some((r) => r === "COMMISSIONER" || r === "REF_OBSERVER") && <ObserverEval matchId={id} observerId={u.officialId} crew={crew.filter((x) => ["REFEREE", "AR1", "AR2", "FOURTH", "VAR"].includes(x.a.role))} />}
+      {roles.includes("REF_OBSERVER") && !roles.includes("COMMISSIONER") && <ObserverEval matchId={id} observerId={u.officialId} crew={crew.filter((x) => ["REFEREE", "AR1", "AR2", "FOURTH", "VAR"].includes(x.a.role))} />}
       {!roles.some((r) => ["REFEREE", "REF_OBSERVER", "COMMISSIONER"].includes(r)) && <div className="alert info">لا يُطلب منك تقرير في هذه المباراة — يكتب حكم الساحة تقرير المباراة.</div>}
       {m.status === "SCHEDULED" && (!m.kickoff || m.kickoff.getTime() > Date.now()) && (
         <details className="box card"><summary>الاعتذار عن هذا التعيين</summary>
@@ -144,14 +147,25 @@ async function ObserverEval({ matchId, observerId, crew }: { matchId: number; ob
 async function CommReport({ matchId }: { matchId: number }) {
   const tpl = await getTemplate("COMMISSIONER");
   const [r] = await db.select().from(matchReportForms).where(and(eq(matchReportForms.matchId, matchId), eq(matchReportForms.kind, "COMMISSIONER")));
+  const ctx = (await observerContext(matchId))!;
   const dis = !!r?.isSubmitted;
+  const init = r?.data ?? { ...emptyReport(), ft: [ctx.m.homeScore?.toString() ?? "", ctx.m.awayScore?.toString() ?? ""] as [string, string] };
   return (
     <>
       <form action={saveCommissionerReport} className="card">
         <input type="hidden" name="matchId" value={matchId} />
-        <div className="card-head"><h2>{tpl.title} (يُرسل للجنة المسابقات)</h2>{dis && <span className="b b-green">مُرسل</span>}</div>
-        <ReportFields fields={dis ? r!.fields : tpl.fields} answers={r?.answers ?? {}} disabled={dis} />
-        {!dis && <div className="btn-row mt"><Submit className="btn btn-light" name="submit" value="0">💾 حفظ مسودة</Submit><Submit name="submit" value="1" confirm="إرسال التقرير نهائيًا للجنة المسابقات؟">📤 إرسال التقرير</Submit></div>}
+        <div className="card-head"><h2>تقرير مراقب المباراة (يُرسل للجنة المسابقات)</h2>
+          <div className="row">{dis && <span className="b b-green">مُرسل</span>}<Link className="btn btn-sm btn-light" href={`/print/observer/${matchId}`} target="_blank">🖨 طباعة التقرير</Link></div></div>
+        <dl className="dl" style={{ fontSize: ".9rem" }}>
+          <dt>المسابقة</dt><dd>{ctx.comp} — الموسم {ctx.season}</dd>
+          <dt>الأسبوع</dt><dd>{ctx.round ?? "—"} — رقم المباراة بالجدول ({ctx.no})</dd>
+          <dt>المراقب</dt><dd>{ctx.observer?.name} — {ctx.observer?.grade}</dd>
+          <dt>المباراة</dt><dd>{ctx.home.name} × {ctx.away.name}</dd>
+          <dt>الملعب</dt><dd>{ctx.stadium || "—"} — {fmtDateTime(ctx.m.kickoff)}</dd>
+        </dl>
+        {!r?.data && r?.isSubmitted && r.fields.length > 0 && <ReportFields fields={r.fields} answers={r.answers} disabled />}
+        {(r?.data || !dis) && <ObserverReportForm initial={init} home={ctx.home} away={ctx.away} squad={ctx.squad} crew={ctx.crew} category={ctx.category} reasons={CARD_REASONS} disabled={dis} />}
+        {!dis && <div className="btn-row mt"><Submit className="btn btn-light" name="submit" value="0">💾 حفظ مسودة</Submit><Submit name="submit" value="1" confirm="إرسال التقرير نهائيًا للجنة المسابقات؟ لن تتمكن من التعديل بعد الإرسال.">📤 إرسال التقرير</Submit></div>}
       </form>
       <Attachments matchId={matchId} kind="COMMISSIONER" edit={!dis} required={tpl.requireAttachment} />
     </>
