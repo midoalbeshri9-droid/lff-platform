@@ -32,6 +32,10 @@ export default async function ClubLineup({ params, searchParams }: { params: Pro
       <PageHead title={`قائمة المباراة ضد ${opp.name}`} sub={`${c.name} — الجولة ${m.round} — ${fmtDateTime(m.kickoff)} — ${m.venue ?? ""}`} crumbs={[["المباريات", "/club/matches"], ["القائمة"]]} />
       <Flash sp={sp} />
       {locked && <div className="alert warn">القائمة للعرض فقط (بدأت المباراة أو انتهت).</div>}
+      {(() => { const out = elig.filter((e) => !e.ok); return out.length > 0 && !locked ? (
+        <div className="alert err"><strong>⛔ لا يجوز إشراك {out.length} من لاعبيك في هذه المباراة:</strong>
+          <ul style={{ margin: ".3rem 0 0", paddingInlineStart: "1.2rem" }}>{out.slice(0, 15).map((e) => <li key={e.playerId}>{e.fullName} — {e.reasons.join("، ")}</li>)}</ul>
+          {out.length > 15 && <div className="muted">و{out.length - 15} آخرون (مبيّنون في القائمة أدناه)</div>}</div>) : null; })()}
       {notices.map((n) => <div key={n.id} className="alert err">⚖ {SANCTION_TYPE[n.type]} — قرار {n.number}: {n.reason}</div>)}
       {reqs.map((r) => <div key={r.id} className="alert info">طلب تأجيل ({r.status === "PENDING" ? "قيد النظر" : r.status === "APPROVED" ? "مقبول" : "مرفوض"}): {r.reason}{r.decision && ` — ${r.decision}`}</div>)}
       <div className="card">

@@ -25,7 +25,7 @@ export default async function Divisions({ searchParams }: { searchParams: SP }) 
       <Flash sp={sp} />
       <div className="card table-wrap">
         {dv.length === 0 ? <Empty>لا درجات</Empty> : (
-          <table className="t"><thead><tr><th>المستوى</th><th>الدرجة</th><th className="num">الأندية</th><th className="num">المسابقات</th><th className="num">الحكام والمراقبون</th><th>المديرون والموظفون</th><th>إدارة</th><th></th></tr></thead>
+          <table className="t no-num"><thead><tr><th>المستوى</th><th>الدرجة</th><th className="num">الأندية</th><th className="num">المسابقات</th><th className="num">الحكام والمراقبون</th><th>المديرون والموظفون</th><th>إدارة</th><th></th></tr></thead>
             <tbody>{dv.map((d) => (
               <tr key={d.id} className={d.isActive ? "" : "muted"}>
                 <td className="num">{d.level}</td><td><strong>{d.name}</strong></td>

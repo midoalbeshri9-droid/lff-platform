@@ -193,3 +193,12 @@ export async function decisionHeader(stageId: number) {
   const [season] = await db.select().from(seasons).where(eq(seasons.id, c.seasonId));
   return { c, st, season: season?.name ?? "" };
 }
+
+/** أندية القرار: فرق مباريات القرار (أو مباريات الجولة إن لم تُحدد) */
+export async function decisionClubs(d: { stageId: number; round: number; matchIds: number[] | null }) {
+  const ms = d.matchIds?.length
+    ? await db.select({ h: matches.homeClubId, a: matches.awayClubId }).from(matches).where(inArray(matches.id, d.matchIds))
+    : await db.select({ h: matches.homeClubId, a: matches.awayClubId }).from(matches).where(and(eq(matches.stageId, d.stageId), eq(matches.round, d.round)));
+  const ids = [...new Set(ms.flatMap((m) => [m.h, m.a]))];
+  return ids.length ? db.select({ id: clubs.id, name: clubs.name, phone: clubs.phone }).from(clubs).where(inArray(clubs.id, ids)).orderBy(clubs.name) : [];
+}

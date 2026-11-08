@@ -339,6 +339,7 @@ export const competitions = pgTable("competitions", {
   status: compStatusEnum("status").notNull().default("DRAFT"),
   startDate: d("start_date"),
   notes: text("notes"),
+  isPublic: boolean("is_public").notNull().default(false), // تُنشر في الموقع العام (/league): الترتيب والنتائج والهدافون والقرارات
 });
 
 export const competitionTeams = pgTable("competition_teams", {

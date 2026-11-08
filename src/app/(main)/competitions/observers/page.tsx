@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { WaButton } from "@/components/WaButton";
+import { appUrl } from "@/lib/tokens";
 import { and, eq, sql, gte, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { officials, users, divisions, assignments, matches } from "@/db/schema";
@@ -58,7 +60,7 @@ export default async function Observers({ searchParams }: { searchParams: SP }) 
                   <td style={{ fontSize: ".85rem" }}>{o.licenseNo}{o.licenseExpiry && <div className="muted">حتى {fmtDate(o.licenseExpiry)}</div>}</td>
                   <td><Badge v={OFFICIAL_STATUS[o.status]} />{o.suspendedUntil && <div className="muted" style={{ fontSize: ".75rem" }}>حتى {fmtDate(o.suspendedUntil)}</div>}</td>
                   <td className="num">{l?.all ?? 0} ({l?.next ?? 0})</td>
-                  <td>{acc ? <><span className="kbd">{acc}</span> {!verified ? <span className="b b-amber">بانتظار التفعيل</span> : temp ? <span className="b b-amber">كلمة مرور مؤقتة</span> : <span className="b b-green">مفعّل</span>}{!accEmail && <span className="b" title="الحساب بدون بريد — تعيد اللجنة كلمة المرور عند نسيانها">بدون بريد</span>}</> : <span className="muted">لا يوجد</span>}</td>
+                  <td>{acc ? <><span className="kbd">{acc}</span> {!verified ? <span className="b b-amber">بانتظار التفعيل</span> : temp ? <span className="b b-amber">كلمة مرور مؤقتة</span> : <span className="b b-green">مفعّل</span>}{!accEmail && <span className="b" title="الحساب بدون بريد — تعيد اللجنة كلمة المرور عند نسيانها">بدون بريد</span>} <WaButton phone={o.phone} label="بيانات الدخول" text={`الاتحاد الليبي لكرة القدم — لجنة تنظيم المسابقات\nالسيد/ ${o.fullName}\nحسابكم في بوابة مراقبي المباريات:\nاسم المستخدم: ${acc}\nرابط الدخول: ${appUrl()}/login\nكلمة المرور المؤقتة تُسلَّم لكم من اللجنة، ويُطلب تغييرها عند أول دخول.`} /></> : <span className="muted">لا يوجد</span>}</td>
                   <td>{canEdit(o) && (
                     <details><summary className="btn btn-sm btn-light">إدارة</summary>
                       <div style={{ minWidth: 360 }}>

@@ -5,7 +5,9 @@ import { db } from "@/db";
 import { roundDecisions, clubs, competitionTeams } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { inScopeComp, guardPage } from "@/lib/scope";
-import { decisionHeader } from "@/lib/decisions";
+import { decisionHeader, decisionClubs } from "@/lib/decisions";
+import { WaButton } from "@/components/WaButton";
+import { appUrl } from "@/lib/tokens";
 import { STAFF_ROLE, CARD_REASONS } from "@/lib/labels";
 import { fmtDate, fmtDateTime } from "@/lib/util";
 import { PageHead, Flash, type SP } from "@/components/ui";
@@ -25,6 +27,8 @@ export default async function DecisionPage({ params, searchParams }: { params: P
   const canEdit = u.can("comp.manage") && !issued;
   const teamNames = (await db.select({ n: clubs.name }).from(competitionTeams).innerJoin(clubs, eq(clubs.id, competitionTeams.clubId)).where(eq(competitionTeams.competitionId, c.id))).map((x) => x.n);
   const printHref = `/print/decision/${d.id}`;
+  const dist = issued ? await decisionClubs(d) : [];
+  const msg = `الاتحاد الليبي لكرة القدم — لجنة تنظيم المسابقات\nصدر قرار اللجنة رقم (${d.number}) ${d.content.subject}\nللاطلاع والطباعة من بوابة النادي: ${appUrl()}${printHref}`;
   return (
     <>
       <PageHead title={`قرار الجولة ${d.round}${d.number ? ` — رقم (${d.number})` : ""}`} sub={`${c.name} — ${st.name}`}
@@ -37,6 +41,14 @@ export default async function DecisionPage({ params, searchParams }: { params: P
           {u.role === "ADMIN" && <form action={decisionAdmin}><input type="hidden" name="id" value={d.id} /><input type="hidden" name="op" value="reopen" /><Submit className="btn btn-sm btn-light" confirm="إعادة القرار إلى مسودة للتعديل؟">إلغاء الإصدار</Submit></form>}
         </div>
       ) : <div className="alert">مسودة — آخر حفظ {fmtDateTime(d.updatedAt)}. المضمون مولّد من نتائج الجولة وأحداثها وعقوباتها؛ عدّل ما تشاء ثم «إصدار القرار».</div>}
+      {issued && (
+        <div className="card table-wrap">
+          <div className="card-head"><h3>📣 توزيع القرار على الأندية ({dist.length})</h3><WaButton share text={msg} label="إرسال لمجموعة واتساب" /></div>
+          <p className="muted" style={{ fontSize: ".85rem" }}>وصل إشعار بالقرار لحسابات الأندية في المنظومة عند الإصدار. ولإرساله واتساب: اضغط الزر بجانب النادي فتُفتح المحادثة والرسالة جاهزة.</p>
+          <table className="t"><thead><tr><th>النادي</th><th>الهاتف</th><th></th></tr></thead>
+            <tbody>{dist.map((x) => <tr key={x.id}><td><strong>{x.name}</strong></td><td dir="ltr" style={{ textAlign: "right" }}>{x.phone ?? "—"}</td><td><WaButton phone={x.phone} text={msg} /></td></tr>)}</tbody></table>
+        </div>
+      )}
       {canEdit ? (
         <>
           <DecisionEditor key={d.updatedAt.toISOString()} id={d.id} initial={d.content} number={d.number ?? ""} issueDate={d.issueDate ?? ""} clubs={teamNames}

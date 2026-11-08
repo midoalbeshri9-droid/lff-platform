@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { WaButton } from "@/components/WaButton";
+import { appUrl } from "@/lib/tokens";
 import { notFound } from "next/navigation";
 import { and, eq, asc, inArray } from "drizzle-orm";
 import { db } from "@/db";
@@ -198,15 +200,18 @@ async function MatchSanctions({ id }: { id: number }) {
 
 async function Officials({ id, canObserver, canAssign, canEvals, canReport, canSanction, canAdopt, showObs }: { id: number; canObserver: boolean; canAssign: boolean; canEvals: boolean; canReport: boolean; canSanction: boolean; canAdopt: boolean; showObs: boolean }) {
   // مراقب المباراة من شأن لجنة المسابقات: لا يظهر لمن لا يملك صلاحياتها
-  const rows = (await db.select({ a: assignments, name: officials.fullName }).from(assignments).innerJoin(officials, eq(officials.id, assignments.officialId)).where(eq(assignments.matchId, id))).filter((r) => showObs || !OBSERVER_ROLES.includes(r.a.role));
+  const rows = (await db.select({ a: assignments, name: officials.fullName, phone: officials.phone }).from(assignments).innerJoin(officials, eq(officials.id, assignments.officialId)).where(eq(assignments.matchId, id))).filter((r) => showObs || !OBSERVER_ROLES.includes(r.a.role));
   const [cr] = await db.select().from(commissionerReports).where(eq(commissionerReports.matchId, id));
+  const [mm] = await db.select().from(matches).where(eq(matches.id, id));
+  const tn = mm ? await db.select({ id: clubs.id, n: clubs.name }).from(clubs).where(inArray(clubs.id, [mm.homeClubId, mm.awayClubId])) : [];
+  const title = mm ? `${tn.find((x) => x.id === mm.homeClubId)?.n ?? ""} × ${tn.find((x) => x.id === mm.awayClubId)?.n ?? ""}` : "";
   const ev = canEvals ? await db.select({ e: evaluations, name: officials.fullName }).from(evaluations).innerJoin(officials, eq(officials.id, evaluations.officialId)).where(eq(evaluations.matchId, id)) : [];
   return (
     <div className="grid g2">
       <div className="card table-wrap">
         <div className="card-head"><h3>طاقم التحكيم والمراقبة</h3>{canAssign && <Link className="btn btn-sm btn-light" href={`/referees/assignments/${id}`}>تعيين الطاقم</Link>}</div>
         {rows.length === 0 ? <Empty>لم يُعيّن الطاقم بعد</Empty> : (
-          <table className="t"><tbody>{rows.map(({ a, name }) => <tr key={a.id}><td>{ASSIGN_ROLE[a.role]}</td><td><strong>{name}</strong></td><td><Badge v={ASSIGN_STATUS[a.status]} />{a.declineReason && <div className="danger-text" style={{ fontSize: ".8rem" }}>اعتذر: {a.declineReason}</div>}</td></tr>)}</tbody></table>
+          <table className="t"><tbody>{rows.map(({ a, name, phone }) => <tr key={a.id}><td>{ASSIGN_ROLE[a.role]}</td><td><strong>{name}</strong></td><td><Badge v={ASSIGN_STATUS[a.status]} />{a.declineReason && <div className="danger-text" style={{ fontSize: ".8rem" }}>اعتذر: {a.declineReason}</div>}</td>{(canAssign || canObserver) && <td>{a.status !== "DECLINED" && <WaButton phone={phone} text={`الاتحاد الليبي لكرة القدم\nالسيد/ ${name}\nتم تعيينكم (${ASSIGN_ROLE[a.role]}) في مباراة ${title}\nالموعد: ${fmtDateTime(mm?.kickoff ?? null)}${mm?.venue ? `\nالملعب: ${mm.venue}` : ""}\nالتفاصيل في البوابة: ${appUrl()}/portal`} />}</td>}</tr>)}</tbody></table>
         )}
         {canObserver && <ObserverForm id={id} current={rows.find((r) => OBSERVER_ROLES.includes(r.a.role) && r.a.status !== "DECLINED")?.a.officialId ?? null} />}
       </div>

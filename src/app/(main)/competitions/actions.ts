@@ -45,6 +45,19 @@ export async function saveCompetition(f: FormData) {
   });
 }
 
+/** نشر المسابقة في الموقع العام أو إخفاؤها */
+export async function setCompetitionPublic(f: FormData) {
+  const u = await requireUser("comp.manage");
+  const id = int(f, "id")!;
+  await attempt(`/competitions/${id}`, async () => {
+    guard(await inScopeComp(u, id));
+    const on = f.get("on") === "1";
+    await db.update(competitions).set({ isPublic: on }).where(eq(competitions.id, id));
+    await audit(u, on ? "نشر مسابقة في الموقع العام" : "إخفاء مسابقة من الموقع العام", "Competition", id);
+    return on ? "نُشرت المسابقة في الموقع العام" : "أُخفيت المسابقة من الموقع العام";
+  });
+}
+
 export async function setCompetitionStatus(f: FormData) {
   const u = await requireUser("comp.manage");
   const id = int(f, "id")!;

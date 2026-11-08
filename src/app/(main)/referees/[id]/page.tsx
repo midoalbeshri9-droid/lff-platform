@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { TrendChart } from "@/components/Sparkline";
 import { notFound } from "next/navigation";
 import { eq, desc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -44,6 +45,17 @@ export default async function Official({ params, searchParams }: { params: Promi
         <div className="kpi gold"><div className="v">{fmtDate(o.lastTestAt)}</div><div className="l">آخر اختبار لياقة</div></div>
         <div className={`kpi ${o.licenseExpiry && o.licenseExpiry < today() ? "red" : ""}`}><div className="v" style={{ fontSize: "1.3rem" }}>{fmtDate(o.licenseExpiry)}</div><div className="l">انتهاء الرخصة</div></div>
       </div>
+      {u.can("ref.evals") && sub.length > 0 && (() => {
+        const pts = sub.map((e) => ({ e, k: asg.find((x) => x.m.id === e.matchId) })).sort((a, b) => (a.k?.m.kickoff?.getTime() ?? 0) - (b.k?.m.kickoff?.getTime() ?? 0))
+          .map(({ e, k }) => ({ label: k ? `${k.home} × ${k.away}` : `#${e.matchId}`, v: Math.round(e.score * 10) / 10 }));
+        const last = pts.slice(-3), first = pts.slice(0, 3);
+        const trend = pts.length >= 4 ? last.reduce((a, p) => a + p.v, 0) / last.length - first.reduce((a, p) => a + p.v, 0) / first.length : 0;
+        return (
+          <div className="card mt">
+            <div className="card-head"><h3>📈 منحنى التقييمات عبر الموسم</h3>{pts.length >= 4 && <span className={`b ${trend > 0.2 ? "b-green" : trend < -0.2 ? "b-red" : "b-gray"}`}>{trend > 0.2 ? "في تحسّن" : trend < -0.2 ? "في تراجع" : "مستقر"}</span>}</div>
+            <TrendChart points={pts} />
+          </div>);
+      })()}
       <div className="grid g-side mt">
         <div>
           <div className="card table-wrap"><h3>التعيينات</h3>

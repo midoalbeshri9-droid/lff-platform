@@ -19,7 +19,7 @@ export default async function FinSettings({ searchParams }: { searchParams: SP }
       <div className="card">
         <h2>جدول الرسوم</h2>
         <p className="muted">تُسجل تلقائيًا على النادي عند اعتماد القيد أو طباعة بطاقة بديلة. القيمة صفر = بلا رسوم.</p>
-        <table className="t"><thead><tr><th>الرسم</th><th>القيمة</th><th>قيمة المحترف/تحت العقد</th><th>مفعّل</th><th></th></tr></thead>
+        <table className="t no-num"><thead><tr><th>الرسم</th><th>القيمة</th><th>قيمة المحترف/تحت العقد</th><th>مفعّل</th><th></th></tr></thead>
           <tbody>{fees.map((f) => (
             <tr key={f.id}><td colSpan={5} style={{ padding: 0 }}>
               <form action={saveFee} className="row" style={{ padding: ".45rem .6rem" }}>

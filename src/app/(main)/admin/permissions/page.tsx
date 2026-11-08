@@ -21,7 +21,7 @@ export default async function Permissions({ searchParams }: { searchParams: SP }
       <Flash sp={sp} />
       <form action={savePermissions} className="card">
         <div className="table-wrap">
-          <table className="t perm-table">
+          <table className="t perm-table no-num">
             <thead><tr><th className="sticky-col">الصلاحية</th>{roles.map((r) => <th key={r} className="rot">{ROLE_LABEL[r]}</th>)}</tr></thead>
             <tbody>
               {PERMISSION_GROUPS.map((g) => (

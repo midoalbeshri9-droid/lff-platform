@@ -4,9 +4,9 @@ import { db } from "@/db";
 import { roundDecisions, counters, competitionStages, matches, type DecisionContent } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { guard, inScopeComp } from "@/lib/scope";
-import { audit } from "@/lib/audit";
+import { audit, notifyClub } from "@/lib/audit";
 import { attempt, int, str, UserError, today } from "@/lib/util";
-import { draftFor, regenerate, decisionHeader } from "@/lib/decisions";
+import { draftFor, regenerate, decisionHeader, decisionClubs } from "@/lib/decisions";
 import { and, isNull, lt } from "drizzle-orm";
 
 async function load(id: number) {
@@ -88,6 +88,8 @@ export async function saveDecision(f: FormData) {
       }
       await db.update(roundDecisions).set({ number: num, issueDate: issueDate ?? today(), status: "ISSUED", issuedBy: u.fullName, issuedAt: new Date() }).where(eq(roundDecisions.id, id));
       await audit(u, "إصدار قرار جولة", "RoundDecision", id, { number: num });
+      // إبلاغ الأندية المعنية داخل المنظومة (والواتساب من صفحة القرار)
+      for (const cl of await decisionClubs(d)) await notifyClub(cl.id, `صدر قرار لجنة المسابقات رقم (${num})`, d.content.subject, `/print/decision/${id}`);
       return `صدر القرار رقم (${num}) — يمكنك طباعته الآن`;
     }
     await audit(u, op === "regen" ? "تحديث قرار جولة من بيانات المنظومة" : "حفظ مسودة قرار جولة", "RoundDecision", id);

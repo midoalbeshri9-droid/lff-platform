@@ -11,6 +11,7 @@ import { lte as lteD } from "drizzle-orm";
 import { money } from "@/lib/util";
 import { fmtDate, fmtDateTime } from "@/lib/util";
 import { PageHead, Kpi, Empty } from "@/components/ui";
+import { clubSuspended } from "@/lib/suspended";
 
 export default async function ClubHome() {
   const u = await requireClubUser("club.view");
@@ -41,6 +42,7 @@ export default async function ClubHome() {
     .orderBy(asc(matches.kickoff))
     .limit(5);
 
+  const susp = season ? await clubSuspended(u.clubId, season.id) : [];
   return (
     <>
       <PageHead title={`مرحبًا، ${u.clubName}`} sub={season ? `الموسم ${season.name}` : "لا يوجد موسم حالي"} actions={u.can("club.edit") && <Link className="btn btn-primary" href="/club/players/new">+ إضافة لاعب / طلب قيد</Link>} />
@@ -50,6 +52,13 @@ export default async function ClubHome() {
         <div className="alert warn">فترة القيد مغلقة حاليًا — يمكنك تجهيز الطلبات كمسودة وإرسالها عند فتح الفترة.</div>
       )}
       {block && <div className="alert err">⛔ {block}</div>}
+      {susp.length > 0 && (
+        <div className="card table-wrap" style={{ borderInlineStart: "4px solid var(--red, #c0392b)" }}>
+          <div className="card-head"><h3>⛔ الموقوفون حاليًا — لا يجوز إشراكهم ({susp.length})</h3><Link href="/club/sanctions">العقوبات</Link></div>
+          <table className="t"><thead><tr><th>الاسم</th><th>الصفة</th><th className="num">الغلالة</th><th>السبب</th><th>المتبقي</th><th>المسابقة</th></tr></thead>
+            <tbody>{susp.map((x, i) => <tr key={i}><td><strong>{x.name}</strong></td><td>{x.kind === "PLAYER" ? "لاعب" : "مرافق"}</td><td className="num">{x.shirt ?? "—"}</td><td>{x.reason}</td><td>{x.left}</td><td>{x.comp ?? "—"}</td></tr>)}</tbody></table>
+        </div>
+      )}
       <div className="grid g4">
         <Kpi v={c("APPROVED")} l="لاعبون مقيدون (معتمد)" href="/club/players" />
         <Kpi v={c("SUBMITTED")} l="طلبات قيد المراجعة" color="ink" href="/club/requests?status=SUBMITTED" />

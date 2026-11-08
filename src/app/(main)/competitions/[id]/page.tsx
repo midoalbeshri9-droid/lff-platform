@@ -22,7 +22,7 @@ import { roundDecisions } from "@/db/schema";
 import { createDecision } from "../decisions/actions";
 import { fmtDate } from "@/lib/util";
 import {
-  saveCompetition, setCompetitionStatus, addTeams, removeTeam, makeFixtures, clearFixtures, saveMatch, bulkSchedule,
+  saveCompetition, setCompetitionStatus, setCompetitionPublic, addTeams, removeTeam, makeFixtures, clearFixtures, saveMatch, bulkSchedule,
   addStage, saveStage, deleteStage, stageAddTeams, stageRemoveTeam, stageDraw, stageRegionGroups, stageSaveGroups, stageQualify, stageNextRound, stageManualPairs, deleteCompetition,
 } from "../actions";
 
@@ -51,6 +51,9 @@ export default async function Competition({ params, searchParams }: { params: Pr
       <PageHead title={c.name} sub={<>{season.name} — {stages.map((x) => x.name).join(" ← ")} — <Badge v={COMP_STATUS[c.status]} /></>} crumbs={[["المسابقات", "/competitions"], [c.name]]}
         actions={<>
           <Link className="btn btn-light btn-sm" href={`/print/round/${id}`} target="_blank">📊 التقرير الأسبوعي للجولة</Link>
+          {c.isPublic && <Link className="btn btn-light btn-sm" href={`/league/${id}`} target="_blank">🌐 الصفحة العامة</Link>}
+          {manage && <form action={setCompetitionPublic}><input type="hidden" name="id" value={id} /><input type="hidden" name="on" value={c.isPublic ? "0" : "1"} />
+            <Submit className="btn btn-light btn-sm" confirm={c.isPublic ? "إخفاء المسابقة من الموقع العام؟" : "نشر الترتيب والنتائج والهدافين والقرارات الصادرة في الموقع العام (بدون تسجيل دخول)؟"}>{c.isPublic ? "🔒 إخفاء من الموقع العام" : "🌐 نشر في الموقع العام"}</Submit></form>}
           {manage && (
           <form action={setCompetitionStatus} className="row">
             <input type="hidden" name="id" value={id} />

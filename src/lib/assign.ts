@@ -22,6 +22,14 @@ export async function checkAssignment(matchId: number, officialId: number, role:
   const sameDay = await db.select({ a: assignments, k: matches.kickoff }).from(assignments).innerJoin(matches, eq(matches.id, assignments.matchId))
     .where(and(eq(assignments.officialId, officialId), ne(assignments.matchId, matchId), ne(assignments.status, "DECLINED")));
   if (sameDay.some((x) => x.k && dayOf(x.k) === day)) errors.push("معيّن في مباراة أخرى في نفس اليوم");
+  // الإرهاق: مباراة أخرى خلال 48 ساعة، أو 3 مباريات فأكثر خلال 14 يومًا حول موعد هذه المباراة
+  if (m.kickoff) {
+    const k = m.kickoff.getTime();
+    const near = sameDay.filter((x) => x.k && dayOf(x.k) !== day && Math.abs(x.k.getTime() - k) < 48 * 36e5);
+    if (near.length) warnings.push(`إرهاق: معيّن في مباراة أخرى خلال 48 ساعة (${near.map((x) => dayOf(x.k!)).join("، ")})`);
+    const window14 = sameDay.filter((x) => x.k && Math.abs(x.k.getTime() - k) <= 7 * 864e5).length;
+    if (window14 >= 3) warnings.push(`إرهاق: ${window14} مباريات خلال أسبوع قبل/بعد هذه المباراة`);
+  }
   const inMatch = await db.select().from(assignments).where(and(eq(assignments.matchId, matchId), eq(assignments.officialId, officialId), ne(assignments.role, role as "REFEREE")));
   if (inMatch.length) errors.push("معيّن في دور آخر في نفس المباراة");
   // نفس مدينة أحد الفريقين

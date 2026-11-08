@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { and, desc, eq, gte, inArray, isNotNull, lte, ne, notInArray, sql, lt } from "drizzle-orm";
 import { db } from "@/db";
-import { seasons, registrations, players, staff, competitions, matches, matchEvents, sanctions, payments, charges, assignments, decisions, correspondence } from "@/db/schema";
+import { seasons, registrations, players, staff, competitions, matches, matchEvents, sanctions, payments, charges, assignments, decisions, correspondence, matchReportForms, roundDecisions, evaluations } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { money, today } from "@/lib/util";
 import { PageHead } from "@/components/ui";
@@ -40,6 +40,57 @@ async function seasonKpis(s: Season) {
 }
 type K = Awaited<ReturnType<typeof seasonKpis>>;
 
+/** أداء اللجان خلال آخر 90 يومًا — مؤشرات سرعة الإنجاز والالتزام */
+async function committeePerf() {
+  const since = new Date(Date.now() - 90 * 864e5);
+  const [reg] = await db.select({
+    avg: sql<number | null>`avg(extract(epoch from (${registrations.decidedAt} - ${registrations.submittedAt})) / 86400)`,
+    n: sql<number>`count(*)::int`,
+    ret: sql<number>`count(*) filter (where ${registrations.status} = 'NEEDS_CORRECTION')::int`,
+  }).from(registrations).where(and(isNotNull(registrations.submittedAt), gte(registrations.submittedAt, since)));
+  const [regDone] = await db.select({ avg: sql<number | null>`avg(extract(epoch from (${registrations.decidedAt} - ${registrations.submittedAt})) / 86400)` })
+    .from(registrations).where(and(isNotNull(registrations.decidedAt), isNotNull(registrations.submittedAt), gte(registrations.decidedAt, since)));
+  const [rep] = await db.select({ avg: sql<number | null>`avg(extract(epoch from (${matches.approvedAt} - ${matches.kickoff})) / 86400)`, n: sql<number>`count(*)::int` })
+    .from(matches).where(and(eq(matches.reportStatus, "APPROVED"), isNotNull(matches.kickoff), gte(matches.approvedAt, since)));
+  const [late] = await db.select({ c: sql<number>`count(*)::int` }).from(matches)
+    .where(and(inArray(matches.status, ["SCHEDULED", "PLAYED"]), ne(matches.reportStatus, "APPROVED"), lt(matches.kickoff, new Date(Date.now() - 3 * 864e5)), gte(matches.kickoff, since)));
+  const [obsNeed] = await db.select({ c: sql<number>`count(*)::int` }).from(assignments).innerJoin(matches, eq(matches.id, assignments.matchId))
+    .where(and(eq(assignments.role, "COMMISSIONER"), eq(assignments.status, "APPROVED"), lt(matches.kickoff, new Date()), gte(matches.kickoff, since)));
+  const [obsGot] = await db.select({ c: sql<number>`count(*)::int` }).from(matchReportForms).innerJoin(matches, eq(matches.id, matchReportForms.matchId))
+    .where(and(eq(matchReportForms.kind, "COMMISSIONER"), eq(matchReportForms.isSubmitted, true), gte(matches.kickoff, since)));
+  const [decs] = await db.select({ c: sql<number>`count(*)::int` }).from(roundDecisions).where(and(eq(roundDecisions.status, "ISSUED"), gte(roundDecisions.issuedAt, since)));
+  const week = new Date(Date.now() + 7 * 864e5);
+  const up = await db.select({ id: matches.id, n: sql<number>`(select count(*)::int from ${assignments} a where a.match_id = ${matches.id} and a.status = 'APPROVED' and a.role in ('REFEREE','AR1','AR2'))` })
+    .from(matches).where(and(eq(matches.status, "SCHEDULED"), gte(matches.kickoff, new Date()), lte(matches.kickoff, week)));
+  const [ev] = await db.select({ avg: sql<number | null>`avg(${evaluations.score})` }).from(evaluations).innerJoin(matches, eq(matches.id, evaluations.matchId)).where(and(eq(evaluations.isSubmitted, true), gte(matches.kickoff, since)));
+  const [fin] = await db.select({ t: sql<string>`coalesce(sum(${charges.amount}),0)`, p: sql<string>`coalesce(sum(${charges.paidAmount}),0)` }).from(charges)
+    .where(and(eq(charges.direction, "IN"), notInArray(charges.status, ["CANCELLED", "WAIVED"]), gte(charges.createdAt, since)));
+  const [owedRefs] = await db.select({ t: sql<string>`coalesce(sum(${charges.amount} - ${charges.paidAmount}),0)` }).from(charges).where(and(eq(charges.direction, "OUT"), inArray(charges.status, ["OPEN", "PARTIAL"])));
+  const days = (v: number | null) => (v == null ? "—" : v < 1 ? `${Math.round(v * 24)} ساعة` : `${v.toFixed(1)} يوم`);
+  const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : "—");
+  return [
+    { c: "لجنة القيد", items: [
+      ["متوسط زمن البت في طلب القيد", days(regDone.avg == null ? null : n(regDone.avg))],
+      ["طلبات أُرسلت خلال الفترة", String(reg.n)],
+      ["نسبة الطلبات المعادة للاستكمال", pct(reg.ret, reg.n)],
+    ] },
+    { c: "لجنة المسابقات", items: [
+      ["متوسط زمن اعتماد نتيجة المباراة", days(rep.avg == null ? null : n(rep.avg))],
+      ["مباريات تجاوزت 3 أيام دون اعتماد", String(late.c), late.c ? "bad" : ""],
+      ["تقارير المراقبين المستلمة", `${obsGot.c} من ${obsNeed.c} — ${pct(obsGot.c, obsNeed.c)}`, obsGot.c < obsNeed.c ? "warn" : ""],
+      ["قرارات الجولات الصادرة", String(decs.c)],
+    ] },
+    { c: "لجنة الحكام", items: [
+      ["مباريات الأسبوع القادم بلا طاقم كامل", `${up.filter((x) => x.n < 3).length} من ${up.length}`, up.some((x) => x.n < 3) ? "warn" : ""],
+      ["متوسط تقييم الحكام", ev.avg == null ? "—" : n(ev.avg).toFixed(2)],
+    ] },
+    { c: "اللجنة المالية", items: [
+      ["نسبة تحصيل المستحقات", pct(n(fin.p), n(fin.t))],
+      ["مستحقات حكام ومراقبين لم تُصرف", money(n(owedRefs.t)), n(owedRefs.t) ? "warn" : ""],
+    ] },
+  ] as { c: string; items: [string, string, string?][] }[];
+}
+
 const ROWS: { k: keyof K; label: string; group: string; fmt?: (v: number) => string; bar?: boolean }[] = [
   { group: "القيد", k: "clubs", label: "الأندية المسجلة" },
   { group: "القيد", k: "players", label: "اللاعبون المقيدون", bar: true },
@@ -67,7 +118,7 @@ const ROWS: { k: keyof K; label: string; group: string; fmt?: (v: number) => str
 export default async function Kpis() {
   await requireUser("kpi.view");
   const ss = (await db.select().from(seasons).orderBy(desc(seasons.startDate))).slice(0, 4);
-  const data = await Promise.all(ss.map(seasonKpis));
+  const [data, perf] = await Promise.all([Promise.all(ss.map(seasonKpis)), committeePerf()]);
   const t = today();
   const [lateDec] = await db.select({ c: sql<number>`count(*)::int` }).from(decisions).where(and(lt(decisions.dueDate, t), notInArray(decisions.status, ["DONE", "CANCELLED"])));
   const [openDec] = await db.select({ c: sql<number>`count(*)::int` }).from(decisions).where(inArray(decisions.status, ["PENDING", "IN_PROGRESS"]));
@@ -96,8 +147,13 @@ export default async function Kpis() {
       <div className="kpi-tiles">
         {tiles.map(([l, v, href, cls]) => <Link key={l} href={href} className={`card kpi-tile ${cls ?? ""}`}><div className="kpi-v">{v}</div><div className="muted">{l}</div></Link>)}
       </div>
+      <h2 className="mt">أداء اللجان <small className="muted" style={{ fontSize: ".8rem", fontWeight: 400 }}>آخر 90 يومًا</small></h2>
+      <div className="perf-grid">{perf.map((g) => (
+        <div key={g.c} className="card"><h3>{g.c}</h3>
+          {g.items.map(([l, v, cls]) => <div key={l} className="perf-row"><span>{l}</span><strong className={cls === "bad" ? "danger-text" : cls === "warn" ? "warn-text" : ""}>{v}</strong></div>)}
+        </div>))}</div>
       <div className="card table-wrap">
-        <table className="t kpi-table">
+        <table className="t kpi-table no-num">
           <thead><tr><th>المؤشر</th>{ss.map((s, i) => <th key={s.id} className="num">{s.name}{i === 0 && " (الحالي)"}</th>)}<th>مقارنة بالموسم السابق</th></tr></thead>
           <tbody>{ROWS.map((r) => {
             const max = Math.max(...data.map((d) => d[r.k]), 1);
