@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { and, eq, ilike, sql } from "drizzle-orm";
+import { and, eq, ilike, notInArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { officials, assignments, evaluations, users , divisions } from "@/db/schema";
 import { scopeOf, compIn, officialIn, guard, guardPage, inScopeOfficial, inScopeMatch } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
-import { OFFICIAL_TYPE, OFFICIAL_TYPE_INPUT, OFFICIAL_GRADE, FITNESS, OFFICIAL_STATUS } from "@/lib/labels";
+import { OFFICIAL_TYPE, REFEREE_TYPE_INPUT, OBSERVER_TYPES, OFFICIAL_GRADE, FITNESS, OFFICIAL_STATUS } from "@/lib/labels";
 import { fmtDate, today } from "@/lib/util";
 import { PageHead, Flash, Badge, Empty, Field, Options, type SP } from "@/components/ui";
 import { Submit } from "@/components/Client";
@@ -20,15 +20,15 @@ export default async function Referees({ searchParams }: { searchParams: SP }) {
     avg: sql<number | null>`(select round(avg(e.score)::numeric, 2)::float from ${evaluations} e where e.official_id = "officials"."id" and e.is_submitted)`,
     account: sql<string | null>`(select username from ${users} x where x.official_id = "officials"."id")`,
   }).from(officials)
-    .where(and(officialIn(await scopeOf(u), officials.id), sp.type ? eq(officials.type, sp.type as "REFEREE") : undefined, sp.status ? eq(officials.status, sp.status as "ACTIVE") : undefined, sp.q ? ilike(officials.fullName, `%${sp.q}%`) : undefined))
+    .where(and(officialIn(await scopeOf(u), officials.id), notInArray(officials.type, [...OBSERVER_TYPES]), sp.type ? eq(officials.type, sp.type as "REFEREE") : undefined, sp.status ? eq(officials.status, sp.status as "ACTIVE") : undefined, sp.q ? ilike(officials.fullName, `%${sp.q}%`) : undefined))
     .orderBy(officials.type, officials.grade, officials.fullName);
   const t = today();
   return (
     <>
-      <PageHead title="الحكام والمراقبون" sub={`${rows.length} مسجل`} />
+      <PageHead title="الحكام" sub={`${rows.length} مسجل — مراقبو المباريات تديرهم لجنة المسابقات`} />
       <Flash sp={sp} />
       <form className="filters">
-        <div className="field"><label>النوع</label><select name="type" defaultValue={sp.type ?? ""}><option value="">الكل</option><Options map={OFFICIAL_TYPE_INPUT} /></select></div>
+        <div className="field"><label>النوع</label><select name="type" defaultValue={sp.type ?? ""}><option value="">الكل</option><Options map={REFEREE_TYPE_INPUT} /></select></div>
         <div className="field"><label>الحالة</label><select name="status" defaultValue={sp.status ?? ""}><option value="">الكل</option><Options map={OFFICIAL_STATUS} /></select></div>
         <div className="field grow"><label>بحث</label><input type="search" name="q" defaultValue={sp.q} /></div>
         <button className="btn btn-light">عرض</button>
@@ -46,10 +46,10 @@ export default async function Referees({ searchParams }: { searchParams: SP }) {
         )}
       </div>
       {u.can("ref.manage") && (
-        <details className="box card"><summary>+ إضافة حكم / مراقب</summary>
+        <details className="box card"><summary>+ إضافة حكم</summary>
           <form action={saveOfficial} className="form f3 mt">
             <Field label="الاسم الكامل"><input type="text" name="fullName" required /></Field>
-            <Field label="النوع"><select name="type"><Options map={OFFICIAL_TYPE_INPUT} /></select></Field>
+            <Field label="النوع"><select name="type"><Options map={REFEREE_TYPE_INPUT} /></select></Field>
             <Field label="الدرجة"><select name="grade" defaultValue="THIRD"><Options map={OFFICIAL_GRADE} /></select></Field>
             {!u.divisionId && <Field label="قائمة الدوري" hint="فارغ = القائمة الاتحادية"><select name="divisionId"><option value="">— الاتحادية —</option>{dv.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>}
             <Field label="المدينة"><input type="text" name="city" /></Field>

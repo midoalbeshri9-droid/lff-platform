@@ -5,18 +5,25 @@ import { officials, officialTests, assignments, matches, clubs, users } from "@/
 import { scopeOf, compIn, officialIn, guard, guardPage, inScopeOfficial, inScopeMatch } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { audit, notifyOfficial } from "@/lib/audit";
-import { ASSIGN_ROLE, OBSERVER_ROLES } from "@/lib/labels";
+import { ASSIGN_ROLE, OBSERVER_ROLES, OBSERVER_TYPES } from "@/lib/labels";
 import { checkAssignment } from "@/lib/assign";
 import { attempt, str, req, int, bool, UserError, reqEmail, reqPhone } from "@/lib/util";
 import { ensureUniqueContact, sentMsg } from "@/lib/users";
 import { sendActivation, unusableHash } from "@/lib/tokens";
+
+/** سجل الحكام لا يشمل مراقبي المباريات (تديرهم لجنة المسابقات) */
+async function refereeOnly(id: number) {
+  const [o] = await db.select({ t: officials.type }).from(officials).where(eq(officials.id, id));
+  if (o && (OBSERVER_TYPES as readonly string[]).includes(o.t)) throw new UserError("مراقبو المباريات تديرهم لجنة المسابقات");
+}
 
 export async function saveOfficial(f: FormData) {
   const u = await requireUser("ref.manage");
   const id = int(f, "id");
   let newId = 0;
   await attempt(id ? `/referees/${id}` : "/referees", async () => {
-    if (id) guard(await inScopeOfficial(u, id, true));
+    if (id) { guard(await inScopeOfficial(u, id, true)); await refereeOnly(id); }
+    if ((OBSERVER_TYPES as readonly string[]).includes(str(f, "type") ?? "")) throw new UserError("يُضاف مراقب المباراة من صفحة «مراقبو المباريات» في لجنة المسابقات");
     const data = {
       fullName: req(f, "fullName", "الاسم"), type: str(f, "type") as "REFEREE", grade: (str(f, "grade") ?? "THIRD") as "THIRD",
       city: str(f, "city"), phone: str(f, "phone"), email: str(f, "email"), dateOfBirth: str(f, "dateOfBirth"),
@@ -36,6 +43,7 @@ export async function setOfficialStatus(f: FormData) {
   const id = int(f, "id")!;
   await attempt(`/referees/${id}`, async () => {
     guard(await inScopeOfficial(u, id, true));
+    await refereeOnly(id);
     const status = str(f, "status") as "ACTIVE" | "SUSPENDED" | "INJURED" | "RETIRED";
     const until = str(f, "suspendedUntil");
     await db.update(officials).set({ status, suspendedUntil: status === "SUSPENDED" ? until : null, notes: str(f, "notes") }).where(eq(officials.id, id));
@@ -49,6 +57,7 @@ export async function addTest(f: FormData) {
   const id = int(f, "officialId")!;
   await attempt(`/referees/${id}`, async () => {
     guard(await inScopeOfficial(u, id, true));
+    await refereeOnly(id);
     const kind = req(f, "kind", "النوع");
     const passed = f.get("passed") === "1";
     const date = req(f, "date", "التاريخ");
@@ -65,6 +74,7 @@ export async function createOfficialAccount(f: FormData) {
   const id = int(f, "officialId")!;
   await attempt(`/referees/${id}`, async () => {
     guard(await inScopeOfficial(u, id, true));
+    await refereeOnly(id);
     const [o] = await db.select().from(officials).where(eq(officials.id, id));
     const [ex] = await db.select().from(users).where(eq(users.officialId, id));
     if (ex) throw new UserError("للحكم حساب مسبقًا: " + ex.username);

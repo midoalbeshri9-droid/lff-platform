@@ -114,6 +114,9 @@ export const OFFICIAL_TYPE: Record<string, string> = {
   REF_OBSERVER: "مراقب مباراة",
   COMMISSIONER: "مراقب مباراة",
 };
+/** مراقبو المباريات تابعون للجنة المسابقات وحدها — منفصلون عن سجل الحكام */
+export const OBSERVER_TYPES = ["COMMISSIONER", "REF_OBSERVER"] as const;
+export const REFEREE_TYPE_INPUT: Record<string, string> = { REFEREE: "حكم ساحة", ASSISTANT: "حكم مساعد", VAR: "حكم فيديو" };
 /** الأنواع المعروضة عند الإضافة (المراقب نوع واحد) */
 export const OFFICIAL_TYPE_INPUT: Record<string, string> = { REFEREE: "حكم ساحة", ASSISTANT: "حكم مساعد", VAR: "حكم فيديو", COMMISSIONER: "مراقب مباراة" };
 export const OFFICIAL_GRADE: Record<string, string> = {

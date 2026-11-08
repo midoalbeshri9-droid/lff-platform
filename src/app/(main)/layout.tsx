@@ -94,9 +94,9 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
       label: "لجنة الحكام",
       badge: drafts,
       children: [
-        { label: "🟨 الحكام والمراقبون", href: "/referees" },
+        { label: "🟨 الحكام", href: "/referees" },
         { label: "📋 تعيين الطواقم", href: "/referees/assignments", badge: drafts },
-        ...(u.can("ref.evals") ? [{ label: "★ تقييمات المراقبين", href: "/referees/evaluations" }] : []),
+        ...(u.can("ref.evals") ? [{ label: "★ تقييمات الحكام", href: "/referees/evaluations" }] : []),
       ],
     });
   }
@@ -171,7 +171,7 @@ export default async function MainLayout({ children }: { children: React.ReactNo
   ]);
   const [me] = await db.select({ email: users.email, phone: users.phone }).from(users).where(eq(users.id, u.id));
   const missingContact = (!me?.email && u.role !== "OBSERVER") || !me?.phone; // البريد اختياري لمراقبي المباريات
-  const sub = u.isClub ? `بوابة الأندية — ${u.clubName}` : u.isOfficial ? "بوابة الحكام والمراقبين" : "منظومة القيد والمسابقات والحكام";
+  const sub = u.isClub ? `بوابة الأندية — ${u.clubName}` : u.isOfficial ? (u.role === "OBSERVER" ? "بوابة مراقبي المباريات" : "بوابة الحكام") : "منظومة القيد والمسابقات والحكام";
 
   return (
     <>

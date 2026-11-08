@@ -34,13 +34,13 @@ export const PERMISSION_GROUPS: { group: string; items: [string, string][] }[] =
     ],
   },
   {
-    group: "لجنة الحكام والمراقبين",
+    group: "لجنة الحكام",
     items: [
-      ["ref.view", "عرض الحكام والمراقبين والتعيينات"],
-      ["ref.manage", "إدارة سجل الحكام والمراقبين والاختبارات"],
+      ["ref.view", "عرض الحكام وتعيينات التحكيم"],
+      ["ref.manage", "إدارة سجل الحكام والاختبارات"],
       ["ref.assign", "تعيين طواقم التحكيم (مسودة)"],
       ["ref.approve", "اعتماد تعيينات الحكام"],
-      ["ref.evals", "الاطلاع على تقييمات المراقبين"],
+      ["ref.evals", "الاطلاع على تقييمات الحكام"],
     ],
   },
   {
@@ -100,7 +100,7 @@ export const PERMISSION_GROUPS: { group: string; items: [string, string][] }[] =
     ],
   },
   {
-    group: "بوابة الحكام والمراقبين",
+    group: "بوابة الحكام ومراقبي المباريات",
     items: [
       ["portal.referee", "إدخال تقرير المباراة (حكم الساحة)"],
       ["portal.observer", "إدخال تقرير مراقب المباراة وتقييم الحكام"],

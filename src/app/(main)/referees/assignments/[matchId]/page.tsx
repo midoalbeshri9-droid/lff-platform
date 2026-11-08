@@ -37,7 +37,7 @@ export default async function AssignMatch({ params, searchParams }: { params: Pr
       <Flash sp={sp} />
       <div className="card table-wrap">
         <table className="t"><thead><tr><th>الدور</th><th>المعيّن</th><th>الحالة</th><th>الفحص</th>{can && <th>تعيين / تغيير</th>}</tr></thead>
-          <tbody>{Object.entries(ASSIGN_ROLE_INPUT).map(([role, label]) => {
+          <tbody>{Object.entries(ASSIGN_ROLE_INPUT).filter(([role]) => !OBSERVER_ROLES.includes(role) || u.can("comp.observers")).map(([role, label]) => {
             const x = cur.find((y) => y.a.role === role || (role === "COMMISSIONER" && y.a.role === "REF_OBSERVER"));
             const ch = x && checks.find((k) => k.id === x.a.id);
             return (

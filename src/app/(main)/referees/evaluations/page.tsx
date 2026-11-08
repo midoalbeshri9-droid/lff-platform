@@ -23,7 +23,7 @@ export default async function Evaluations({ searchParams }: { searchParams: SP }
     .groupBy(officials.id).orderBy(sql`avg(${evaluations.score}) desc`);
   return (
     <>
-      <PageHead title="ترتيب الحكام حسب تقييم المراقبين" sub="يُستخدم للترقية والهبوط بالدرجة وتوزيع المباريات" />
+      <PageHead title="ترتيب الحكام حسب التقييمات" sub="يُستخدم للترقية والهبوط بالدرجة وتوزيع المباريات" />
       <form className="filters"><div className="field"><label>الموسم</label><select name="season" defaultValue={String(seasonId)}>{ss.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div><button className="btn btn-light">عرض</button></form>
       <div className="card table-wrap">
         {rows.length === 0 ? <Empty>لا تقييمات مرسلة</Empty> : (

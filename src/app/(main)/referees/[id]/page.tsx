@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { officials, officialTests, assignments, matches, clubs, evaluations, users , divisions } from "@/db/schema";
 import { scopeOf, compIn, officialIn, guard, guardPage, inScopeOfficial, inScopeMatch } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
-import { OFFICIAL_TYPE, OFFICIAL_TYPE_INPUT, OFFICIAL_GRADE, FITNESS, OFFICIAL_STATUS, ASSIGN_ROLE, ASSIGN_STATUS } from "@/lib/labels";
+import { OFFICIAL_TYPE, REFEREE_TYPE_INPUT, OBSERVER_TYPES, OFFICIAL_GRADE, FITNESS, OFFICIAL_STATUS, ASSIGN_ROLE, ASSIGN_STATUS } from "@/lib/labels";
 import { fmtDate, fmtDateTime, today } from "@/lib/util";
 import { PageHead, Flash, Badge, Field, Options, type SP } from "@/components/ui";
 import { Submit } from "@/components/Client";
@@ -18,6 +18,8 @@ export default async function Official({ params, searchParams }: { params: Promi
   const sp = await searchParams;
   const [o] = await db.select().from(officials).where(eq(officials.id, id));
   if (!o) notFound();
+  // ملف مراقب المباراة من صلاحية لجنة المسابقات فقط
+  if ((OBSERVER_TYPES as readonly string[]).includes(o.type) && !u.can("comp.observers")) notFound();
   guardPage(await inScopeOfficial(u, id));
   const h = alias(clubs, "h"), a = alias(clubs, "a");
   const [tests, asg, evs, acct] = await Promise.all([
@@ -30,11 +32,11 @@ export default async function Official({ params, searchParams }: { params: Promi
   const sub = evs.filter((e) => e.isSubmitted);
   const avg = sub.length ? sub.reduce((s, e) => s + e.score, 0) / sub.length : null;
   // مدير الدرجة يعدّل حكام درجته فقط، ويطّلع على القائمة الاتحادية دون تعديل
-  const can = u.can("ref.manage") && (await inScopeOfficial(u, id, true));
+  const can = u.can("ref.manage") && !(OBSERVER_TYPES as readonly string[]).includes(o.type) && (await inScopeOfficial(u, id, true));
   const dv = u.divisionId ? [] : await db.select().from(divisions).orderBy(divisions.level);
   return (
     <>
-      <PageHead title={o.fullName} sub={<>{OFFICIAL_TYPE[o.type]} — {OFFICIAL_GRADE[o.grade]} — <Badge v={OFFICIAL_STATUS[o.status]} /> <Badge v={FITNESS[o.fitness]} /></>} crumbs={[["الحكام والمراقبون", "/referees"], [o.fullName]]} />
+      <PageHead title={o.fullName} sub={<>{OFFICIAL_TYPE[o.type]} — {OFFICIAL_GRADE[o.grade]} — <Badge v={OFFICIAL_STATUS[o.status]} /> <Badge v={FITNESS[o.fitness]} /></>} crumbs={[["الحكام", "/referees"], [o.fullName]]} />
       <Flash sp={sp} />
       <div className="grid g4">
         <div className="kpi"><div className="v">{asg.filter((x) => x.x.status === "APPROVED").length}</div><div className="l">تعيينات معتمدة</div></div>
@@ -98,7 +100,7 @@ export default async function Official({ params, searchParams }: { params: Promi
               <form action={saveOfficial} className="form f1 mt">
                 <input type="hidden" name="id" value={id} />
                 <Field label="الاسم"><input type="text" name="fullName" defaultValue={o.fullName} required /></Field>
-                <Field label="النوع"><select name="type" defaultValue={o.type === "REF_OBSERVER" ? "COMMISSIONER" : o.type}><Options map={OFFICIAL_TYPE_INPUT} /></select></Field>
+                <Field label="النوع"><select name="type" defaultValue={o.type}><Options map={REFEREE_TYPE_INPUT} /></select></Field>
                 <Field label="الدرجة"><select name="grade" defaultValue={o.grade}><Options map={OFFICIAL_GRADE} /></select></Field>
                 {!u.divisionId && <Field label="قائمة الدوري" hint="فارغ = القائمة الاتحادية (متاح لكل الدرجات)"><select name="divisionId" defaultValue={o.divisionId ?? ""}><option value="">— الاتحادية —</option>{dv.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></Field>}
                 <Field label="المدينة"><input type="text" name="city" defaultValue={o.city ?? ""} /></Field>
