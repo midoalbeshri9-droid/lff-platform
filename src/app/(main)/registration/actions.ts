@@ -152,11 +152,40 @@ export async function setPlayerStatus(f: FormData) {
   });
 }
 
+/** رقم الغلالة: 1–99 ولا يتكرر بين القيود السارية للنادي نفسه في الموسم نفسه */
+async function checkShirt(regId: number, shirt: number | null) {
+  if (shirt == null) return;
+  if (!(shirt >= 1 && shirt <= 99)) throw new UserError("رقم الغلالة من 1 إلى 99");
+  const [r] = await db.select().from(registrations).where(eq(registrations.id, regId));
+  if (!r) throw new UserError("القيد غير موجود");
+  const [dup] = await db.select({ name: players.fullName }).from(registrations).innerJoin(players, eq(players.id, registrations.playerId))
+    .where(and(eq(registrations.clubId, r.clubId), eq(registrations.seasonId, r.seasonId), eq(registrations.status, "APPROVED"), eq(registrations.shirtNumber, shirt), ne(registrations.id, regId),
+      r.categoryId ? eq(registrations.categoryId, r.categoryId) : undefined));
+  if (dup) throw new UserError(`رقم الغلالة (${shirt}) مستخدم للاعب ${dup.name} في النادي نفسه`);
+}
+
+/** تعديل رقم الغلالة من ملف اللاعب (لجنة القيد) */
+export async function setShirtNumber(f: FormData) {
+  const u = await requireUser("reg.edit");
+  const regId = int(f, "regId")!, playerId = int(f, "playerId")!;
+  await attempt(`/registration/players/${playerId}`, async () => {
+    guard(await inScopeReg(u, regId));
+    const shirt = int(f, "shirtNumber");
+    await checkShirt(regId, shirt);
+    const [old] = await db.select({ s: registrations.shirtNumber }).from(registrations).where(eq(registrations.id, regId));
+    await db.update(registrations).set({ shirtNumber: shirt, updatedAt: new Date() }).where(eq(registrations.id, regId));
+    await logEvent(db, regId, u.fullName, "تعديل رقم الغلالة", `${old?.s ?? "—"} ← ${shirt ?? "—"}`);
+    await audit(u, "تعديل رقم الغلالة", "Registration", regId, { from: old?.s, to: shirt });
+    return `تم حفظ رقم الغلالة${shirt ? ` (${shirt})` : ""}`;
+  });
+}
+
 export async function updateRegistrationMeta(f: FormData) {
   const u = await requireUser("reg.edit");
   const id = int(f, "id")!;
   await attempt(`/registration/requests/${id}`, async () => {
     guard(await inScopeReg(u, id));
+    await checkShirt(id, int(f, "shirtNumber"));
     await db.update(registrations).set({
       shirtNumber: int(f, "shirtNumber"),
       loanEndDate: str(f, "loanEndDate"), categoryId: int(f, "categoryId"), updatedAt: new Date(),

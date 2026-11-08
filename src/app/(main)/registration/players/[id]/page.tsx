@@ -13,7 +13,7 @@ import { PageHead, Flash, Badge, Field, type SP } from "@/components/ui";
 import { Submit } from "@/components/Client";
 import { PlayerFields } from "@/components/PlayerForm";
 import { PlayerFilesUploader } from "@/components/PlayerFilesUploader";
-import { editPlayer, setPlayerStatus, addSuspension, liftSuspension, uploadPlayerDocs, deletePlayerDoc } from "../../actions";
+import { setShirtNumber, editPlayer, setPlayerStatus, addSuspension, liftSuspension, uploadPlayerDocs, deletePlayerDoc } from "../../actions";
 
 export default async function PlayerFile({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const u = await requireUser("reg.view", "comp.view");
@@ -86,9 +86,15 @@ export default async function PlayerFile({ params, searchParams }: { params: Pro
           </div>}
           <div className="card table-wrap">
             <h2>سجل القيد والانتقالات</h2>
-            <table className="t"><thead><tr><th>الموسم</th><th>النادي</th><th>النوع</th><th>من</th><th>رقم القيد</th><th>الحالة</th><th>البطاقة</th><th></th></tr></thead>
+            <table className="t"><thead><tr><th>الموسم</th><th>النادي</th><th>النوع</th><th>من</th><th>رقم القيد</th><th>رقم الغلالة</th><th>الحالة</th><th>البطاقة</th><th></th></tr></thead>
               <tbody>{regs.map(({ r, club, from, season }) => (
                 <tr key={r.id}><td>{season}</td><td>{club}</td><td>{REG_TYPE[r.type]}</td><td>{from ?? "—"}</td><td className="kbd">{r.number ?? "—"}</td>
+                  <td>{u.can("reg.edit") && r.status === "APPROVED" ? (
+                    <form action={setShirtNumber} className="row" style={{ gap: 4, flexWrap: "nowrap" }}>
+                      <input type="hidden" name="regId" value={r.id} /><input type="hidden" name="playerId" value={id} />
+                      <input type="number" name="shirtNumber" min={1} max={99} defaultValue={r.shirtNumber ?? ""} style={{ width: 64 }} />
+                      <Submit className="btn btn-sm btn-light">حفظ</Submit>
+                    </form>) : <strong>{r.shirtNumber ?? "—"}</strong>}</td>
                   <td><Badge v={REG_STATUS[r.status]} /></td><td>{r.cardPrintCount ? `طُبعت ${r.cardPrintCount}` : "—"}</td>
                   <td><Link href={`/registration/requests/${r.id}`}>عرض</Link></td></tr>
               ))}</tbody></table>
