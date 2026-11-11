@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { contracts, registrations, players } from "@/db/schema";
 import { requireClubUser } from "@/lib/auth";
@@ -21,12 +21,24 @@ export default async function ClubContracts() {
   // لاعبو الموسم الحالي (غير الهواة) بلا عقد
   const need = season ? await db.select({ regId: registrations.id, name: players.fullName, level: players.professionalLevel, status: registrations.status }).from(registrations)
     .innerJoin(players, eq(players.id, registrations.playerId)).leftJoin(contracts, eq(contracts.registrationId, registrations.id))
-    .where(and(eq(registrations.clubId, u.clubId), eq(registrations.seasonId, season.id), ne(players.professionalLevel, "AMATEUR"), inArray(registrations.status, ["APPROVED", "DRAFT", "NEEDS_CORRECTION", "SUBMITTED"]), isNull(contracts.id)))
+    .where(and(eq(registrations.clubId, u.clubId), eq(registrations.seasonId, season.id), inArray(registrations.status, ["APPROVED", "DRAFT", "NEEDS_CORRECTION", "SUBMITTED"]), isNull(contracts.id)))
     .orderBy(players.fullName) : [];
   const can = u.can("club.edit");
   return (
     <>
       <PageHead title="عقود اللاعبين المحترفين" sub="العقد يُكتب هنا بنموذج الاتحاد الموحد، ويُطبع للتوقيع، ثم تُرفع نسخته الموقّعة للاعتماد" />
+      {can && (
+        <div className="card">
+          <h3>+ كتابة عقد جديد</h3>
+          {need.length === 0 ? <p className="muted">لا يوجد لاعبون في قيد الموسم الحالي بلا عقد.</p> : (
+            <form action={createContract} className="row">
+              <select name="regId" required defaultValue="" style={{ minWidth: 320 }}>
+                <option value="" disabled>اختر اللاعب ({need.length})</option>
+                {need.map((x) => <option key={x.regId} value={x.regId}>{x.name} — {PRO_LEVEL[x.level] ?? x.level}</option>)}
+              </select>
+              <Submit className="btn btn-gold">إنشاء العقد</Submit>
+            </form>
+          )}
       <div className="card table-wrap">
         <h3>العقود ({rows.length})</h3>
         {rows.length === 0 ? <Empty>لا توجد عقود بعد — أنشئ عقدًا من القائمة أدناه.</Empty> : (
@@ -38,14 +50,7 @@ export default async function ClubContracts() {
                 <td><Link className="btn btn-sm btn-light" href={`/club/contracts/${c.id}`}>{["DRAFT", "RETURNED"].includes(c.status) ? "تحرير" : "عرض"}</Link></td></tr>))}</tbody></table>
         )}
       </div>
-      {can && need.length > 0 && (
-        <div className="card table-wrap">
-          <h3>لاعبو الموسم بلا عقد ({need.length})</h3>
-          <p className="muted" style={{ fontSize: ".85rem" }}>العقد مطلوب للاعب المحترف وغير الهاوي. اختر اللاعب لإنشاء عقده.</p>
-          <table className="t"><thead><tr><th>اللاعب</th><th>المستوى</th><th></th></tr></thead>
-            <tbody>{need.map((x) => (
-              <tr key={x.regId}><td>{x.name}</td><td>{PRO_LEVEL[x.level] ?? x.level}</td>
-                <td><form action={createContract}><input type="hidden" name="regId" value={x.regId} /><Submit className="btn btn-sm btn-gold">+ إنشاء عقد</Submit></form></td></tr>))}</tbody></table>
+          <p className="muted" style={{ fontSize: ".85rem", marginTop: 8 }}>تظهر هنا كل لاعبي النادي في قيد الموسم الحالي ممن ليس لهم عقد. العقد إلزامي للمحترف والهاوي تحت العقد.</p>
         </div>
       )}
     </>
