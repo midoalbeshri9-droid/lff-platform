@@ -1,7 +1,7 @@
 "use server";
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, ne } from "drizzle-orm";
 import { db } from "@/db";
-import { contracts, registrations, players, type ContractDoc } from "@/db/schema";
+import { contracts, registrations, players, documentTypes, registrationDocuments, type ContractDoc } from "@/db/schema";
 import { requireClubUser } from "@/lib/auth";
 import { attempt, str, int, num, UserError } from "@/lib/util";
 import { audit, notifyStaff } from "@/lib/audit";
@@ -24,7 +24,7 @@ export async function createContract(f: FormData) {
   await attempt(() => (id ? `/club/contracts/${id}` : "/club/contracts"), async () => {
     const [r] = await db.select().from(registrations).where(and(eq(registrations.id, regId), eq(registrations.clubId, u.clubId)));
     if (!r) throw new UserError("القيد غير موجود");
-    if (["REJECTED", "CANCELLED"].includes(r.status)) throw new UserError("لا يمكن إنشاء عقد لقيد مرفوض أو ملغى");
+    if (!["DRAFT", "NEEDS_CORRECTION", "APPROVED"].includes(r.status)) throw new UserError("لا يمكن إنشاء عقد لطلب مُرسل أو مرفوض أو ملغى");
     const [ex] = await db.select({ id: contracts.id }).from(contracts).where(eq(contracts.registrationId, regId));
     if (ex) { id = ex.id; return "للاعب عقد على هذا القيد — فُتح العقد"; }
     const doc = await draftDoc(u.clubId, r.playerId);
@@ -87,22 +87,32 @@ export async function uploadSignedContract(f: FormData) {
     if (!editable(c.status)) throw new UserError("لا يمكن تغيير النسخة الموقّعة بعد الإرسال");
     const s = await saveUpload(f.get("file") as File, `docs/${u.clubId}/contracts`, ALLOWED_DOC, 15 * 1024 * 1024);
     await db.update(contracts).set({ signedFileKey: s.key, updatedAt: new Date() }).where(eq(contracts.id, id));
+    // النسخة الموقّعة هي نفسها مستند «عقد اللاعب» الإلزامي في طلب القيد (كما في FIFA Connect)
+    const [r] = await db.select({ status: registrations.status }).from(registrations).where(eq(registrations.id, c.registrationId));
+    const [t] = await db.select().from(documentTypes).where(and(eq(documentTypes.name, "عقد اللاعب"), eq(documentTypes.isActive, true))).limit(1);
+    if (t && r && ["DRAFT", "NEEDS_CORRECTION"].includes(r.status)) {
+      await db.delete(registrationDocuments).where(and(eq(registrationDocuments.registrationId, c.registrationId), eq(registrationDocuments.documentTypeId, t.id), ne(registrationDocuments.status, "APPROVED")));
+      await db.insert(registrationDocuments).values({ registrationId: c.registrationId, documentTypeId: t.id, fileKey: s.key, originalName: s.name, mime: s.mime, size: s.size, uploadedBy: u.fullName });
+      return `تم رفع النسخة الموقّعة وإرفاقها بطلب القيد كمستند «${t.name}»`;
+    }
     return "تم رفع النسخة الموقّعة";
   });
 }
 
-/** إرسال العقد إلى لجنة أوضاع اللاعبين وانتقالاتهم للاعتماد */
+/** إرسال عقد لاعب قيده معتمد مسبقًا (تغيير المستوى إلى محترف/تحت العقد) — العقد الجديد مع طلب قيد يُرسل مع الطلب */
 export async function submitContract(f: FormData) {
   const u = await requireClubUser("club.submit");
   const id = int(f, "id")!;
   await attempt(`/club/contracts/${id}`, async () => {
     const c = await own(id, u.clubId);
     if (!editable(c.status)) throw new UserError("العقد مُرسل مسبقًا");
+    const [r] = await db.select({ status: registrations.status }).from(registrations).where(eq(registrations.id, c.registrationId));
+    if (r?.status !== "APPROVED") throw new UserError("هذا العقد يُرسل مع طلب القيد — افتح الطلب وأرسله، وسيصل العقد معه");
     const miss = missingForSubmit(c);
     if (miss.length) throw new UserError("بيانات ناقصة: " + miss.join("، "));
     await db.update(contracts).set({ status: "SUBMITTED", submittedAt: new Date(), updatedAt: new Date() }).where(eq(contracts.id, id));
     const [p] = await db.select({ name: players.fullName }).from(players).where(eq(players.id, c.playerId));
-    await notifyStaff(["REG_HEAD", "REG_STAFF"], `عقد محترف بانتظار الاعتماد — ${u.clubName}`, p.name, `/registration/contracts/${id}`, { clubId: u.clubId });
+    await notifyStaff(["REG_HEAD", "REG_STAFF"], `تغيير مستوى لاعب إلى عقد — ${u.clubName}`, p.name, `/registration/contracts/${id}`, { clubId: u.clubId });
     await audit(u, "إرسال عقد للاعتماد", "Contract", id);
     return "أُرسل العقد إلى لجنة أوضاع اللاعبين وانتقالاتهم";
   });

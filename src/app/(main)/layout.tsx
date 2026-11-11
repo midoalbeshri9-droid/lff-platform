@@ -57,7 +57,7 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
         { label: "🧑‍💼 الإداريون والجهاز الفني", href: "/registration/staff", badge: await count(db.select({ n }).from(staff).where(and(clubIn(sc, staff.clubId), eq(staff.status, "SUBMITTED")))) },
         { label: "👤 سجل اللاعبين", href: "/registration/players" },
         { label: "⇄ الانتقالات والإعارات", href: "/registration/transfers" },
-        ...(u.can("reg.contracts") ? [{ label: "📄 عقود المحترفين", href: "/registration/contracts", badge: await count(db.select({ n }).from(contracts).where(and(clubIn(sc, contracts.clubId), eq(contracts.status, "SUBMITTED")))) }] : []),
+        ...(u.can("reg.contracts") ? [{ label: "📄 عقود المحترفين", href: "/registration/contracts", badge: await count(db.select({ n }).from(contracts).innerJoin(registrations, eq(registrations.id, contracts.registrationId)).where(and(clubIn(sc, contracts.clubId), eq(contracts.status, "SUBMITTED"), eq(registrations.status, "APPROVED")))) }] : []),
         ...(u.can("reg.suspend") || u.can("reg.view") ? [{ label: "⛔ الإيقافات", href: "/registration/suspensions" }] : []),
         "sep",
         ...(u.can("reg.lists") ? [{ label: "📋 قوائم الفرق", href: "/registration/lists" }] : []),

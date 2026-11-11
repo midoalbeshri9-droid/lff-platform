@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { contracts, players, seasons } from "@/db/schema";
+import { contracts, players, seasons, registrations } from "@/db/schema";
 import { requireClubUser } from "@/lib/auth";
 import { amountWords, missingForSubmit } from "@/lib/contracts";
 import { CONTRACT_STATUS } from "@/lib/labels";
@@ -19,10 +19,11 @@ export default async function ClubContract({ params, searchParams }: { params: P
   const u = await requireClubUser("club.view");
   const { id } = await params;
   const sp = await searchParams;
-  const [row] = await db.select({ c: contracts, name: players.fullName }).from(contracts).innerJoin(players, eq(players.id, contracts.playerId))
+  const [row] = await db.select({ c: contracts, name: players.fullName, regStatus: registrations.status }).from(contracts).innerJoin(players, eq(players.id, contracts.playerId)).innerJoin(registrations, eq(registrations.id, contracts.registrationId))
     .where(and(eq(contracts.id, Number(id)), eq(contracts.clubId, u.clubId)));
   if (!row) notFound();
-  const { c, name } = row;
+  const { c, name, regStatus } = row;
+  const withRequest = regStatus !== "APPROVED"; // عقد طلب قيد جديد/تجديد/انتقال: يُرسل ويُعتمد مع الطلب
   const d = c.doc!;
   const words = Object.fromEntries(MONEY_KEYS.map((k) => [k, amountWords(c[k], c.currency)]));
   const editable = (c.status === "DRAFT" || c.status === "RETURNED") && u.can("club.edit");
@@ -45,7 +46,8 @@ export default async function ClubContract({ params, searchParams }: { params: P
             <li>أكمل بيانات العقد أدناه واحفظها.</li>
             <li>اطبع العقد من زر «طباعة العقد» — يخرج على نموذج الاتحاد الموحد ببياناتك.</li>
             <li>يوقّع الطرفان على جميع الصفحات، مع بصمة اللاعب وختم النادي.</li>
-            <li>صوّر النسخة الموقّعة (PDF أو صور) وارفعها، ثم أرسل العقد للاعتماد.</li>
+            <li>صوّر النسخة الموقّعة (PDF أو صور) وارفعها.</li>
+            <li>{withRequest ? <>ارجع إلى <Link href={`/club/registrations/${c.registrationId}`}>طلب القيد</Link> وأرسله — يصل العقد مع الطلب ويُعتمد معه.</> : "أرسل العقد للاعتماد (تغيير مستوى لاعب مقيّد)."}</li>
           </ol>
         </div>
       )}
@@ -145,9 +147,16 @@ export default async function ClubContract({ params, searchParams }: { params: P
         {c.reviewedAt && <p className="muted">اعتُمد: {fmtDateTime(c.reviewedAt)}</p>}
       </div>
 
-      {editable && u.can("club.submit") && (
+      {editable && withRequest && (
         <div className="card">
-          <h3>الإرسال إلى لجنة أوضاع اللاعبين وانتقالاتهم</h3>
+          <h3>الإرسال</h3>
+          {miss.length > 0 ? <p className="danger-text">قبل إرسال الطلب أكمل: {miss.join("، ")}</p> : <p style={{ color: "var(--green-d)" }}>✓ العقد مكتمل.</p>}
+          <p>العقد جزء من طلب القيد ويُرسل معه. <Link className="btn btn-primary" href={`/club/registrations/${c.registrationId}`}>الذهاب إلى طلب القيد ←</Link></p>
+        </div>
+      )}
+      {editable && !withRequest && u.can("club.submit") && (
+        <div className="card">
+          <h3>الإرسال للاعتماد — تغيير مستوى لاعب مقيّد</h3>
           {miss.length > 0 ? <p className="danger-text">قبل الإرسال أكمل: {miss.join("، ")}</p> : <p className="muted">العقد مكتمل وجاهز للإرسال.</p>}
           <form action={submitContract}><input type="hidden" name="id" value={c.id} />
             <Submit className="btn btn-gold" confirm="إرسال العقد للاعتماد؟ لن تستطيع تعديله بعد الإرسال.">📤 إرسال العقد للاعتماد</Submit></form>

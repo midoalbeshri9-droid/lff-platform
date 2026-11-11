@@ -5,12 +5,13 @@ import { redirect } from "next/navigation";
 import { db } from "@/db";
 import {
   registrations, registrationDocuments, players, suspensions, seasons, registrationWindows, ageCategories, documentTypes,
-  listTemplates, cardTemplates, cardPrints, settings, staff, type CardElement,
+  listTemplates, cardTemplates, cardPrints, settings, staff, contracts, type CardElement,
 } from "@/db/schema";
 import { guard, scopeOf, inScopeReg, inScopePlayer, inScopeComp, inScopeStaff } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { audit, notifyClub } from "@/lib/audit";
-import { approveRegistration, logEvent, missingDocs, categoryFor, assertForeignQuota } from "@/lib/registration";
+import { approveRegistration, logEvent, missingDocs, categoryFor, assertForeignQuota, needsContract } from "@/lib/registration";
+import { approveInTx, runningContract } from "@/lib/contracts";
 import { addCharge, feeAmount } from "@/lib/finance";
 import { saveUpload, ALLOWED_IMG, ALLOWED_DOC } from "@/lib/storage";
 import { attempt, str, req, int, bool, UserError } from "@/lib/util";
@@ -72,10 +73,18 @@ export async function decide(f: FormData) {
         if (r.originResponse === "OBJECTED") throw new UserError("النادي السابق معترض — اعتماد الطلب يحتاج تجاوز الشروط بقرار اللجنة");
       }
       if (!override) await assertForeignQuota(id);
+      // العقد جزء من طلب القيد (كما في FIFA Connect): يُعتمد معه
+      const [ct] = await db.select().from(contracts).where(eq(contracts.registrationId, id));
+      if (!override && needsContract(p.professionalLevel) && r.type !== "LOAN" && ct?.status !== "SUBMITTED" && ct?.status !== "ACTIVE" && !(await runningContract(r.playerId, r.clubId)))
+        throw new UserError("عقد اللاعب غير مرفق بالطلب — أعد الطلب للنادي لإرفاق العقد، أو فعّل تجاوز الشروط");
       const fee = await feeAmount(`REG_${r.type}`, p.professionalLevel !== "AMATEUR");
       let number = "";
       await db.transaction(async (tx) => {
         number = await approveRegistration(tx, id, u.fullName, override ? `[بتجاوز الشروط] ${reason ?? ""}`.trim() : reason);
+        if (ct?.status === "SUBMITTED") {
+          const k = await approveInTx(tx, ct.id, u.fullName);
+          await logEvent(tx, id, u.fullName, "اعتماد عقد اللاعب", `عقد رقم ${k.number}${k.fee ? " — رسوم 3% على النادي" : ""}`);
+        }
         await addCharge(tx, { clubId: r.clubId, category: "REG_FEE", description: `رسوم ${p.fullName} — ${number}`, amount: fee, refType: "registration", refId: id, createdBy: u.fullName });
         await notifyClub(r.clubId, "تم اعتماد قيد لاعب", `${p.fullName} — رقم القيد ${number}`, `/club/registrations/${id}`, tx);
         if (r.fromClubId) await notifyClub(r.fromClubId, "اعتُمد انتقال/إعارة أحد لاعبيكم", p.fullName, "/club/origin", tx);
@@ -89,6 +98,10 @@ export async function decide(f: FormData) {
     await db.transaction(async (tx) => {
       await tx.update(registrations).set({ status, decisionReason: reason, decidedAt: new Date(), decidedBy: u.fullName, updatedAt: new Date() }).where(eq(registrations.id, id));
       await logEvent(tx, id, u.fullName, status === "REJECTED" ? "رفض الطلب" : "إعادة للنادي للاستكمال", reason);
+      await tx.update(contracts).set(status === "REJECTED"
+        ? { status: "TERMINATED", terminatedAt: new Date(), terminationReason: "رُفض طلب القيد", updatedAt: new Date() }
+        : { status: "RETURNED", returnNote: reason, updatedAt: new Date() })
+        .where(and(eq(contracts.registrationId, id), eq(contracts.status, "SUBMITTED")));
       await notifyClub(r.clubId, status === "REJECTED" ? "رُفض طلب قيد" : "طلب قيد يحتاج استكمال", `${p.fullName}: ${reason}`, `/club/registrations/${id}`, tx);
       await audit(u, status === "REJECTED" ? "رفض طلب" : "إعادة طلب", "Registration", id, reason, tx);
     });

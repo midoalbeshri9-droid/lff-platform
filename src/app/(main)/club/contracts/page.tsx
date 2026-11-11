@@ -21,7 +21,7 @@ export default async function ClubContracts() {
   // لاعبو الموسم الحالي (غير الهواة) بلا عقد
   const need = season ? await db.select({ regId: registrations.id, name: players.fullName, level: players.professionalLevel, status: registrations.status }).from(registrations)
     .innerJoin(players, eq(players.id, registrations.playerId)).leftJoin(contracts, eq(contracts.registrationId, registrations.id))
-    .where(and(eq(registrations.clubId, u.clubId), eq(registrations.seasonId, season.id), inArray(registrations.status, ["APPROVED", "DRAFT", "NEEDS_CORRECTION", "SUBMITTED"]), isNull(contracts.id)))
+    .where(and(eq(registrations.clubId, u.clubId), eq(registrations.seasonId, season.id), inArray(registrations.status, ["APPROVED", "DRAFT", "NEEDS_CORRECTION"]), isNull(contracts.id)))
     .orderBy(players.fullName) : [];
   const can = u.can("club.edit");
   return (
@@ -50,7 +50,7 @@ export default async function ClubContracts() {
                 <td><Link className="btn btn-sm btn-light" href={`/club/contracts/${c.id}`}>{["DRAFT", "RETURNED"].includes(c.status) ? "تحرير" : "عرض"}</Link></td></tr>))}</tbody></table>
         )}
       </div>
-          <p className="muted" style={{ fontSize: ".85rem", marginTop: 8 }}>تظهر هنا كل لاعبي النادي في قيد الموسم الحالي ممن ليس لهم عقد. العقد إلزامي للمحترف والهاوي تحت العقد.</p>
+          <p className="muted" style={{ fontSize: ".85rem", marginTop: 8 }}>لطلب قيد جديد أو تجديد أو انتقال: العقد يُرسل مع الطلب ويُعتمد معه. للاعب مقيّد معتمد يتغيّر مستواه إلى محترف أو تحت العقد: يُرسل العقد وحده للاعتماد.</p>
         </div>
       )}
     </>

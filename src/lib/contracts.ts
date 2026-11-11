@@ -1,6 +1,6 @@
 import "server-only";
-import { and, eq, lt, sql } from "drizzle-orm";
-import { db } from "@/db";
+import { and, eq, gte, lt, sql } from "drizzle-orm";
+import { db, type Tx } from "@/db";
 import { contracts, counters, players, clubs, registrations, type ContractDoc } from "@/db/schema";
 import { addCharge } from "./finance";
 import { dinarsWords, tafqeet } from "./tafqeet";
@@ -58,28 +58,37 @@ export function missingForSubmit(c: typeof contracts.$inferSelect): string[] {
   return m;
 }
 
-/** اعتماد العقد: رقم العقد + مطالبة 3% على النادي + ربطه بالقيد */
+/** اعتماد العقد داخل معاملة: رقم العقد + مطالبة 3% على النادي + ربطه بالقيد */
+export async function approveInTx(tx: Tx, contractId: number, by: string) {
+  const [c] = await tx.select().from(contracts).where(eq(contracts.id, contractId));
+  if (!c || c.status !== "SUBMITTED") throw new UserError("العقد ليس بانتظار الاعتماد");
+  const year = new Date().getFullYear();
+  const [row] = await tx.insert(counters).values({ key: `contract:${year}`, value: 1 })
+    .onConflictDoUpdate({ target: counters.key, set: { value: sql`${counters.value} + 1` } }).returning();
+  const number = `${String(row.value).padStart(4, "0")}/${year}`;
+  let feeChargeId: number | null = null;
+  if (c.currency === "LYD" && Number(c.totalValue) > 0) {
+    const [p] = await tx.select({ name: players.fullName }).from(players).where(eq(players.id, c.playerId));
+    feeChargeId = await addCharge(tx, {
+      clubId: c.clubId, category: "CONTRACT_FEE", amount: (Math.round(Number(c.totalValue) * FEE_RATE * 100) / 100).toFixed(2),
+      description: `رسوم اعتماد عقد محترف رقم ${number} — ${p.name} (3% من ${Number(c.totalValue).toLocaleString("en")} د.ل)`,
+      refType: "contract", refId: c.id, createdBy: by,
+    });
+  }
+  await tx.update(contracts).set({ status: "ACTIVE", number, feeChargeId, reviewedAt: new Date(), reviewedBy: by, returnNote: null, updatedAt: new Date() }).where(eq(contracts.id, c.id));
+  await tx.update(registrations).set({ contractStart: c.startDate, contractEnd: c.endDate, updatedAt: new Date() }).where(eq(registrations.id, c.registrationId));
+  return { number, fee: !!feeChargeId, currency: c.currency };
+}
+
+/** اعتماد عقد مستقل (لاعب قيده معتمد مسبقًا وتغيّر مستواه إلى عقد) */
 export async function approve(contractId: number, by: string) {
-  return db.transaction(async (tx) => {
-    const [c] = await tx.select().from(contracts).where(eq(contracts.id, contractId));
-    if (!c || c.status !== "SUBMITTED") throw new UserError("العقد ليس بانتظار الاعتماد");
-    const year = new Date().getFullYear();
-    const [row] = await tx.insert(counters).values({ key: `contract:${year}`, value: 1 })
-      .onConflictDoUpdate({ target: counters.key, set: { value: sql`${counters.value} + 1` } }).returning();
-    const number = `${String(row.value).padStart(4, "0")}/${year}`;
-    let feeChargeId: number | null = null;
-    if (c.currency === "LYD" && Number(c.totalValue) > 0) {
-      const [p] = await tx.select({ name: players.fullName }).from(players).where(eq(players.id, c.playerId));
-      feeChargeId = await addCharge(tx, {
-        clubId: c.clubId, category: "CONTRACT_FEE", amount: (Math.round(Number(c.totalValue) * FEE_RATE * 100) / 100).toFixed(2),
-        description: `رسوم اعتماد عقد محترف رقم ${number} — ${p.name} (3% من ${Number(c.totalValue).toLocaleString("en")} د.ل)`,
-        refType: "contract", refId: c.id, createdBy: by,
-      });
-    }
-    await tx.update(contracts).set({ status: "ACTIVE", number, feeChargeId, reviewedAt: new Date(), reviewedBy: by, returnNote: null, updatedAt: new Date() }).where(eq(contracts.id, c.id));
-    await tx.update(registrations).set({ contractStart: c.startDate, contractEnd: c.endDate, updatedAt: new Date() }).where(eq(registrations.id, c.registrationId));
-    return { number, fee: !!feeChargeId, currency: c.currency };
-  });
+  return db.transaction((tx) => approveInTx(tx, contractId, by));
+}
+
+/** عقد ساري معتمد للاعب مع النادي (عقد متعدد المواسم يغطي طلب التجديد) */
+export async function runningContract(playerId: number, clubId: number) {
+  const [c] = await db.select().from(contracts).where(and(eq(contracts.playerId, playerId), eq(contracts.clubId, clubId), eq(contracts.status, "ACTIVE"), gte(contracts.endDate, today())));
+  return c ?? null;
 }
 
 /** العقود المعتمدة التي انتهت مدتها تصبح «منتهية» */

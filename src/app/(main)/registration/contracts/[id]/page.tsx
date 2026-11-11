@@ -20,7 +20,7 @@ export default async function RegContract({ params, searchParams }: { params: Pr
   const u = await requireUser("reg.contracts");
   const { id } = await params;
   const sp = await searchParams;
-  const [row] = await db.select({ c: contracts, name: players.fullName, club: clubs.name, regNo: registrations.number }).from(contracts)
+  const [row] = await db.select({ c: contracts, name: players.fullName, club: clubs.name, regNo: registrations.number, regStatus: registrations.status }).from(contracts)
     .innerJoin(players, eq(players.id, contracts.playerId)).innerJoin(clubs, eq(clubs.id, contracts.clubId))
     .innerJoin(registrations, eq(registrations.id, contracts.registrationId)).where(eq(contracts.id, Number(id)));
   if (!row) notFound();
@@ -55,7 +55,10 @@ export default async function RegContract({ params, searchParams }: { params: Pr
         {c.reviewedAt && <p className="muted">اعتمده: {c.reviewedBy} — {fmtDateTime(c.reviewedAt)}</p>}
         {c.terminatedAt && <p className="danger-text">أُنهي {fmtDateTime(c.terminatedAt)}: {c.terminationReason}</p>}
       </div>
-      {c.status === "SUBMITTED" && u.can("reg.review") && (
+      {c.status === "SUBMITTED" && row.regStatus !== "APPROVED" && (
+        <div className="alert info">هذا العقد مرفق بطلب قيد ويُعتمد تلقائيًا عند اعتماد الطلب. <Link href={`/registration/requests/${c.registrationId}`}>فتح طلب القيد ←</Link></div>
+      )}
+      {c.status === "SUBMITTED" && row.regStatus === "APPROVED" && u.can("reg.review") && (
         <div className="grid g2">
           <form action={approveContract} className="card">
             <input type="hidden" name="id" value={c.id} />

@@ -12,6 +12,7 @@ import { updateDraft, uploadDocument, deleteDocument, submitRequest, cancelReque
 import { ContractBrief } from "@/components/EContract";
 import { createContract } from "../../contracts/actions";
 import { needsContract } from "@/lib/registration";
+import { missingForSubmit, runningContract } from "@/lib/contracts";
 
 export default async function ClubReg({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const u = await requireClubUser("club.view");
@@ -24,6 +25,8 @@ export default async function ClubReg({ params, searchParams }: { params: Promis
   const limited = !(p.createdByClubId === u.clubId && !(await lastApproved(p.id)));
   const missing = docMissing(x);
   const win = await openWindow(r.seasonId, u.clubId);
+  const running = !x.contract || x.contract.status === "TERMINATED" ? await runningContract(p.id, u.clubId) : null;
+  const cMiss = running ? [] : x.contract ? missingForSubmit(x.contract) : ["العقد لم يُكتب بعد"];
 
   return (
     <>
@@ -35,10 +38,12 @@ export default async function ClubReg({ params, searchParams }: { params: Promis
 
           {(needsContract(p.professionalLevel) || x.contract) && (
             <div className="card" id="contract">
-              <div className="card-head"><h2>العقد</h2>{!(x.contract && ["SUBMITTED", "ACTIVE"].includes(x.contract.status)) && editable && r.type !== "LOAN" && <span className="b b-red">مطلوب قبل الإرسال</span>}</div>
-              <ContractBrief c={x.contract} href={x.contract ? `/club/contracts/${x.contract.id}` : "#"} showMoney
-                createSlot={u.can("club.edit") && <form action={createContract}><input type="hidden" name="regId" value={r.id} /><Submit className="btn btn-gold">📄 كتابة العقد إلكترونيًا</Submit></form>} />
-              <p className="muted" style={{ fontSize: ".82rem" }}>العقد يُكتب على نموذج الاتحاد الموحد، يُطبع ويوقّع، ثم تُرفع نسخته الموقّعة ويُرسل للجنة أوضاع اللاعبين.</p>
+              <div className="card-head"><h2>العقد</h2>{editable && r.type !== "LOAN" && needsContract(p.professionalLevel) && (cMiss.length ? <span className="b b-red">مطلوب قبل الإرسال</span> : <span className="b b-green">مكتمل ✓</span>)}</div>
+              {running && <div className="alert ok">يغطي هذا الطلب عقدٌ ساري معتمد رقم {running.number} حتى {running.endDate} — <a href={`/club/contracts/${running.id}`}>عرضه</a></div>}
+              {!running && <ContractBrief c={x.contract} href={x.contract ? `/club/contracts/${x.contract.id}` : "#"} showMoney
+                createSlot={u.can("club.edit") && <form action={createContract}><input type="hidden" name="regId" value={r.id} /><Submit className="btn btn-gold">📄 كتابة العقد إلكترونيًا</Submit></form>} />}
+              {editable && x.contract && cMiss.length > 0 && <p className="danger-text" style={{ fontSize: ".85rem" }}>ناقص في العقد: {cMiss.join("، ")}</p>}
+              <p className="muted" style={{ fontSize: ".82rem" }}>العقد جزء من هذا الطلب (كما في FIFA Connect): يُكتب على نموذج الاتحاد، يُطبع ويوقّع، وتُرفع نسخته الموقّعة — ثم يُرسل مع الطلب ويُعتمد معه.</p>
             </div>
           )}
 

@@ -12,6 +12,7 @@ import {
   assertForeignQuota, needsContract, photoDuplicates,
 } from "@/lib/registration";
 import { clubBlockReason } from "@/lib/finance";
+import { missingForSubmit, runningContract } from "@/lib/contracts";
 import { saveLineup } from "@/lib/lineup";
 import { saveUpload, deleteObject, ALLOWED_IMG } from "@/lib/storage";
 import { attempt, str, req, int, bool, UserError, back, reqEmail, reqPhone, num } from "@/lib/util";
@@ -221,14 +222,21 @@ export async function submitRequest(f: FormData) {
     if (miss.length) throw new UserError("مستندات إلزامية ناقصة: " + miss.map((m) => m.name).join("، "));
     const [p] = await db.select().from(players).where(eq(players.id, r.playerId));
     if (!p.photoKey) throw new UserError("صورة اللاعب الشخصية مطلوبة");
+    let contractId = 0;
     if (needsContract(p.professionalLevel) && r.type !== "LOAN") {
-      const [c] = await db.select().from(contracts).where(eq(contracts.registrationId, id));
-      if (!c) throw new UserError("عقد اللاعب مطلوب للمحترف أو الهاوي تحت العقد — اكتبه من قسم «العقد» ثم أرسله للاعتماد");
-      if (!["SUBMITTED", "ACTIVE"].includes(c.status)) throw new UserError("أرسل عقد اللاعب (مع نسخته الموقّعة) إلى لجنة أوضاع اللاعبين أولًا، ثم أرسل طلب القيد");
+      const [c0] = await db.select().from(contracts).where(eq(contracts.registrationId, id));
+      const c = c0 && c0.status !== "TERMINATED" ? c0 : await runningContract(r.playerId, u.clubId); // التجديد يغطيه عقد ساري متعدد المواسم
+      if (!c) throw new UserError("عقد اللاعب مطلوب للمحترف أو الهاوي تحت العقد — اكتبه من قسم «العقد» في الطلب");
+      if (c.status !== "ACTIVE") {
+        const miss = missingForSubmit(c);
+        if (miss.length) throw new UserError("عقد اللاعب غير مكتمل: " + miss.join("، "));
+        contractId = c.id;
+      }
     }
     await assertForeignQuota(id);
     await db.transaction(async (tx) => {
       await tx.update(registrations).set({ status: "SUBMITTED", submittedAt: new Date(), submittedBy: u.fullName, updatedAt: new Date() }).where(eq(registrations.id, id));
+      if (contractId) await tx.update(contracts).set({ status: "SUBMITTED", submittedAt: new Date(), updatedAt: new Date() }).where(eq(contracts.id, contractId));
       await logEvent(tx, id, u.fullName, r.status === "NEEDS_CORRECTION" ? "إعادة إرسال بعد الاستكمال" : "إرسال إلى لجنة القيد", w.label);
       await notifyStaff([...REG_ROLES], `طلب قيد جديد — ${u.clubName}`, p.fullName, `/registration/requests/${id}`, { clubId: u.clubId }, tx);
       if (r.originResponse === "PENDING" && r.fromClubId)
@@ -246,6 +254,7 @@ export async function cancelRequest(f: FormData) {
     const r = await ownReg(id, u.clubId);
     if (!["DRAFT", "NEEDS_CORRECTION", "SUBMITTED"].includes(r.status)) throw new UserError("لا يمكن إلغاء هذا الطلب");
     await db.update(registrations).set({ status: "CANCELLED", updatedAt: new Date() }).where(eq(registrations.id, id));
+    await db.update(contracts).set({ status: "TERMINATED", terminatedAt: new Date(), terminationReason: "أُلغي طلب القيد", updatedAt: new Date() }).where(and(eq(contracts.registrationId, id), inArray(contracts.status, ["DRAFT", "RETURNED"])));
     await logEvent(db, id, u.fullName, "إلغاء الطلب من النادي");
     await audit(u, "إلغاء طلب", "Registration", id);
     return "تم إلغاء الطلب";
