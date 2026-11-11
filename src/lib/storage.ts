@@ -2,7 +2,7 @@ import "server-only";
 import { promises as fs } from "fs";
 import path from "path";
 import crypto from "crypto";
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { UserError } from "./util";
 
 // التخزين: محلي أثناء التطوير، وCloudflare R2 (متوافق S3) عند النشر
@@ -90,3 +90,27 @@ export function mimeOf(key: string) {
 
 /** رابط عرض ملف عبر المنظومة (مع فحص الصلاحية) */
 export const fileUrl = (key: string | null | undefined) => (key ? `/api/files/${key}` : null);
+
+/** كل الملفات المخزنة (للنسخ الاحتياطي) */
+export async function listObjects(): Promise<{ key: string; size: number }[]> {
+  if (driver !== "s3") {
+    const out: { key: string; size: number }[] = [];
+    const walk = async (d: string) => {
+      for (const e of await fs.readdir(d, { withFileTypes: true }).catch(() => [])) {
+        const f = path.join(d, e.name);
+        if (e.isDirectory()) await walk(f);
+        else out.push({ key: path.relative(localDir, f).split(path.sep).join("/"), size: (await fs.stat(f)).size });
+      }
+    };
+    await walk(localDir);
+    return out;
+  }
+  const out: { key: string; size: number }[] = [];
+  let token: string | undefined;
+  do {
+    const r = await client().send(new ListObjectsV2Command({ Bucket: bucket(), ContinuationToken: token }));
+    for (const o of r.Contents ?? []) if (o.Key) out.push({ key: o.Key, size: o.Size ?? 0 });
+    token = r.IsTruncated ? r.NextContinuationToken : undefined;
+  } while (token);
+  return out;
+}
