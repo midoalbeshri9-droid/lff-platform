@@ -13,7 +13,7 @@ import { PageHead, Flash, Badge, Field, type SP } from "@/components/ui";
 import { Submit } from "@/components/Client";
 import { RegSummary, Timeline, DocStatusBadge, docMissing } from "@/components/RegParts";
 import { reviewDoc, approveAllDocs, decide, updateRegistrationMeta, endRegistration } from "../../actions";
-import { ContractView } from "@/components/Contract";
+import { ContractBrief } from "@/components/EContract";
 
 export default async function Review({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
   const u = await requireUser("reg.view");
@@ -44,7 +44,7 @@ export default async function Review({ params, searchParams }: { params: Promise
         <div>
           <RegSummary x={x} />
           {(x.contract || p.professionalLevel !== "AMATEUR") && (
-            <div className="card"><h2>العقد</h2><ContractView c={x.contract} showMoney={u.can("reg.contracts")} /></div>
+            <div className="card"><h2>العقد</h2><ContractBrief c={x.contract} href={x.contract ? `/registration/contracts/${x.contract.id}` : "#"} showMoney={u.can("reg.contracts")} /></div>
           )}
           <div className="card">
             <div className="card-head">

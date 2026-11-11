@@ -651,7 +651,15 @@ export const outbox = pgTable("outbox", {
 });
 
 // العقود
-export const contractStatusEnum = pgEnum("contract_status", ["ACTIVE", "TERMINATED", "EXPIRED"]);
+export const contractStatusEnum = pgEnum("contract_status", ["ACTIVE", "TERMINATED", "EXPIRED", "DRAFT", "SUBMITTED", "RETURNED"]);
+/** بيانات عقد اللاعب المحترف الإلكتروني (نموذج الاتحاد الموحد) — ما لا يُحسب أو يُفرز عليه */
+export type ContractDoc = {
+  signDate: string; signCity: string; signCountry: string;
+  club: { address: string; phone: string; email: string; repName: string; repTitle: string };
+  player: { nameEn: string; nationality: string; birthPlace: string; birthDate: string; idType: string; idNumber: string; idIssuePlace: string; idIssueDate: string; idExpiry: string; address: string; phone: string; email: string };
+  agent: { name: string; nationality: string; passportNo: string; passportPlace: string; passportIssue: string; passportExpiry: string; licenseNo: string; licenseIssuer: string; licenseExpiry: string } | null;
+  duration: string; termType: "SEASON" | "DATE"; endSeason: string;
+};
 export const contracts = pgTable("contracts", {
   id: serial("id").primaryKey(),
   registrationId: integer("registration_id").notNull().unique().references(() => registrations.id, { onDelete: "cascade" }),
@@ -670,7 +678,18 @@ export const contracts = pgTable("contracts", {
   releaseClause: numeric("release_clause", { precision: 14, scale: 2 }),
   renewalOption: text("renewal_option"),
   notes: text("notes"),
-  status: contractStatusEnum("status").notNull().default("ACTIVE"),
+  status: contractStatusEnum("status").notNull().default("DRAFT"),
+  // العقد الإلكتروني: DRAFT/RETURNED يحرره النادي ← SUBMITTED بعد رفع النسخة الموقعة ← ACTIVE باعتماد لجنة أوضاع اللاعبين
+  number: text("number"),
+  doc: jsonb("doc").$type<ContractDoc>(),
+  housingAmount: numeric("housing_amount", { precision: 12, scale: 2 }),
+  transportAmount: numeric("transport_amount", { precision: 12, scale: 2 }),
+  signedFileKey: text("signed_file_key"),
+  submittedAt: ts("submitted_at"),
+  reviewedAt: ts("reviewed_at"),
+  reviewedBy: text("reviewed_by"),
+  returnNote: text("return_note"),
+  feeChargeId: integer("fee_charge_id"),
   terminatedAt: ts("terminated_at"),
   terminationReason: text("termination_reason"),
   createdAt: ts("created_at").notNull().defaultNow(),

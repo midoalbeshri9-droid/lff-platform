@@ -8,8 +8,9 @@ import { PageHead, Flash, Field, type SP } from "@/components/ui";
 import { Submit } from "@/components/Client";
 import { PlayerFields } from "@/components/PlayerForm";
 import { RegSummary, Timeline, DocStatusBadge, docMissing } from "@/components/RegParts";
-import { updateDraft, uploadDocument, deleteDocument, submitRequest, cancelRequest, saveContract } from "../../actions";
-import { ContractForm, ContractView } from "@/components/Contract";
+import { updateDraft, uploadDocument, deleteDocument, submitRequest, cancelRequest } from "../../actions";
+import { ContractBrief } from "@/components/EContract";
+import { createContract } from "../../contracts/actions";
 import { needsContract } from "@/lib/registration";
 
 export default async function ClubReg({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
@@ -34,8 +35,10 @@ export default async function ClubReg({ params, searchParams }: { params: Promis
 
           {(needsContract(p.professionalLevel) || x.contract) && (
             <div className="card" id="contract">
-              <div className="card-head"><h2>العقد</h2>{!x.contract && editable && <span className="b b-red">مطلوب</span>}</div>
-              {editable ? <ContractForm c={x.contract} regId={r.id} action={saveContract} /> : <ContractView c={x.contract} showMoney />}
+              <div className="card-head"><h2>العقد</h2>{!(x.contract && ["SUBMITTED", "ACTIVE"].includes(x.contract.status)) && editable && r.type !== "LOAN" && <span className="b b-red">مطلوب قبل الإرسال</span>}</div>
+              <ContractBrief c={x.contract} href={x.contract ? `/club/contracts/${x.contract.id}` : "#"} showMoney
+                createSlot={u.can("club.edit") && <form action={createContract}><input type="hidden" name="regId" value={r.id} /><Submit className="btn btn-gold">📄 كتابة العقد إلكترونيًا</Submit></form>} />
+              <p className="muted" style={{ fontSize: ".82rem" }}>العقد يُكتب على نموذج الاتحاد الموحد، يُطبع ويوقّع، ثم تُرفع نسخته الموقّعة ويُرسل للجنة أوضاع اللاعبين.</p>
             </div>
           )}
 

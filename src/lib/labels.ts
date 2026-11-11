@@ -201,7 +201,7 @@ export const STAFF_ROLE: Record<string, string> = {
 };
 export const CHARGE_CATEGORY: Record<string, string> = {
   FINE: "غرامة", REG_FEE: "رسوم قيد", CARD_FEE: "رسوم بطاقة", ENTRY_FEE: "رسوم اشتراك مسابقة", STAFF_FEE: "رسوم قيد إداري",
-  REFEREE_FEE: "مستحقات تحكيم", OTHER: "أخرى",
+  REFEREE_FEE: "مستحقات تحكيم", CONTRACT_FEE: "رسوم اعتماد عقد (3%)", OTHER: "أخرى",
 };
 export const CHARGE_STATUS: Record<string, [string, string]> = {
   OPEN: ["غير مدفوع", "b-red"], PARTIAL: ["مدفوع جزئيًا", "b-amber"], PAID: ["مدفوع", "b-green"], WAIVED: ["معفى", "b-blue"], CANCELLED: ["ملغى", "b-gray"],
@@ -231,3 +231,8 @@ export const CONFIDENTIALITY: Record<string, [string, string]> = { GENERAL: ["ع
 
 /** أسباب بطاقات الإنذار والطرد (قائمة مقترحة — يمكن كتابة سبب آخر) */
 export const CARD_REASONS = ["مخالفة قانون اللعبة", "خشونة في اللعب", "سلوك غير رياضي", "اعتراض على قرارات الحكم", "إضاعة الوقت", "عدم احترام المسافة", "الدخول أو الخروج دون إذن الحكم", "التحايل", "اللعب العنيف", "منع فرصة تسجيل هدف محققة", "الإساءة اللفظية", "البصق", "الاعتداء"];
+
+export const CONTRACT_STATUS: Record<string, [string, string]> = {
+  DRAFT: ["مسودة", "b-gray"], RETURNED: ["معاد للاستكمال", "b-amber"], SUBMITTED: ["بانتظار الاعتماد", "b-blue"],
+  ACTIVE: ["معتمد وساري", "b-green"], TERMINATED: ["مفسوخ / منتهٍ بانتقال", "b-gray"], EXPIRED: ["منتهي المدة", "b-gray"],
+};

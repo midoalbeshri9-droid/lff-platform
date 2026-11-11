@@ -42,6 +42,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ key: st
     }
   }
   else if (!u.isClub && !u.isOfficial && key.startsWith("meetings/")) allowed = u.can("sec.view"); // محاضر الاجتماعات للأمانة العامة
+  else if (!u.isClub && !u.isOfficial && /^docs\/\d+\/contracts\//.test(key)) allowed = u.can("reg.contracts"); // العقود الموقّعة فيها القيم المالية
   else if (!u.isClub && !u.isOfficial) allowed = u.canAny("reg.view", "comp.view", "cards.print", "ref.view", "sec.view", "fin.view");
   else if (u.isClub) {
     if (key.startsWith("correspondence/") || key.startsWith("decisions/")) {

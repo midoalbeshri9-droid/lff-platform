@@ -223,7 +223,8 @@ export async function submitRequest(f: FormData) {
     if (!p.photoKey) throw new UserError("صورة اللاعب الشخصية مطلوبة");
     if (needsContract(p.professionalLevel) && r.type !== "LOAN") {
       const [c] = await db.select().from(contracts).where(eq(contracts.registrationId, id));
-      if (!c) throw new UserError("بيانات العقد مطلوبة للاعب المحترف أو الهاوي تحت العقد — أدخلها في قسم «العقد»");
+      if (!c) throw new UserError("عقد اللاعب مطلوب للمحترف أو الهاوي تحت العقد — اكتبه من قسم «العقد» ثم أرسله للاعتماد");
+      if (!["SUBMITTED", "ACTIVE"].includes(c.status)) throw new UserError("أرسل عقد اللاعب (مع نسخته الموقّعة) إلى لجنة أوضاع اللاعبين أولًا، ثم أرسل طلب القيد");
     }
     await assertForeignQuota(id);
     await db.transaction(async (tx) => {
@@ -235,32 +236,6 @@ export async function submitRequest(f: FormData) {
       await audit(u, "إرسال طلب", "Registration", id, null, tx);
     });
     return "تم إرسال الطلب إلى لجنة القيد";
-  });
-}
-
-/** بيانات عقد اللاعب (للمحترف وتحت العقد) */
-export async function saveContract(f: FormData) {
-  const u = await requireClubUser("club.edit");
-  const id = int(f, "id")!;
-  await attempt(`/club/registrations/${id}#contract`, async () => {
-    const r = await ownReg(id, u.clubId);
-    if (!editable(r.status)) throw new UserError("لا يمكن تعديل العقد بعد إرسال الطلب");
-    const startDate = req(f, "startDate", "بداية العقد"), endDate = req(f, "endDate", "نهاية العقد");
-    if (endDate <= startDate) throw new UserError("نهاية العقد يجب أن تكون بعد بدايته");
-    const data = {
-      registrationId: id, playerId: r.playerId, clubId: u.clubId, startDate, endDate, currency: str(f, "currency") ?? "LYD",
-      totalValue: num(f, "totalValue"), monthlySalary: num(f, "monthlySalary"), signingBonus: num(f, "signingBonus"),
-      bonuses: str(f, "bonuses"), housing: bool(f, "housing"), transport: bool(f, "transport"), otherBenefits: str(f, "otherBenefits"),
-      releaseClause: num(f, "releaseClause"), renewalOption: str(f, "renewalOption"), notes: str(f, "contractNotes"), updatedAt: new Date(),
-    };
-    if (!data.totalValue && !data.monthlySalary) throw new UserError("أدخل قيمة العقد الإجمالية أو الراتب الشهري");
-    await db.transaction(async (tx) => {
-      await tx.insert(contracts).values(data).onConflictDoUpdate({ target: contracts.registrationId, set: data });
-      await tx.update(registrations).set({ contractStart: startDate, contractEnd: endDate, updatedAt: new Date() }).where(eq(registrations.id, id));
-      await logEvent(tx, id, u.fullName, "حفظ بيانات العقد", `${startDate} ← ${endDate}`);
-    });
-    await audit(u, "حفظ عقد لاعب", "Registration", id);
-    return "تم حفظ بيانات العقد";
   });
 }
 

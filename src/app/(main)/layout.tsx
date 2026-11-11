@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { and, eq, sql, lt, notInArray, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { notifications, registrations, matches, assignments, staff, appeals, matchRequests, users, decisions } from "@/db/schema";
+import { notifications, registrations, matches, assignments, staff, appeals, matchRequests, users, decisions, contracts } from "@/db/schema";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth";
 import { scopeOf, regIn, clubIn, compIn } from "@/lib/scope";
 import { ROLE_LABEL, ROLE_COMMITTEE } from "@/lib/labels";
@@ -26,6 +26,7 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
       { label: "الرئيسية", href: "/club" },
       { label: "لاعبو النادي", href: "/club/players" },
       { label: "الطلبات", href: "/club/requests", badge: corr },
+      { label: "عقود المحترفين", href: "/club/contracts" },
       ...(u.can("club.origin") ? [{ label: "طلبات انتقال لاعبينا", href: "/club/origin", badge: origin }] : []),
       { label: "الجهاز الفني", href: "/club/staff" },
       { label: "المباريات والقوائم", href: "/club/matches" },
@@ -56,6 +57,7 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
         { label: "🧑‍💼 الإداريون والجهاز الفني", href: "/registration/staff", badge: await count(db.select({ n }).from(staff).where(and(clubIn(sc, staff.clubId), eq(staff.status, "SUBMITTED")))) },
         { label: "👤 سجل اللاعبين", href: "/registration/players" },
         { label: "⇄ الانتقالات والإعارات", href: "/registration/transfers" },
+        ...(u.can("reg.contracts") ? [{ label: "📄 عقود المحترفين", href: "/registration/contracts", badge: await count(db.select({ n }).from(contracts).where(and(clubIn(sc, contracts.clubId), eq(contracts.status, "SUBMITTED")))) }] : []),
         ...(u.can("reg.suspend") || u.can("reg.view") ? [{ label: "⛔ الإيقافات", href: "/registration/suspensions" }] : []),
         "sep",
         ...(u.can("reg.lists") ? [{ label: "📋 قوائم الفرق", href: "/registration/lists" }] : []),

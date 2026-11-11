@@ -501,3 +501,11 @@ table.t:has(> thead):not(.no-num) > tfoot > tr::before { content: ""; display: t
 .perf-row { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: .9rem; }
 .perf-row:last-child { border-bottom: 0; }
 .warn-text { color: #b45309; }
+
+/* العقد الإلكتروني */
+.kv { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px dashed var(--line, #e5e7eb); font-size: .9rem; }
+.kv > span { flex: 0 0 40%; }
+.kv > strong { font-weight: 600; text-align: start; flex: 1; }
+.ltr { direction: ltr; text-align: left; }
+.form-sec { border: 1px solid var(--line, #e5e7eb); border-radius: 10px; padding: 12px 14px; margin: 0 0 14px; }
+.form-sec > legend { font-weight: 700; padding: 0 6px; color: var(--primary, #0b5d3b); }
