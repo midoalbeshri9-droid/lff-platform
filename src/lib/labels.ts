@@ -120,7 +120,9 @@ export const REFEREE_TYPE_INPUT: Record<string, string> = { REFEREE: "حكم س�
 /** الأنواع المعروضة عند الإضافة (المراقب نوع واحد) */
 export const OFFICIAL_TYPE_INPUT: Record<string, string> = { REFEREE: "حكم ساحة", ASSISTANT: "حكم مساعد", VAR: "حكم فيديو", COMMISSIONER: "مراقب مباراة" };
 export const OFFICIAL_GRADE: Record<string, string> = {
-  INTERNATIONAL: "دولي",
+  INTERNATIONAL: "دولي (FIFA)",
+  ELITE: "نخبة (Elite)",
+  NSL: "الدوري الممتاز (NSL)",
   FIRST: "درجة أولى",
   SECOND: "درجة ثانية",
   THIRD: "درجة ثالثة",
@@ -209,7 +211,11 @@ export const STAFF_GROUP: Record<"COACH" | "OFFICIAL", { label: string; roles: s
 export const staffGroup = (role: string): "COACH" | "OFFICIAL" => (STAFF_GROUP.COACH.roles.includes(role) ? "COACH" : "OFFICIAL");
 /** أدوار تتطلب رخصة تدريبية */
 export const LICENSED_ROLES = ["COACH", "ASSISTANT_COACH", "GK_COACH", "FITNESS_COACH"];
-export const COACH_LICENSE = ["CAF Pro", "CAF A", "CAF B", "CAF C", "CAF D", "رخصة مدرب حراس مرمى", "رخصة لياقة بدنية", "رخصة وطنية", "أخرى"];
+// كأنواع الشهادات في FIFA Connect (Certification Types)
+export const COACH_LICENSE = ["CAF Pro", "CAF A", "CAF B", "CAF C", "CAF D (وطنية)", "الرخصة التدريبية الأساسية", "UEFA Pro", "UEFA A", "UEFA B", "UEFA C",
+  "CAF حراس مرمى", "رخصة حراس مرمى أساسية", "كرة الشاطئ", "الكرة القاعدية (Grassroots)", "رخصة لياقة بدنية", "أخرى"];
+/** الرخص التي تؤهل لتدريب الفريق الأول */
+export const TOP_LICENSES = ["CAF Pro", "CAF A", "UEFA Pro", "UEFA A"];
 export const COACH_LEVEL: Record<string, string> = { AMATEUR: "هاوٍ", PROFESSIONAL: "محترف" };
 export const CHARGE_CATEGORY: Record<string, string> = {
   FINE: "غرامة", REG_FEE: "رسوم قيد", CARD_FEE: "رسوم بطاقة", ENTRY_FEE: "رسوم اشتراك مسابقة", STAFF_FEE: "رسوم قيد مدرب / جهاز فني",

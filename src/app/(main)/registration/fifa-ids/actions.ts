@@ -16,9 +16,9 @@ export type Report = { at: string; target: Target; file: string; applied: boolea
 async function entities(target: Target): Promise<Entity[]> {
   const nd = (n: string | null | undefined, dob: string | null | undefined) => (n && dob ? [`nd:${normName(n)}|${dob}`] : []);
   if (target === "players") {
-    const rows = await db.select({ id: players.id, n: players.fullName, en: players.fullNameEn, nid: players.nationalId, pass: players.passportNo, dob: players.dateOfBirth, f: players.fifaId }).from(players);
+    const rows = await db.select({ id: players.id, n: players.fullName, en: players.fullNameEn, nid: players.nationalId, pass: players.passportNo, card: players.cardNo, dob: players.dateOfBirth, f: players.fifaId }).from(players);
     return rows.map((p) => ({ ids: [p.id], label: p.n, fifaId: p.f, keys: [
-      ...(p.nid ? [`nid:${p.nid.trim()}`] : []), ...(p.pass ? [`pass:${p.pass.trim().toUpperCase()}`] : []), ...nd(p.n, p.dob), ...nd(p.en, p.dob)] }));
+      ...(p.card ? [`ma:${p.card.trim().toUpperCase()}`] : []), ...(p.nid ? [`nid:${p.nid.trim()}`] : []), ...(p.pass ? [`pass:${p.pass.trim().toUpperCase()}`] : []), ...nd(p.n, p.dob), ...nd(p.en, p.dob)] }));
   }
   if (target === "staff") {
     const rows = await db.select({ id: staff.id, n: staff.fullName, nid: staff.nationalId, dob: staff.dateOfBirth, f: staff.fifaId }).from(staff);
@@ -87,6 +87,8 @@ export async function importFifaIds(f: FormData) {
       const dob = cellDate(cell(row, cols.dob));
       const nid = String(cell(row, cols.nid) ?? "").trim(), pass = String(cell(row, cols.pass) ?? "").trim().toUpperCase();
       const keys: string[] = [];
+      const ma = String(cell(row, cols.ma) ?? "").trim().toUpperCase();
+      if (ma) keys.push(`ma:${ma}`); // MA ID Number في FIFA Connect = رقم البطاقة في المنظومة
       if (nid) keys.push(`nid:${nid}`);
       if (pass) keys.push(`pass:${pass}`);
       if (nm && dob) keys.push(`nd:${normName(nm)}|${dob}`);

@@ -2,7 +2,7 @@ import "server-only";
 import { and, desc, eq, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { documentTypes, staff, staffDocuments, players } from "@/db/schema";
-import { staffGroup, LICENSED_ROLES } from "./labels";
+import { staffGroup, LICENSED_ROLES, TOP_LICENSES } from "./labels";
 import { today } from "./util";
 
 type S = typeof staff.$inferSelect;
@@ -43,7 +43,7 @@ export async function staffMissing(s: S) {
 export function staffWarnings(s: S) {
   const w: string[] = [];
   if (s.licenseUntil && s.licenseUntil < today()) w.push(`الرخصة التدريبية منتهية منذ ${s.licenseUntil}`);
-  if (s.role === "COACH" && s.licenseLevel && !["CAF Pro", "CAF A"].includes(s.licenseLevel)) w.push(`المدرب الأول برخصة ${s.licenseLevel} — أقل من CAF A`);
+  if (s.role === "COACH" && s.licenseLevel && !TOP_LICENSES.includes(s.licenseLevel)) w.push(`المدرب الأول برخصة ${s.licenseLevel} — أقل من CAF A / UEFA A`);
   if (LICENSED_ROLES.includes(s.role) && !s.licenseLevel) w.push("لا توجد رخصة تدريبية");
   return w;
 }

@@ -26,7 +26,7 @@ export function cellDate(v: unknown): string | null {
   return null;
 }
 
-export type Cols = { fifa: number; nid: number; pass: number; name: number; first: number; last: number; dob: number; club: number };
+export type Cols = { fifa: number; ma: number; nid: number; pass: number; name: number; first: number; last: number; dob: number; club: number };
 
 /** التعرف على الأعمدة من عناوينها (FIFA Connect يصدّر بالإنجليزية، وقد تكون عربية) */
 export function detectCols(headers: string[]): Cols {
@@ -34,6 +34,7 @@ export function detectCols(headers: string[]): Cols {
   const find = (...res: RegExp[]) => h.findIndex((x) => res.some((r) => r.test(x)));
   return {
     fifa: find(/fifa.?id/, /connect.?id/, /رقم.*فيفا/, /^id fifa/),
+    ma: find(/^ma.?id/, /ma id number/, /رقم البطاقة/, /card.?no/),
     nid: find(/national.?id/, /الرقم الوطني/, /national.?number/, /identification/, /personal.?id/),
     pass: find(/passport/, /جواز/),
     name: find(/^full.?name/, /^name$/, /^الاسم/, /person.?name/),

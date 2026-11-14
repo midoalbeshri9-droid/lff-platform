@@ -39,7 +39,7 @@ export default async function FifaIds({ searchParams }: { searchParams: SP }) {
         <h3>استيراد من ملف FIFA Connect</h3>
         <ol className="muted" style={{ fontSize: ".88rem", lineHeight: 1.9, marginTop: 0 }}>
           <li>من منصة FIFA Connect صدّر قائمة الأشخاص (أو الأندية) إلى Excel أو CSV.</li>
-          <li>يجب أن يحتوي الملف عمود «FIFA ID»، ومعه الرقم الوطني أو رقم الجواز، أو الاسم مع تاريخ الميلاد.</li>
+          <li>يجب أن يحتوي الملف عمود «FIFA ID»، ومعه «MA ID Number» (رقم البطاقة) أو الرقم الوطني أو الاسم مع تاريخ الميلاد.</li>
           <li>اضغط «فحص» أولًا لترى التقرير دون أي تعديل، ثم «حفظ الأرقام».</li>
         </ol>
         <div className="form f3">

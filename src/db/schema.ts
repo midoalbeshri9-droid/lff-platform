@@ -453,7 +453,7 @@ export const matchEvents = pgTable("match_events", {
 
 // ======================= الحكام والمراقبون =======================
 export const officialTypeEnum = pgEnum("official_type", ["REFEREE", "ASSISTANT", "VAR", "REF_OBSERVER", "COMMISSIONER"]);
-export const officialGradeEnum = pgEnum("official_grade", ["INTERNATIONAL", "FIRST", "SECOND", "THIRD", "TRAINEE"]);
+export const officialGradeEnum = pgEnum("official_grade", ["INTERNATIONAL", "FIRST", "SECOND", "THIRD", "TRAINEE", "ELITE", "NSL"]); // كدرجات FIFA Connect: FIFA / Elite / NSL / 1st / 2nd / 3rd
 export const fitnessEnum = pgEnum("fitness", ["NOT_TESTED", "PASSED", "FAILED"]);
 export const officialStatusEnum = pgEnum("official_status", ["ACTIVE", "SUSPENDED", "INJURED", "RETIRED"]);
 

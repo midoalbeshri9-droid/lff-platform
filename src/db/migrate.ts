@@ -144,6 +144,16 @@ export async function migrate() {
     await db.insert(s.settings).values({ key: "mig_staff_docs", value: new Date().toISOString() }).onConflictDoNothing();
     console.log("✓ مستندات المدربين والإداريين");
   }
+  // 19) مستندات قيد اللاعب كما في FIFA Connect: التقرير الطبي وشهادة الانتقال الدولية (اختيارية — تضبطها اللجنة)
+  const [st19] = await db.select().from(s.settings).where(eq(s.settings.key, "mig_fifa_player_docs"));
+  if (!st19) {
+    await db.insert(s.documentTypes).values([
+      { name: "التقرير الطبي", requiredFor: [], sortOrder: 20, scope: "PLAYER" },
+      { name: "شهادة الانتقال الدولية (ITC)", requiredFor: [], onlyForeign: true, sortOrder: 21, scope: "PLAYER" },
+    ]).onConflictDoNothing();
+    await db.insert(s.settings).values({ key: "mig_fifa_player_docs", value: new Date().toISOString() }).onConflictDoNothing();
+    console.log("✓ مستندات FIFA للاعبين");
+  }
   console.log("✓ اكتمل ترحيل البيانات");
 }
 

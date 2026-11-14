@@ -45,7 +45,7 @@ export default async function PlayerFile({ params, searchParams }: { params: Pro
   const back = `/registration/players/${id}`;
   return (
     <>
-      <PageHead title={p.fullName} sub={<>{p.fifaId && <>FIFA ID <span className="kbd">{p.fifaId}</span> — </>}{p.cardNo && <>رقم البطاقة <span className="kbd">{p.cardNo}</span> — </>}الرقم الوطني <span className="kbd">{p.nationalId ?? "—"}</span> — مواليد {fmtDate(p.dateOfBirth)}</>} crumbs={[["سجل اللاعبين", "/registration/players"], [p.fullName]]}
+      <PageHead title={p.fullName} sub={<>{p.fifaId && <>FIFA ID <span className="kbd">{p.fifaId}</span> — </>}{p.cardNo && <>رقم البطاقة (MA ID) <span className="kbd">{p.cardNo}</span> — </>}الرقم الوطني <span className="kbd">{p.nationalId ?? "—"}</span> — مواليد {fmtDate(p.dateOfBirth)}</>} crumbs={[["سجل اللاعبين", "/registration/players"], [p.fullName]]}
         actions={u.can("archive.view") ? <Link className="btn btn-light" href={`/archive?player=${p.id}`}>🗄 وثائق اللاعب في الأرشيف</Link> : undefined} />
       <Flash sp={sp} />
       <div className="grid g-side">
