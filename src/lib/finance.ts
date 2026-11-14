@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, inArray, sql, isNull, or, gte } from "drizzle-orm";
 import { db, type Tx } from "@/db";
-import { charges, feeTypes, counters, refereeRates, assignments, officials, settings, sanctions, matches, clubs } from "@/db/schema";
+import { charges, feeTypes, counters, refereeRates, assignments, officials, settings, sanctions, matches, clubs, walletTx } from "@/db/schema";
 import { today, UserError } from "./util";
 
 type Q = Tx | typeof db;
@@ -106,4 +106,10 @@ export async function refereeFeesForMatch(q: Q, matchId: number, by: string) {
 
 export function assertPositive(v: number, msg = "المبلغ يجب أن يكون أكبر من صفر") {
   if (!(v > 0)) throw new UserError(msg);
+}
+
+/** رصيد محفظة النادي */
+export async function walletBalance(clubId: number, q: Q = db) {
+  const [r] = await q.select({ b: sql<string>`coalesce(sum(${walletTx.amount}), 0)::text` }).from(walletTx).where(eq(walletTx.clubId, clubId));
+  return Number(r?.b ?? 0);
 }

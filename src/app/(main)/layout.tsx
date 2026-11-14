@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { and, eq, sql, lt, notInArray, inArray, gte, desc } from "drizzle-orm";
 import { db } from "@/db";
-import { notifications, registrations, matches, assignments, staff, appeals, matchRequests, users, decisions, contracts, waOutbox } from "@/db/schema";
+import { notifications, registrations, matches, assignments, staff, appeals, matchRequests, users, decisions, contracts, waOutbox, officialExpenses } from "@/db/schema";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth";
 import { scopeOf, regIn, clubIn, compIn } from "@/lib/scope";
 import { ROLE_LABEL, ROLE_COMMITTEE } from "@/lib/labels";
@@ -65,6 +65,7 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
         ...(u.can("reg.lists") ? [{ label: "📋 قوائم الفرق", href: "/registration/lists" }] : []),
         ...(u.can("reg.edit") ? [{ label: "🌐 أرقام FIFA ID", href: "/registration/fifa-ids" }] : []),
         ...(u.can("reg.edit") ? [{ label: "🔀 السجلات المكررة", href: "/registration/duplicates" }] : []),
+        { label: "🏷 تصنيف الأندية للتدريب", href: "/registration/club-categories" },
         ...(u.can("cards.print") ? [{ label: "🪪 طباعة البطاقات", href: "/registration/cards" }] : []),
         ...(u.can("cards.design") ? [{ label: "🎨 تصميم البطاقات", href: "/registration/cards/templates" }] : []),
         ...(u.can("reg.windows") ? ["sep" as const, { label: u.divisionId ? "📅 فترات القيد للدرجة" : "📅 المواسم وفترات القيد", href: "/registration/settings" }] : []),
@@ -103,6 +104,7 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
         { label: "🟨 الحكام", href: "/referees" },
         { label: "📋 تعيين الطواقم", href: "/referees/assignments", badge: drafts },
         ...(u.can("ref.evals") ? [{ label: "★ تقييمات الحكام", href: "/referees/evaluations" }] : []),
+        { label: "💼 مصاريف الحكام", href: "/referees/expenses", badge: await count(db.select({ n }).from(officialExpenses).where(eq(officialExpenses.status, "SUBMITTED"))) },
       ],
     });
   }

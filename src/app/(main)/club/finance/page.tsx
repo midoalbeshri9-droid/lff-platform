@@ -1,11 +1,11 @@
 import { and, eq, desc } from "drizzle-orm";
 import { db } from "@/db";
-import { charges, payments } from "@/db/schema";
+import { charges, payments, walletTx } from "@/db/schema";
 import { requireClubUser } from "@/lib/auth";
-import { clubBalance, clubBlockReason } from "@/lib/finance";
+import { clubBalance, clubBlockReason, walletBalance } from "@/lib/finance";
 import { money } from "@/lib/util";
 import { PageHead, Kpi } from "@/components/ui";
-import { ChargesTable, PaymentsTable } from "@/components/Finance";
+import { ChargesTable, PaymentsTable, WalletTable } from "@/components/Finance";
 
 export default async function ClubFinance() {
   const u = await requireClubUser("club.finance");
@@ -14,6 +14,7 @@ export default async function ClubFinance() {
     db.select().from(charges).where(and(eq(charges.clubId, u.clubId), eq(charges.direction, "IN"))).orderBy(desc(charges.id)),
     db.select().from(payments).where(and(eq(payments.clubId, u.clubId), eq(payments.isVoided, false))).orderBy(desc(payments.id)),
   ]);
+  const [wb, wtx] = await Promise.all([walletBalance(u.clubId), db.select().from(walletTx).where(eq(walletTx.clubId, u.clubId)).orderBy(desc(walletTx.id)).limit(50)]);
   return (
     <>
       <PageHead title="الحساب المالي" sub="الرسوم والغرامات المستحقة على النادي وإيصالات السداد — السداد لدى اللجنة المالية بالاتحاد" />
@@ -24,7 +25,8 @@ export default async function ClubFinance() {
         <Kpi v={money(bal.outstanding)} l="المتبقي" color="red" />
         <Kpi v={money(bal.overdue)} l="متأخر السداد" color="gold" />
       </div>
-      <div className="card mt"><h3>المستحقات</h3><ChargesTable rows={ch} /></div>
+      <div className="card mt"><h3>المستحقات</h3><ChargesTable rows={ch} wallet={{ mode: "club", clubId: u.clubId, balance: wb }} /></div>
+      <div className="card"><h3>💳 محفظة النادي — الرصيد: {money(wb)}</h3><p className="muted" style={{ fontSize: ".85rem", marginTop: 0 }}>لشحن المحفظة ادفع نقدًا لدى اللجنة المالية بالاتحاد، ثم سدّد منها مستحقاتك بضغطة «من المحفظة».</p><WalletTable rows={wtx} /></div>
       <div className="card"><h3>إيصالات السداد</h3><PaymentsTable rows={pays} /></div>
     </>
   );

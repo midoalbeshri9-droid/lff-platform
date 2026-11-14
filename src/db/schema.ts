@@ -318,6 +318,8 @@ export const compStatusEnum = pgEnum("competition_status", ["DRAFT", "ACTIVE", "
 
 export const competitions = pgTable("competitions", {
   id: serial("id").primaryKey(),
+  sponsorHeaderKey: text("sponsor_header_key"), // شعار الراعي أعلى تقرير المباراة
+  sponsorFooterKey: text("sponsor_footer_key"), // وأسفله
   divisionId: integer("division_id").references(() => divisions.id, { onDelete: "set null" }), // null = مسابقة اتحادية (الكأس مثلًا)
   seasonId: integer("season_id").notNull().references(() => seasons.id),
   name: text("name").notNull(),
@@ -1157,6 +1159,49 @@ export const passportRecords = pgTable("passport_records", {
   isLoan: boolean("is_loan").notNull().default(false),
   startDate: d("start_date").notNull(),
   endDate: d("end_date").notNull(),
+  notes: text("notes"),
+  createdBy: text("created_by").notNull(),
+  createdAt: ts("created_at").notNull().defaultNow(),
+});
+
+// محفظة النادي (Club Wallet) كما في FIFA Connect: يشحنها الاتحاد بالنقد، ويُدفع منها للمستحقات
+export const walletTx = pgTable("wallet_tx", {
+  id: serial("id").primaryKey(),
+  clubId: integer("club_id").notNull().references(() => clubs.id),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(), // موجب = شحن، سالب = دفع
+  kind: text("kind").notNull(), // TOPUP | PAYMENT | REFUND
+  chargeId: integer("charge_id").references(() => charges.id),
+  receiptNo: text("receipt_no"),
+  method: text("method"),
+  reference: text("reference"),
+  notes: text("notes"),
+  createdBy: text("created_by").notNull(),
+  createdAt: ts("created_at").notNull().defaultNow(),
+});
+
+// مصاريف الحكام والمراقبين للمباراة: يقدّمها الحكم من بوابته ويعتمدها مدير الحكام فتصبح مستحقًا ماليًا
+export const officialExpenses = pgTable("official_expenses", {
+  id: serial("id").primaryKey(),
+  officialId: integer("official_id").notNull().references(() => officials.id),
+  matchId: integer("match_id").notNull().references(() => matches.id),
+  kind: text("kind").notNull(), // TRAVEL | ACCOMMODATION | MEALS | OTHER
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  description: text("description"),
+  attachmentKey: text("attachment_key"),
+  status: text("status").notNull().default("SUBMITTED"), // SUBMITTED | APPROVED | REJECTED
+  reviewNote: text("review_note"),
+  reviewedBy: text("reviewed_by"),
+  reviewedAt: ts("reviewed_at"),
+  chargeId: integer("charge_id").references(() => charges.id),
+  createdAt: ts("created_at").notNull().defaultNow(),
+});
+
+// تصنيف الأندية لحساب تعويضات التدريب (Club Training Category) — سجل تاريخي
+export const clubCategories = pgTable("club_categories", {
+  id: serial("id").primaryKey(),
+  clubId: integer("club_id").notNull().references(() => clubs.id, { onDelete: "cascade" }),
+  category: text("category").notNull(), // 1 | 2 | 3 | 4 | NA
+  validFrom: d("valid_from").notNull(),
   notes: text("notes"),
   createdBy: text("created_by").notNull(),
   createdAt: ts("created_at").notNull().defaultNow(),

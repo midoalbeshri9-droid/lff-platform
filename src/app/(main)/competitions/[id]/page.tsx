@@ -23,7 +23,7 @@ import { createDecision } from "../decisions/actions";
 import { fmtDate } from "@/lib/util";
 import { appUrl } from "@/lib/tokens";
 import {
-  saveCompetition, setCompetitionStatus, setCompetitionPublic, addTeams, removeTeam, makeFixtures, clearFixtures, saveMatch, bulkSchedule,
+  saveCompetition, setCompetitionStatus, setCompetitionPublic, saveSponsors, addTeams, removeTeam, makeFixtures, clearFixtures, saveMatch, bulkSchedule,
   addStage, saveStage, deleteStage, stageAddTeams, stageRemoveTeam, stageDraw, stageRegionGroups, stageSaveGroups, stageQualify, stageNextRound, stageManualPairs, deleteCompetition,
 } from "../actions";
 
@@ -63,6 +63,18 @@ export default async function Competition({ params, searchParams }: { params: Pr
           </form>
         )}</>} />
       <Flash sp={sp} />
+      <p className="no-print" style={{ margin: "0 0 .5rem" }}><a className="btn btn-light btn-sm" href={`/api/export/fcms-fixtures?competition=${id}`}>⬇ تصدير المباريات لـ FIFA FCMS (CSV)</a></p>
+      {manage && (
+        <details className="box card">
+          <summary>🏷 شعارات الرعاة على ورقة المباراة {c.sponsorHeaderKey || c.sponsorFooterKey ? "✓" : ""}</summary>
+          <form action={saveSponsors} className="form f3 mt">
+            <input type="hidden" name="id" value={id} />
+            <Field label="أعلى الورقة (نسبة 2:1، 300×150 على الأقل)"><input type="file" name="header" accept="image/*" />{c.sponsorHeaderKey && <label className="check"><input type="checkbox" name="clear_header" /> إزالة الحالي</label>}</Field>
+            <Field label="أسفل الورقة"><input type="file" name="footer" accept="image/*" />{c.sponsorFooterKey && <label className="check"><input type="checkbox" name="clear_footer" /> إزالة الحالي</label>}</Field>
+            <div className="full"><Submit className="btn btn-light">حفظ</Submit></div>
+          </form>
+        </details>
+      )}
       {c.isPublic && manage && (
         <details className="box card">
           <summary>🧩 نوافذ للتضمين في موقع الاتحاد (Widgets)</summary>

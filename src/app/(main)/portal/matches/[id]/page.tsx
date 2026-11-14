@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, eq, asc, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { assignments, matches, clubs, competitions, matchSquads, matchEvents, players, officials, evaluations, matchReportForms, reportFiles } from "@/db/schema";
+import { assignments, matches, clubs, competitions, matchSquads, matchEvents, players, officials, evaluations, matchReportForms, reportFiles, officialExpenses } from "@/db/schema";
+import { submitExpense, deleteExpense } from "../../expense-actions";
+import { EXPENSE_KIND, EXPENSE_STATUS } from "@/lib/labels";
 import { getTemplate } from "@/lib/reports";
 import { fileUrl } from "@/lib/storage";
 import { ReportFields } from "@/components/ReportFields";
@@ -30,11 +32,26 @@ export default async function PortalMatch({ params, searchParams }: { params: Pr
   const crew = await db.select({ a: assignments, name: officials.fullName }).from(assignments).innerJoin(officials, eq(officials.id, assignments.officialId))
     .where(and(eq(assignments.matchId, id), eq(assignments.status, "APPROVED")));
   const roles = mine.map((x) => x.role);
+  const myExp = await db.select().from(officialExpenses).where(and(eq(officialExpenses.matchId, id), eq(officialExpenses.officialId, u.officialId)));
   return (
     <>
       <PageHead title={`${name(m.homeClubId)} × ${name(m.awayClubId)}`} sub={`${c.name} — ج${m.round} — ${fmtDateTime(m.kickoff)} — ${m.venue ?? ""}`}
         crumbs={[["مبارياتي", "/portal"], ["المباراة"]]} actions={<Link className="btn btn-light" href={`/print/match/${id}`} target="_blank">🖨 ورقة المباراة</Link>} />
       <Flash sp={sp} />
+      <details className="box card">
+        <summary>💼 مصاريف المباراة ({myExp.length})</summary>
+        {myExp.length > 0 && <table className="t no-num mt"><thead><tr><th>النوع</th><th>البيان</th><th className="num">المبلغ</th><th>الحالة</th><th></th></tr></thead>
+          <tbody>{myExp.map((e) => <tr key={e.id}><td>{EXPENSE_KIND[e.kind]}</td><td>{e.description ?? "—"}{e.reviewNote && <div className="muted" style={{ fontSize: ".78rem" }}>{e.reviewNote}</div>}</td><td className="num">{e.amount}</td><td><Badge v={EXPENSE_STATUS[e.status]} /></td>
+            <td>{e.status === "SUBMITTED" && <form action={deleteExpense}><input type="hidden" name="matchId" value={id} /><input type="hidden" name="id" value={e.id} /><Submit className="btn btn-sm btn-ghost" confirm="حذف؟">حذف</Submit></form>}</td></tr>)}</tbody></table>}
+        <form action={submitExpense} className="form f3 mt">
+          <input type="hidden" name="matchId" value={id} />
+          <Field label="النوع"><select name="kind" required><Options map={EXPENSE_KIND} /></select></Field>
+          <Field label="المبلغ (د.ل)"><input type="number" step="0.01" min="0.01" name="amount" required /></Field>
+          <Field label="إيصال / فاتورة (اختياري)"><input type="file" name="file" accept="application/pdf,image/*" /></Field>
+          <Field label="البيان" full><input name="description" placeholder="مثال: تذكرة طيران طرابلس — بنغازي" /></Field>
+          <div className="full"><Submit>إرسال للاعتماد</Submit></div>
+        </form>
+      </details>
       <div className="card">
         <strong>صفتك: </strong>{roles.map((r) => <span key={r} className="b b-indigo" style={{ marginInlineEnd: 6 }}>{ASSIGN_ROLE[r]}</span>)}
         <div className="tag-list mt">{crew.map((x) => <span key={x.a.id} className="b b-gray">{ASSIGN_ROLE[x.a.role]}: {x.name}</span>)}</div>

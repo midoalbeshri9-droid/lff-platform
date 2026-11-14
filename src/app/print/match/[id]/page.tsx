@@ -1,3 +1,4 @@
+import { fileUrl } from "@/lib/storage";
 import { notFound, redirect } from "next/navigation";
 import { eq, asc } from "drizzle-orm";
 import { db } from "@/db";
@@ -31,6 +32,7 @@ export default async function MatchSheet({ params }: { params: Promise<{ id: str
     <div className="print-root">
       <div className="print-toolbar no-print"><PrintButton /></div>
       <div className="sheet">
+        {c.sponsorHeaderKey && <div style={{ textAlign: "center", marginBottom: 6 }}><img src={fileUrl(c.sponsorHeaderKey)!} alt="" style={{ maxHeight: 60, maxWidth: "100%" }} /></div>}
         <Letterhead sub="لجنة المسابقات" subEn="Competitions Committee" />
         <h1 className="doc-title">ورقة المباراة — {c.name}</h1>
         <div className="meta-line"><span>الجولة {m.round}</span><span>{fmtDateTime(m.kickoff)}</span><span>{m.venue}</span></div>
@@ -52,6 +54,7 @@ export default async function MatchSheet({ params }: { params: Promise<{ id: str
           <tr key={x.e.id}><td>{x.e.minute}</td><td>{EVENT_TYPE[x.e.type]}</td><td className="l">{x.name}</td><td>{x.e.clubId === cl[0].id ? cl[0].name : cl[1].name}</td></tr>
         ))}</tbody></table>
         <div className="signatures"><div className="sig">حكم المباراة</div><div className="sig">مراقب المباراة</div></div>
+        {c.sponsorFooterKey && <div style={{ textAlign: "center", marginTop: 10 }}><img src={fileUrl(c.sponsorFooterKey)!} alt="" style={{ maxHeight: 50, maxWidth: "100%" }} /></div>}
       </div>
     </div>
   );

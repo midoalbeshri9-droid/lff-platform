@@ -229,6 +229,8 @@ export const CHARGE_STATUS: Record<string, [string, string]> = {
   OPEN: ["غير مدفوع", "b-red"], PARTIAL: ["مدفوع جزئيًا", "b-amber"], PAID: ["مدفوع", "b-green"], WAIVED: ["معفى", "b-blue"], CANCELLED: ["ملغى", "b-gray"],
 };
 export const PAY_METHOD: Record<string, string> = { CASH: "نقدًا", CHEQUE: "صك", TRANSFER: "تحويل مصرفي" };
+/** طرق الدفع كما تظهر في الإيصالات (تشمل الدفع من محفظة النادي) */
+export const PAY_METHOD_ALL: Record<string, string> = { ...PAY_METHOD, WALLET: "من محفظة النادي" };
 export const FEE_CODES: Record<string, string> = {
   REG_NEW: "قيد جديد", REG_RENEWAL: "تجديد قيد", REG_TRANSFER: "انتقال نهائي", REG_LOAN: "إعارة", REG_LOAN_RETURN: "عودة من إعارة",
   CARD_REPLACEMENT: "بطاقة بديلة", STAFF_REG: "قيد مدرب / جهاز فني",
@@ -258,3 +260,6 @@ export const CONTRACT_STATUS: Record<string, [string, string]> = {
   DRAFT: ["مسودة", "b-gray"], RETURNED: ["معاد للاستكمال", "b-amber"], SUBMITTED: ["بانتظار الاعتماد", "b-blue"],
   ACTIVE: ["معتمد وساري", "b-green"], TERMINATED: ["مفسوخ / منتهٍ بانتقال", "b-gray"], EXPIRED: ["منتهي المدة", "b-gray"],
 };
+export const EXPENSE_KIND: Record<string, string> = { TRAVEL: "تنقل", ACCOMMODATION: "إقامة", MEALS: "إعاشة", OTHER: "أخرى" };
+export const EXPENSE_STATUS: Record<string, [string, string]> = { SUBMITTED: ["بانتظار الاعتماد", "b-amber"], APPROVED: ["معتمد", "b-green"], REJECTED: ["مرفوض", "b-red"] };
+export const CLUB_CATEGORY: Record<string, string> = { "1": "الفئة 1", "2": "الفئة 2", "3": "الفئة 3", "4": "الفئة 4", NA: "غير منطبق (لا يسجّل لاعبين نظاميين)" };

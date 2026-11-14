@@ -58,6 +58,26 @@ export async function setCompetitionPublic(f: FormData) {
   });
 }
 
+/** شعارات الرعاة على تقرير المباراة (أعلى/أسفل) — كما في FCMS */
+export async function saveSponsors(f: FormData) {
+  const u = await requireUser("comp.manage");
+  const id = int(f, "id")!;
+  await attempt(`/competitions/${id}`, async () => {
+    guard(await inScopeComp(u, id));
+    const { saveUpload, ALLOWED_IMG } = await import("@/lib/storage");
+    const set: { sponsorHeaderKey?: string | null; sponsorFooterKey?: string | null } = {};
+    for (const [field, key] of [["header", "sponsorHeaderKey"], ["footer", "sponsorFooterKey"]] as const) {
+      const file = f.get(field) as File | null;
+      if (file && file.size) set[key] = (await saveUpload(file, "sponsors", ALLOWED_IMG, 5 * 1024 * 1024)).key;
+      if (f.get(`clear_${field}`) === "on") set[key] = null;
+    }
+    if (!Object.keys(set).length) throw new UserError("اختر شعارًا لرفعه");
+    await db.update(competitions).set(set).where(eq(competitions.id, id));
+    await audit(u, "تعديل شعارات الرعاة", "Competition", id);
+    return "حُفظت شعارات الرعاة — تظهر في ورقة المباراة المطبوعة";
+  });
+}
+
 export async function setCompetitionStatus(f: FormData) {
   const u = await requireUser("comp.manage");
   const id = int(f, "id")!;
