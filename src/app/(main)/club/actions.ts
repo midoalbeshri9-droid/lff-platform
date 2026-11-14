@@ -3,7 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import {
-  players, registrations, registrationDocuments, documentTypes, matches, users, seasons, contracts, staff, matchRequests, staffRoleEnum,
+  players, registrations, registrationDocuments, documentTypes, matches, users, seasons, contracts, staff, matchRequests,
 } from "@/db/schema";
 import { requireClubUser } from "@/lib/auth";
 import { audit, notifyRoles, notifyClub, notifyStaff } from "@/lib/audit";
@@ -327,62 +327,6 @@ export async function toggleClubUser(f: FormData) {
   });
 }
 
-
-// ---------------- الإداريون والجهاز الفني ----------------
-const staffRole = (r: string) => {
-  if (!(staffRoleEnum.enumValues as readonly string[]).includes(r)) throw new UserError("الصفة غير صحيحة");
-  return r as (typeof staffRoleEnum.enumValues)[number];
-};
-export async function saveStaff(f: FormData) {
-  const u = await requireClubUser("club.edit");
-  await attempt("/club/staff", async () => {
-    const season = await getCurrentSeason();
-    if (!season) throw new UserError("لا يوجد موسم حالي");
-    const id = int(f, "id");
-    const data = {
-      clubId: u.clubId, seasonId: season.id, fullName: req(f, "fullName", "الاسم"), role: staffRole(req(f, "role", "الصفة")),
-      nationalId: str(f, "nationalId"), nationality: str(f, "nationality") ?? "ليبي", dateOfBirth: str(f, "dateOfBirth"),
-      phone: str(f, "phone"), licenseNo: str(f, "licenseNo"), licenseLevel: str(f, "licenseLevel"),
-    };
-    const photo = f.get("photo") as File | null, doc = f.get("document") as File | null;
-    const photoKey = photo && photo.size ? (await saveUpload(photo, "photos", ALLOWED_IMG)).key : undefined;
-    const documentKey = doc && doc.size ? (await saveUpload(doc, `docs/${u.clubId}`)).key : undefined;
-    if (id) {
-      const [ex] = await db.select().from(staff).where(and(eq(staff.id, id), eq(staff.clubId, u.clubId)));
-      if (!ex || !["DRAFT", "NEEDS_CORRECTION"].includes(ex.status)) throw new UserError("لا يمكن التعديل بعد الإرسال");
-      await db.update(staff).set({ ...data, ...(photoKey ? { photoKey } : {}), ...(documentKey ? { documentKey } : {}) }).where(eq(staff.id, id));
-    } else await db.insert(staff).values({ ...data, photoKey, documentKey });
-    await audit(u, id ? "تعديل إداري" : "إضافة إداري", "Staff", id, data.fullName);
-    return "تم الحفظ — أرسله للجنة القيد للاعتماد";
-  });
-}
-
-export async function submitStaff(f: FormData) {
-  const u = await requireClubUser("club.submit");
-  await attempt("/club/staff", async () => {
-    const id = int(f, "id")!;
-    const [ex] = await db.select().from(staff).where(and(eq(staff.id, id), eq(staff.clubId, u.clubId)));
-    if (!ex || !["DRAFT", "NEEDS_CORRECTION"].includes(ex.status)) throw new UserError("غير متاح للإرسال");
-    if (!ex.photoKey) throw new UserError("الصورة الشخصية مطلوبة");
-    const block = await clubBlockReason(u.clubId);
-    if (block) throw new UserError(block);
-    await db.update(staff).set({ status: "SUBMITTED", submittedAt: new Date() }).where(eq(staff.id, id));
-    await notifyStaff([...REG_ROLES], `طلب قيد إداري — ${u.clubName}`, ex.fullName, "/registration/staff", { clubId: u.clubId });
-    await audit(u, "إرسال قيد إداري", "Staff", id);
-    return "أُرسل للجنة القيد";
-  });
-}
-
-export async function deleteStaff(f: FormData) {
-  const u = await requireClubUser("club.edit");
-  await attempt("/club/staff", async () => {
-    const id = int(f, "id")!;
-    const [ex] = await db.select().from(staff).where(and(eq(staff.id, id), eq(staff.clubId, u.clubId)));
-    if (!ex || ex.status !== "DRAFT") throw new UserError("يمكن حذف المسودات فقط");
-    await db.delete(staff).where(eq(staff.id, id));
-    return "تم الحذف";
-  });
-}
 
 /** استيراد لاعبين جدد من ملف Excel — كل صف يصبح لاعبًا وطلب قيد جديد (مسودة) */
 export async function importPlayers(f: FormData) {

@@ -56,7 +56,7 @@ export function isMinor(dob: string) {
 
 /** المستندات الإلزامية لطلب معيّن */
 export async function requiredDocTypes(type: RegType, p: { professionalLevel: string; dateOfBirth: string; isForeign: boolean }) {
-  const all = await db.select().from(documentTypes).where(eq(documentTypes.isActive, true)).orderBy(documentTypes.sortOrder);
+  const all = await db.select().from(documentTypes).where(and(eq(documentTypes.isActive, true), eq(documentTypes.scope, "PLAYER"))).orderBy(documentTypes.sortOrder);
   return all.filter((d) => {
     if (!d.requiredFor.includes(type)) return false;
     if (d.onlyProfessional && p.professionalLevel === "AMATEUR") return false;

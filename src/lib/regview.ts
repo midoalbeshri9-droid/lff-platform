@@ -1,5 +1,5 @@
 import "server-only";
-import { eq, desc, asc } from "drizzle-orm";
+import { and, eq, desc, asc } from "drizzle-orm";
 import { db } from "@/db";
 import { registrations, registrationDocuments, registrationEvents, documentTypes, clubs, seasons, players, ageCategories, cardPrints, contracts } from "@/db/schema";
 import { alias } from "drizzle-orm/pg-core";
@@ -23,7 +23,7 @@ export async function loadRegistration(id: number) {
       .where(eq(registrationDocuments.registrationId, id)).orderBy(asc(documentTypes.sortOrder), desc(registrationDocuments.id)),
     db.select().from(registrationEvents).where(eq(registrationEvents.registrationId, id)).orderBy(desc(registrationEvents.at)),
     requiredDocTypes(row.r.type, row.p),
-    db.select().from(documentTypes).where(eq(documentTypes.isActive, true)).orderBy(documentTypes.sortOrder),
+    db.select().from(documentTypes).where(and(eq(documentTypes.isActive, true), eq(documentTypes.scope, "PLAYER"))).orderBy(documentTypes.sortOrder),
     activeSuspensions(row.p.id),
     db.select().from(cardPrints).where(eq(cardPrints.registrationId, id)).orderBy(desc(cardPrints.printedAt)),
     db.select().from(contracts).where(eq(contracts.registrationId, id)),

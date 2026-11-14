@@ -36,7 +36,7 @@ export default async function PlayerFile({ params, searchParams }: { params: Pro
     .innerJoin(registrations, eq(registrations.id, registrationDocuments.registrationId)).innerJoin(documentTypes, eq(documentTypes.id, registrationDocuments.documentTypeId))
     .innerJoin(seasons, eq(seasons.id, registrations.seasonId)).innerJoin(clubs, eq(clubs.id, registrations.clubId))
     .where(eq(registrations.playerId, id)).orderBy(desc(registrationDocuments.uploadedAt));
-  const types = await db.select({ id: documentTypes.id, name: documentTypes.name }).from(documentTypes).where(eq(documentTypes.isActive, true)).orderBy(asc(documentTypes.sortOrder), asc(documentTypes.name));
+  const types = await db.select({ id: documentTypes.id, name: documentTypes.name }).from(documentTypes).where(and(eq(documentTypes.isActive, true), eq(documentTypes.scope, "PLAYER"))).orderBy(asc(documentTypes.sortOrder), asc(documentTypes.name));
   const DOC_ST: Record<string, [string, string]> = { PENDING: ["قيد المراجعة", "amber"], APPROVED: ["مقبول", "green"], REJECTED: ["مرفوض", "red"] };
   const kb = (n: number) => n > 1048576 ? `${(n / 1048576).toFixed(1)} م.ب` : `${Math.max(1, Math.round(n / 1024))} ك.ب`;
   const t = today();

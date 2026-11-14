@@ -1,17 +1,19 @@
 "use server";
+import { STAFF_ROLE, LICENSED_ROLES } from "@/lib/labels";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import {
   registrations, registrationDocuments, players, suspensions, seasons, registrationWindows, ageCategories, documentTypes,
-  listTemplates, cardTemplates, cardPrints, settings, staff, contracts, type CardElement,
+  listTemplates, cardTemplates, cardPrints, settings, staff, contracts, staffDocuments, type CardElement,
 } from "@/db/schema";
 import { guard, scopeOf, inScopeReg, inScopePlayer, inScopeComp, inScopeStaff } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { audit, notifyClub } from "@/lib/audit";
 import { approveRegistration, logEvent, missingDocs, categoryFor, assertForeignQuota, needsContract } from "@/lib/registration";
 import { approveInTx, runningContract } from "@/lib/contracts";
+import { staffRequiredDocs } from "@/lib/staffreg";
 import { addCharge, feeAmount } from "@/lib/finance";
 import { saveUpload, ALLOWED_IMG, ALLOWED_DOC } from "@/lib/storage";
 import { attempt, str, req, int, bool, UserError } from "@/lib/util";
@@ -393,6 +395,7 @@ export async function saveDocType(f: FormData) {
     const data = {
       name: req(f, "name", "الاسم"), requiredFor: f.getAll("requiredFor").map(String), onlyProfessional: bool(f, "onlyProfessional"),
       onlyMinor: bool(f, "onlyMinor"), onlyForeign: bool(f, "onlyForeign"), sortOrder: int(f, "sortOrder") ?? 0, isActive: bool(f, "isActive"),
+      scope: f.get("scope") === "STAFF" ? "STAFF" : "PLAYER",
     };
     if (id) await db.update(documentTypes).set(data).where(eq(documentTypes.id, id));
     else await db.insert(documentTypes).values(data);
@@ -506,8 +509,8 @@ export async function recordPrints(regIds: number[], templateId: number | null, 
 // ======================= الإداريون والجهاز الفني =======================
 export async function decideStaff(f: FormData) {
   const u = await requireUser("reg.staff");
-  await attempt("/registration/staff", async () => {
-    const id = int(f, "id")!;
+  const id = int(f, "id")!;
+  await attempt(() => (f.get("back") ? String(f.get("back")) : `/registration/staff/${id}`), async () => {
     guard(await inScopeStaff(u, id));
     const decision = String(f.get("decision"));
     const reason = str(f, "reason");
@@ -515,14 +518,46 @@ export async function decideStaff(f: FormData) {
     if (!s || s.status !== "SUBMITTED") throw new UserError("الطلب غير متاح");
     if (decision !== "approve" && !reason) throw new UserError("اكتب السبب ليظهر للنادي");
     const status = decision === "approve" ? "APPROVED" : decision === "return" ? "NEEDS_CORRECTION" : "REJECTED";
-    const fee = status === "APPROVED" ? await feeAmount("STAFF_REG") : 0;
+    if (status === "APPROVED") {
+      const req = await staffRequiredDocs(s);
+      const docs = await db.select().from(staffDocuments).where(eq(staffDocuments.staffId, id));
+      const notOk = req.filter((t) => !docs.some((d) => d.documentTypeId === t.id && d.status === "APPROVED"));
+      if (notOk.length) throw new UserError("اقبل المستندات الإلزامية أولًا: " + notOk.map((t) => t.name).join("، "));
+    }
+    // الرسوم للمدربين فقط (الإداريون بلا رسوم — كما في FIFA Connect)، وقيمة المحترف إن حُددت
+    const fee = status === "APPROVED" && LICENSED_ROLES.includes(s.role) ? await feeAmount("STAFF_REG", s.level === "PROFESSIONAL") : 0;
     await db.transaction(async (tx) => {
       await tx.update(staff).set({ status, decisionReason: reason, decidedBy: u.fullName, decidedAt: new Date() }).where(eq(staff.id, id));
-      if (fee > 0) await addCharge(tx, { clubId: s.clubId, category: "STAFF_FEE", description: `رسوم قيد ${s.fullName}`, amount: fee, refType: "staff", refId: id, createdBy: u.fullName });
-      await notifyClub(s.clubId, status === "APPROVED" ? "اعتُمد قيد إداري" : "قرار بشأن قيد إداري", `${s.fullName}${reason ? ": " + reason : ""}`, "/club/staff", tx);
-      await audit(u, "قرار قيد إداري", "Staff", id, { status, reason }, tx);
+      if (fee > 0) await addCharge(tx, { clubId: s.clubId, category: "STAFF_FEE", description: `رسوم قيد ${STAFF_ROLE[s.role]} — ${s.fullName}`, amount: fee, refType: "staff", refId: id, createdBy: u.fullName });
+      await notifyClub(s.clubId, status === "APPROVED" ? `اعتُمد قيد ${STAFF_ROLE[s.role]}` : `قرار بشأن قيد ${STAFF_ROLE[s.role]}`, `${s.fullName}${reason ? ": " + reason : ""}`, `/club/staff/${id}`, tx);
+      await audit(u, "قرار قيد مدرب/إداري", "Staff", id, { status, reason }, tx);
     });
-    return status === "APPROVED" ? "تم الاعتماد" : "تم إبلاغ النادي";
+    return status === "APPROVED" ? `تم الاعتماد${fee > 0 ? ` وسُجّلت رسوم ${fee} د.ل على النادي` : ""}` : "تم إبلاغ النادي";
+  });
+}
+
+/** قبول/رفض مستند مدرب أو إداري */
+export async function reviewStaffDoc(f: FormData) {
+  const u = await requireUser("reg.staff");
+  const id = int(f, "id")!, docId = int(f, "docId")!;
+  const ok = f.get("decision") === "approve";
+  await attempt(`/registration/staff/${id}`, async () => {
+    guard(await inScopeStaff(u, id));
+    const reason = str(f, "reason");
+    if (!ok && !reason) throw new UserError("اكتب سبب رفض المستند ليظهر للنادي");
+    await db.update(staffDocuments).set({ status: ok ? "APPROVED" : "REJECTED", rejectionReason: ok ? null : reason, reviewedAt: new Date(), reviewedBy: u.fullName })
+      .where(and(eq(staffDocuments.id, docId), eq(staffDocuments.staffId, id)));
+    return ok ? "تم قبول المستند" : "تم رفض المستند";
+  });
+}
+
+export async function approveAllStaffDocs(f: FormData) {
+  const u = await requireUser("reg.staff");
+  const id = int(f, "id")!;
+  await attempt(`/registration/staff/${id}`, async () => {
+    guard(await inScopeStaff(u, id));
+    await db.update(staffDocuments).set({ status: "APPROVED", reviewedAt: new Date(), reviewedBy: u.fullName }).where(and(eq(staffDocuments.staffId, id), eq(staffDocuments.status, "PENDING")));
+    return "قُبلت كل المستندات المعلّقة";
   });
 }
 

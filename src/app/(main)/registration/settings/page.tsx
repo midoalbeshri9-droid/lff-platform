@@ -11,6 +11,8 @@ import {
   saveSeason, setCurrentSeason, closeSeason, saveWindow, toggleWindow, deleteWindow, saveCategory, saveDocType, saveRegSettings,
 } from "../actions";
 
+const STAFF_REQ: Record<string, string> = { COACH: "الجهاز الفني", OFFICIAL: "إداريو النادي" };
+
 export default async function RegSettings({ searchParams }: { searchParams: SP }) {
   const u = await requireUser("reg.windows");
   const sp = await searchParams;
@@ -40,6 +42,25 @@ export default async function RegSettings({ searchParams }: { searchParams: SP }
       <Field label="إلى"><input type="date" name="endDate" required defaultValue={w?.endDate} /></Field>
       <Field label="فترة استثنائية"><label className="check"><input type="checkbox" name="isException" defaultChecked={w?.isException} /> نعم</label></Field>
     </>
+  );
+  const docForm = (d: (typeof dts)[number] | null, scope: "PLAYER" | "STAFF") => (
+    <details key={`${scope}-${d?.id ?? "new"}`} className="box">
+      <summary>{d ? <>{d.name} {!d.isActive && <span className="b b-gray">معطّل</span>} <small className="muted">— {d.requiredFor.map((x) => (scope === "STAFF" ? STAFF_REQ[x] : REG_TYPE[x])).join("، ") || "اختياري"}</small></> : scope === "STAFF" ? "+ مستند جديد للمدربين/الإداريين" : "+ نوع مستند جديد"}</summary>
+      <form action={saveDocType} className="stack mt">
+        {d && <input type="hidden" name="id" value={d.id} />}
+        <input type="hidden" name="scope" value={scope} />
+        <div className="row"><input type="text" name="name" defaultValue={d?.name} placeholder="اسم المستند" required style={{ flex: 1 }} />
+          <input type="number" name="sortOrder" defaultValue={d?.sortOrder ?? 0} style={{ width: 80 }} title="الترتيب" /></div>
+        <div className="chk-grid">
+          {Object.entries(scope === "STAFF" ? STAFF_REQ : REG_TYPE).map(([k, v]) => <label key={k} className="check"><input type="checkbox" name="requiredFor" value={k} defaultChecked={d?.requiredFor.includes(k)} /> إلزامي في: {v}</label>)}
+          <label className="check"><input type="checkbox" name="onlyProfessional" defaultChecked={d?.onlyProfessional} /> {scope === "STAFF" ? "للمدرب المحترف فقط" : "للمحترف/تحت العقد فقط"}</label>
+          {scope === "PLAYER" && <label className="check"><input type="checkbox" name="onlyMinor" defaultChecked={d?.onlyMinor} /> لمن هم دون 18 فقط</label>}
+          <label className="check"><input type="checkbox" name="onlyForeign" defaultChecked={d?.onlyForeign} /> للأجانب فقط</label>
+          <label className="check"><input type="checkbox" name="isActive" defaultChecked={d?.isActive ?? true} /> مفعّل</label>
+        </div>
+        <div><Submit className="btn btn-sm btn-primary">حفظ</Submit></div>
+      </form>
+    </details>
   );
   return (
     <>
@@ -133,24 +154,10 @@ export default async function RegSettings({ searchParams }: { searchParams: SP }
       <div className="card" id="docs">
         <h2>المستندات المطلوبة</h2>
         <p className="muted">حدّد لكل مستند أنواع الطلبات التي يُلزم فيها. لا يستطيع النادي إرسال الطلب قبل رفع كل الإلزامي.</p>
-        {[...dts, null].map((d) => (
-          <details key={d?.id ?? "new"} className="box" open={!d ? false : undefined}>
-            <summary>{d ? <>{d.name} {!d.isActive && <span className="b b-gray">معطّل</span>} <small className="muted">— {d.requiredFor.map((x) => REG_TYPE[x]).join("، ") || "اختياري"}</small></> : "+ نوع مستند جديد"}</summary>
-            <form action={saveDocType} className="stack mt">
-              {d && <input type="hidden" name="id" value={d.id} />}
-              <div className="row"><input type="text" name="name" defaultValue={d?.name} placeholder="اسم المستند" required style={{ flex: 1 }} />
-                <input type="number" name="sortOrder" defaultValue={d?.sortOrder ?? 0} style={{ width: 80 }} title="الترتيب" /></div>
-              <div className="chk-grid">
-                {Object.entries(REG_TYPE).map(([k, v]) => <label key={k} className="check"><input type="checkbox" name="requiredFor" value={k} defaultChecked={d?.requiredFor.includes(k)} /> إلزامي في: {v}</label>)}
-                <label className="check"><input type="checkbox" name="onlyProfessional" defaultChecked={d?.onlyProfessional} /> للمحترف/تحت العقد فقط</label>
-                <label className="check"><input type="checkbox" name="onlyMinor" defaultChecked={d?.onlyMinor} /> لمن هم دون 18 فقط</label>
-                <label className="check"><input type="checkbox" name="onlyForeign" defaultChecked={d?.onlyForeign} /> للأجانب فقط</label>
-                <label className="check"><input type="checkbox" name="isActive" defaultChecked={d?.isActive ?? true} /> مفعّل</label>
-              </div>
-              <div><Submit className="btn btn-sm btn-primary">حفظ</Submit></div>
-            </form>
-          </details>
-        ))}
+        {[...dts.filter((d) => d.scope === "PLAYER"), null].map((d) => docForm(d, "PLAYER"))}
+        <h3 className="mt" id="staff-docs">مستندات المدربين والإداريين</h3>
+        <p className="muted">حدّد لكل مستند الدور الذي يُلزم فيه (كما في FIFA Connect). «للمحترف فقط» تعني المدرب المحترف.</p>
+        {[...dts.filter((d) => d.scope === "STAFF"), null].map((d) => docForm(d, "STAFF"))}
       </div>
       </>}
     </>

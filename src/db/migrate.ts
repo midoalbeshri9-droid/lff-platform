@@ -130,6 +130,20 @@ export async function migrate() {
     for (const role of ["COMP_HEAD", "COMP_STAFF"] as const) await db.insert(s.rolePermissions).values({ role, permission: "comp.observers" }).onConflictDoNothing();
     await db.insert(s.settings).values({ key: "mig_observers_perm", value: new Date().toISOString() }).onConflictDoNothing();
   }
+  // 18) مستندات المدربين والإداريين الافتراضية (كما في FIFA Connect) — مرة واحدة، وتعدّلها لجنة القيد من الإعدادات
+  const [st18] = await db.select().from(s.settings).where(eq(s.settings.key, "mig_staff_docs"));
+  if (!st18) {
+    const docs: { name: string; requiredFor: string[]; onlyProfessional?: boolean; onlyForeign?: boolean; sortOrder: number }[] = [
+      { name: "صورة الهوية أو جواز السفر", requiredFor: ["COACH", "OFFICIAL"], sortOrder: 1 },
+      { name: "شهادة الرخصة التدريبية", requiredFor: ["COACH"], sortOrder: 2 },
+      { name: "عقد المدرب", requiredFor: ["COACH"], onlyProfessional: true, sortOrder: 3 },
+      { name: "قرار التكليف من النادي", requiredFor: ["OFFICIAL"], sortOrder: 4 },
+      { name: "تصريح العمل / الإقامة", requiredFor: [], onlyForeign: true, sortOrder: 5 },
+    ];
+    for (const d of docs) await db.insert(s.documentTypes).values({ ...d, scope: "STAFF" }).onConflictDoNothing();
+    await db.insert(s.settings).values({ key: "mig_staff_docs", value: new Date().toISOString() }).onConflictDoNothing();
+    console.log("✓ مستندات المدربين والإداريين");
+  }
   console.log("✓ اكتمل ترحيل البيانات");
 }
 

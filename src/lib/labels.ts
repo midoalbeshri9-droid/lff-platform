@@ -198,9 +198,21 @@ export const APPEAL_STATUS: Record<string, [string, string]> = {
 export const STAFF_ROLE: Record<string, string> = {
   COACH: "مدرب", ASSISTANT_COACH: "مدرب مساعد", GK_COACH: "مدرب حراس", FITNESS_COACH: "مدرب لياقة",
   TEAM_MANAGER: "مدير الفريق", DOCTOR: "طبيب", PHYSIO: "أخصائي علاج طبيعي", ADMIN: "إداري", OTHER: "أخرى",
+  PRESIDENT: "رئيس النادي", SECRETARY_GENERAL: "الأمين العام", TREASURER: "أمين الخزينة", SPORTS_DIRECTOR: "المدير الرياضي",
+  MEDIA_OFFICER: "المسؤول الإعلامي", BOARD_MEMBER: "عضو مجلس الإدارة", HEAD_OF_COACHING: "رئيس الجهاز التدريبي", YOUTH_HEAD: "مسؤول الفئات السنية",
 };
+/** الدور الرئيسي كما في FIFA Connect: مدرب (Coach) أو إداري نادٍ (Club Official) */
+export const STAFF_GROUP: Record<"COACH" | "OFFICIAL", { label: string; roles: string[] }> = {
+  COACH: { label: "الجهاز الفني", roles: ["COACH", "ASSISTANT_COACH", "GK_COACH", "FITNESS_COACH", "DOCTOR", "PHYSIO"] },
+  OFFICIAL: { label: "إداري نادٍ", roles: ["PRESIDENT", "SECRETARY_GENERAL", "TREASURER", "SPORTS_DIRECTOR", "TEAM_MANAGER", "MEDIA_OFFICER", "BOARD_MEMBER", "HEAD_OF_COACHING", "YOUTH_HEAD", "ADMIN", "OTHER"] },
+};
+export const staffGroup = (role: string): "COACH" | "OFFICIAL" => (STAFF_GROUP.COACH.roles.includes(role) ? "COACH" : "OFFICIAL");
+/** أدوار تتطلب رخصة تدريبية */
+export const LICENSED_ROLES = ["COACH", "ASSISTANT_COACH", "GK_COACH", "FITNESS_COACH"];
+export const COACH_LICENSE = ["CAF Pro", "CAF A", "CAF B", "CAF C", "CAF D", "رخصة مدرب حراس مرمى", "رخصة لياقة بدنية", "رخصة وطنية", "أخرى"];
+export const COACH_LEVEL: Record<string, string> = { AMATEUR: "هاوٍ", PROFESSIONAL: "محترف" };
 export const CHARGE_CATEGORY: Record<string, string> = {
-  FINE: "غرامة", REG_FEE: "رسوم قيد", CARD_FEE: "رسوم بطاقة", ENTRY_FEE: "رسوم اشتراك مسابقة", STAFF_FEE: "رسوم قيد إداري",
+  FINE: "غرامة", REG_FEE: "رسوم قيد", CARD_FEE: "رسوم بطاقة", ENTRY_FEE: "رسوم اشتراك مسابقة", STAFF_FEE: "رسوم قيد مدرب / جهاز فني",
   REFEREE_FEE: "مستحقات تحكيم", CONTRACT_FEE: "رسوم اعتماد عقد (3%)", OTHER: "أخرى",
 };
 export const CHARGE_STATUS: Record<string, [string, string]> = {
@@ -209,7 +221,7 @@ export const CHARGE_STATUS: Record<string, [string, string]> = {
 export const PAY_METHOD: Record<string, string> = { CASH: "نقدًا", CHEQUE: "صك", TRANSFER: "تحويل مصرفي" };
 export const FEE_CODES: Record<string, string> = {
   REG_NEW: "قيد جديد", REG_RENEWAL: "تجديد قيد", REG_TRANSFER: "انتقال نهائي", REG_LOAN: "إعارة", REG_LOAN_RETURN: "عودة من إعارة",
-  CARD_REPLACEMENT: "بطاقة بديلة", STAFF_REG: "قيد إداري / جهاز فني",
+  CARD_REPLACEMENT: "بطاقة بديلة", STAFF_REG: "قيد مدرب / جهاز فني",
 };
 
 export const COMMITTEE: Record<string, string> = { BOARD: "مجلس الإدارة", SEC: "الأمانة العامة", REG: "لجنة القيد وأوضاع اللاعبين", COMP: "لجنة المسابقات", REF: "لجنة الحكام", FIN: "اللجنة المالية", DISC: "لجنة الانضباط", APPEAL: "لجنة الاستئناف", MED: "اللجنة الطبية", OTHER: "أخرى" };

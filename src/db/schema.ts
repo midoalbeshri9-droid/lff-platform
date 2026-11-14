@@ -214,6 +214,8 @@ export const documentTypes = pgTable("document_types", {
   onlyForeign: boolean("only_foreign").notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
+  // PLAYER: مستندات قيد اللاعب (requiredFor = أنواع الطلب) — STAFF: مستندات المدربين والإداريين (requiredFor = COACH / OFFICIAL)
+  scope: text("scope").notNull().default("PLAYER"),
 });
 
 export const docStatusEnum = pgEnum("doc_status", ["PENDING", "APPROVED", "REJECTED"]);
@@ -697,7 +699,11 @@ export const contracts = pgTable("contracts", {
 });
 
 // الإداريون والجهاز الفني
-export const staffRoleEnum = pgEnum("staff_role", ["COACH", "ASSISTANT_COACH", "GK_COACH", "FITNESS_COACH", "TEAM_MANAGER", "DOCTOR", "PHYSIO", "ADMIN", "OTHER"]);
+export const staffRoleEnum = pgEnum("staff_role", [
+  "COACH", "ASSISTANT_COACH", "GK_COACH", "FITNESS_COACH", "TEAM_MANAGER", "DOCTOR", "PHYSIO", "ADMIN", "OTHER",
+  // الأدوار الفرعية لإداري النادي كما في FIFA Connect (Club Official Sub Role)
+  "PRESIDENT", "SECRETARY_GENERAL", "TREASURER", "SPORTS_DIRECTOR", "MEDIA_OFFICER", "BOARD_MEMBER", "HEAD_OF_COACHING", "YOUTH_HEAD",
+]);
 export const staff = pgTable("staff", {
   id: serial("id").primaryKey(),
   clubId: integer("club_id").notNull().references(() => clubs.id),
@@ -710,6 +716,11 @@ export const staff = pgTable("staff", {
   phone: text("phone"),
   licenseNo: text("license_no"),
   licenseLevel: text("license_level"),
+  licenseFrom: d("license_from"), // صلاحية الرخصة التدريبية (Certification valid from/until)
+  licenseUntil: d("license_until"),
+  level: text("level"), // المدرب: AMATEUR / PROFESSIONAL
+  email: text("email"),
+  address: text("address"),
   cardNo: text("card_no"), // رقم بطاقة المرافق
   photoKey: text("photo_key"),
   documentKey: text("document_key"),
@@ -719,6 +730,23 @@ export const staff = pgTable("staff", {
   decidedAt: ts("decided_at"),
   submittedAt: ts("submitted_at"),
   createdAt: ts("created_at").notNull().defaultNow(),
+});
+
+// مستندات قيد المدربين والإداريين (حسب الدور — كما في FIFA Connect)
+export const staffDocuments = pgTable("staff_documents", {
+  id: serial("id").primaryKey(),
+  staffId: integer("staff_id").notNull().references(() => staff.id, { onDelete: "cascade" }),
+  documentTypeId: integer("document_type_id").notNull().references(() => documentTypes.id),
+  fileKey: text("file_key").notNull(),
+  originalName: text("original_name").notNull(),
+  mime: text("mime").notNull(),
+  size: integer("size").notNull(),
+  status: docStatusEnum("status").notNull().default("PENDING"),
+  rejectionReason: text("rejection_reason"),
+  uploadedAt: ts("uploaded_at").notNull().defaultNow(),
+  uploadedBy: text("uploaded_by").notNull(),
+  reviewedAt: ts("reviewed_at"),
+  reviewedBy: text("reviewed_by"),
 });
 
 // لائحة العقوبات (تُعبأ لاحقًا من اللائحة الرسمية)

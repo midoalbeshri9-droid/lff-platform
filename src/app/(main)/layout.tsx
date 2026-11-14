@@ -28,7 +28,7 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
       { label: "الطلبات", href: "/club/requests", badge: corr },
       { label: "عقود المحترفين", href: "/club/contracts" },
       ...(u.can("club.origin") ? [{ label: "طلبات انتقال لاعبينا", href: "/club/origin", badge: origin }] : []),
-      { label: "الجهاز الفني", href: "/club/staff" },
+      { label: "المدربون والإداريون", href: "/club/staff" },
       { label: "المباريات والقوائم", href: "/club/matches" },
       { label: "العقوبات", href: "/club/sanctions" },
       ...(u.can("club.finance") ? [{ label: "الحساب المالي", href: "/club/finance" }] : []),
@@ -54,7 +54,7 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
       badge: pending,
       children: [
         { label: "📝 طلبات القيد", href: "/registration/requests", badge: pending },
-        { label: "🧑‍💼 الإداريون والجهاز الفني", href: "/registration/staff", badge: await count(db.select({ n }).from(staff).where(and(clubIn(sc, staff.clubId), eq(staff.status, "SUBMITTED")))) },
+        { label: "🧑‍💼 المدربون والإداريون", href: "/registration/staff", badge: await count(db.select({ n }).from(staff).where(and(clubIn(sc, staff.clubId), eq(staff.status, "SUBMITTED")))) },
         { label: "👤 سجل اللاعبين", href: "/registration/players" },
         { label: "⇄ الانتقالات والإعارات", href: "/registration/transfers" },
         ...(u.can("reg.contracts") ? [{ label: "📄 عقود المحترفين", href: "/registration/contracts", badge: await count(db.select({ n }).from(contracts).innerJoin(registrations, eq(registrations.id, contracts.registrationId)).where(and(clubIn(sc, contracts.clubId), eq(contracts.status, "SUBMITTED"), eq(registrations.status, "APPROVED")))) }] : []),
