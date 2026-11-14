@@ -191,6 +191,7 @@ export const registrations = pgTable("registrations", {
   originReason: text("origin_reason"),
   originRespondedAt: ts("origin_responded_at"),
   loanEndDate: d("loan_end_date"),
+  level: text("level"), // مستوى اللاعب لحظة الاعتماد (لجواز اللاعب)
   transferFee: numeric("transfer_fee", { precision: 14, scale: 2 }),
   parentalConsent: boolean("parental_consent").notNull().default(false),
   notes: text("notes"),
@@ -706,6 +707,8 @@ export const staffRoleEnum = pgEnum("staff_role", [
   "COACH", "ASSISTANT_COACH", "GK_COACH", "FITNESS_COACH", "TEAM_MANAGER", "DOCTOR", "PHYSIO", "ADMIN", "OTHER",
   // الأدوار الفرعية لإداري النادي كما في FIFA Connect (Club Official Sub Role)
   "PRESIDENT", "SECRETARY_GENERAL", "TREASURER", "SPORTS_DIRECTOR", "MEDIA_OFFICER", "BOARD_MEMBER", "HEAD_OF_COACHING", "YOUTH_HEAD",
+  // إداري الفريق (Team Official) في FIFA Connect
+  "TEAM_SECRETARY", "KIT_MANAGER",
 ]);
 export const staff = pgTable("staff", {
   id: serial("id").primaryKey(),
@@ -1142,4 +1145,19 @@ export const waOutbox = pgTable("wa_outbox", {
   error: text("error"),
   createdAt: ts("created_at").notNull().defaultNow(),
   doneAt: ts("done_at"),
+});
+
+// سجلات تاريخية تُضاف يدويًا لجواز اللاعب (أندية سبقت المنظومة) — كما في FIFA Connect
+export const passportRecords = pgTable("passport_records", {
+  id: serial("id").primaryKey(),
+  playerId: integer("player_id").notNull().references(() => players.id, { onDelete: "cascade" }),
+  clubName: text("club_name").notNull(),
+  country: text("country").notNull().default("ليبيا"),
+  level: text("level"), // AMATEUR / AMATEUR_CONTRACT / PROFESSIONAL
+  isLoan: boolean("is_loan").notNull().default(false),
+  startDate: d("start_date").notNull(),
+  endDate: d("end_date").notNull(),
+  notes: text("notes"),
+  createdBy: text("created_by").notNull(),
+  createdAt: ts("created_at").notNull().defaultNow(),
 });

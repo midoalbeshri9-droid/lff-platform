@@ -154,8 +154,9 @@ export async function approveRegistration(tx: Tx, regId: number, by: string, not
     }
   }
   const number = r.number ?? (await nextNumber(tx, s.name));
+  const [pl] = await tx.select({ level: players.professionalLevel }).from(players).where(eq(players.id, r.playerId));
   await tx.update(registrations)
-    .set({ status: "APPROVED", number, decidedAt: new Date(), decidedBy: by, decisionReason: note, updatedAt: new Date() })
+    .set({ status: "APPROVED", number, level: pl?.level ?? null, decidedAt: new Date(), decidedBy: by, decisionReason: note, updatedAt: new Date() })
     .where(eq(registrations.id, regId));
   await logEvent(tx, regId, by, "اعتماد القيد", note ? `${number} — ${note}` : number);
   return number;

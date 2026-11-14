@@ -7,44 +7,20 @@ import { competitions, competitionStages, seasons, matches, clubs, roundDecision
 import { standings, topScorers } from "@/lib/competition";
 import { fmtDate } from "@/lib/util";
 
-export const dynamic = "force-dynamic";
 
-type SP = Promise<Record<string, string | undefined>>;
-const TABS: [string, string][] = [["table", "الترتيب"], ["fixtures", "المباريات والنتائج"], ["scorers", "الهدافون"], ["decisions", "القرارات"]];
+export const TABS: [string, string][] = [["table", "الترتيب"], ["fixtures", "المباريات والنتائج"], ["scorers", "الهدافون"], ["decisions", "القرارات"]];
 
-async function load(id: number) {
+export async function load(id: number) {
   if (!Number.isInteger(id)) return null;
   const [c] = await db.select({ c: competitions, season: seasons.name }).from(competitions).innerJoin(seasons, eq(seasons.id, competitions.seasonId)).where(eq(competitions.id, id));
   return c && c.c.isPublic && c.c.status !== "DRAFT" ? c : null;
 }
 
-export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
-  const c = await load(Number((await params).id));
-  return { title: c ? c.c.name : "المسابقة" };
-}
 
-const when = (k: Date | null) => (k ? `${k.toLocaleDateString("ar-LY", { weekday: "long", timeZone: "Africa/Tripoli" })} ${fmtDate(k)} — ${k.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Tripoli" })}` : "لم يُحدد");
+export const when = (k: Date | null) => (k ? `${k.toLocaleDateString("ar-LY", { weekday: "long", timeZone: "Africa/Tripoli" })} ${fmtDate(k)} — ${k.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Tripoli" })}` : "لم يُحدد");
 
-export default async function LeaguePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
-  const id = Number((await params).id);
-  const sp = await searchParams;
-  const x = await load(id);
-  if (!x) notFound();
-  const tab = TABS.some(([k]) => k === sp.tab) ? sp.tab! : "table";
-  return (
-    <>
-      <div className="lg-crumb"><Link href="/league">المسابقات</Link> / {x.c.name}</div>
-      <h1 className="lg-h1">{x.c.name} <small className="muted">الموسم {x.season}</small></h1>
-      <nav className="lg-tabs">{TABS.map(([k, l]) => <Link key={k} href={`?tab=${k}`} className={k === tab ? "on" : ""}>{l}</Link>)}</nav>
-      {tab === "table" && <Tables id={id} />}
-      {tab === "fixtures" && <Fixtures id={id} round={sp.round} />}
-      {tab === "scorers" && <Scorers id={id} />}
-      {tab === "decisions" && <Decisions id={id} />}
-    </>
-  );
-}
 
-async function Tables({ id }: { id: number }) {
+export async function Tables({ id }: { id: number }) {
   const stages = await db.select().from(competitionStages).where(eq(competitionStages.competitionId, id)).orderBy(asc(competitionStages.seq));
   const tableStages = stages.filter((s) => s.format !== "KNOCKOUT");
   if (!tableStages.length) return <p className="muted">لا يوجد ترتيب بعد.</p>;
@@ -72,7 +48,7 @@ async function Tables({ id }: { id: number }) {
   );
 }
 
-async function Fixtures({ id, round }: { id: number; round?: string }) {
+export async function Fixtures({ id, round }: { id: number; round?: string }) {
   const h = alias(clubs, "h"), a = alias(clubs, "a");
   const all = await db.select({ m: matches, home: h.name, away: a.name, st: competitionStages.name }).from(matches)
     .innerJoin(h, eq(h.id, matches.homeClubId)).innerJoin(a, eq(a.id, matches.awayClubId)).leftJoin(competitionStages, eq(competitionStages.id, matches.stageId))
@@ -103,7 +79,7 @@ async function Fixtures({ id, round }: { id: number; round?: string }) {
   );
 }
 
-async function Scorers({ id }: { id: number }) {
+export async function Scorers({ id }: { id: number }) {
   const rows = await topScorers(id, 30);
   if (!rows.length) return <p className="muted">لم تُسجّل أهداف معتمدة بعد.</p>;
   return (
@@ -114,7 +90,7 @@ async function Scorers({ id }: { id: number }) {
   );
 }
 
-async function Decisions({ id }: { id: number }) {
+export async function Decisions({ id }: { id: number }) {
   const rows = await db.select().from(roundDecisions).where(and(eq(roundDecisions.competitionId, id), eq(roundDecisions.status, "ISSUED"))).orderBy(desc(roundDecisions.issueDate), desc(roundDecisions.id));
   if (!rows.length) return <p className="muted">لا توجد قرارات صادرة بعد.</p>;
   return (

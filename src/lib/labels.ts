@@ -202,13 +202,17 @@ export const STAFF_ROLE: Record<string, string> = {
   TEAM_MANAGER: "مدير الفريق", DOCTOR: "طبيب", PHYSIO: "أخصائي علاج طبيعي", ADMIN: "إداري", OTHER: "أخرى",
   PRESIDENT: "رئيس النادي", SECRETARY_GENERAL: "الأمين العام", TREASURER: "أمين الخزينة", SPORTS_DIRECTOR: "المدير الرياضي",
   MEDIA_OFFICER: "المسؤول الإعلامي", BOARD_MEMBER: "عضو مجلس الإدارة", HEAD_OF_COACHING: "رئيس الجهاز التدريبي", YOUTH_HEAD: "مسؤول الفئات السنية",
+  TEAM_SECRETARY: "سكرتير الفريق", KIT_MANAGER: "مسؤول المهمات",
 };
-/** الدور الرئيسي كما في FIFA Connect: مدرب (Coach) أو إداري نادٍ (Club Official) */
-export const STAFF_GROUP: Record<"COACH" | "OFFICIAL", { label: string; roles: string[] }> = {
-  COACH: { label: "الجهاز الفني", roles: ["COACH", "ASSISTANT_COACH", "GK_COACH", "FITNESS_COACH", "DOCTOR", "PHYSIO"] },
-  OFFICIAL: { label: "إداري نادٍ", roles: ["PRESIDENT", "SECRETARY_GENERAL", "TREASURER", "SPORTS_DIRECTOR", "TEAM_MANAGER", "MEDIA_OFFICER", "BOARD_MEMBER", "HEAD_OF_COACHING", "YOUTH_HEAD", "ADMIN", "OTHER"] },
+/** الدور الرئيسي كما في FIFA Connect: مدرب (Coach) / إداري فريق (Team Official) / إداري نادٍ (Club Official) */
+export type StaffGroup = "COACH" | "TEAM" | "OFFICIAL";
+export const STAFF_GROUPS: StaffGroup[] = ["COACH", "TEAM", "OFFICIAL"];
+export const STAFF_GROUP: Record<StaffGroup, { label: string; icon: string; roles: string[] }> = {
+  COACH: { label: "مدرب", icon: "🧢", roles: ["COACH", "ASSISTANT_COACH", "GK_COACH", "FITNESS_COACH"] },
+  TEAM: { label: "إداري فريق", icon: "🩺", roles: ["TEAM_MANAGER", "DOCTOR", "PHYSIO", "TEAM_SECRETARY", "KIT_MANAGER"] },
+  OFFICIAL: { label: "إداري نادٍ", icon: "🗂", roles: ["PRESIDENT", "SECRETARY_GENERAL", "TREASURER", "SPORTS_DIRECTOR", "MEDIA_OFFICER", "BOARD_MEMBER", "HEAD_OF_COACHING", "YOUTH_HEAD", "ADMIN", "OTHER"] },
 };
-export const staffGroup = (role: string): "COACH" | "OFFICIAL" => (STAFF_GROUP.COACH.roles.includes(role) ? "COACH" : "OFFICIAL");
+export const staffGroup = (role: string): StaffGroup => (STAFF_GROUP.COACH.roles.includes(role) ? "COACH" : STAFF_GROUP.TEAM.roles.includes(role) ? "TEAM" : "OFFICIAL");
 /** أدوار تتطلب رخصة تدريبية */
 export const LICENSED_ROLES = ["COACH", "ASSISTANT_COACH", "GK_COACH", "FITNESS_COACH"];
 // كأنواع الشهادات في FIFA Connect (Certification Types)

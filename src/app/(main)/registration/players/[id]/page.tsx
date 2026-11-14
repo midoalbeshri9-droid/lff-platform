@@ -14,6 +14,9 @@ import { Submit } from "@/components/Client";
 import { PlayerFields } from "@/components/PlayerForm";
 import { PlayerFilesUploader } from "@/components/PlayerFilesUploader";
 import { setFifaId } from "../../fifa-ids/actions";
+import { addPassportRecord, deletePassportRecord } from "../../passport-actions";
+import { playerPassport } from "@/lib/passport";
+import { PRO_LEVEL } from "@/lib/labels";
 import { setShirtNumber, editPlayer, setPlayerStatus, addSuspension, liftSuspension, uploadPlayerDocs, deletePlayerDoc } from "../../actions";
 
 export default async function PlayerFile({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
@@ -41,6 +44,7 @@ export default async function PlayerFile({ params, searchParams }: { params: Pro
   const DOC_ST: Record<string, [string, string]> = { PENDING: ["قيد المراجعة", "amber"], APPROVED: ["مقبول", "green"], REJECTED: ["مرفوض", "red"] };
   const kb = (n: number) => n > 1048576 ? `${(n / 1048576).toFixed(1)} م.ب` : `${Math.max(1, Math.round(n / 1024))} ك.ب`;
   const t = today();
+  const pass = await playerPassport(id);
   const isActive = (s: (typeof susp)[number]) => !s.isLifted && (s.kind === "ADMIN" ? !s.endDate || s.endDate >= t : (s.matchesTotal ?? 0) > s.matchesServed);
   const back = `/registration/players/${id}`;
   return (
@@ -85,6 +89,32 @@ export default async function PlayerFile({ params, searchParams }: { params: Pro
               </details>
             )}
           </div>}
+          <div className="card table-wrap">
+            <div className="card-head"><h2>🛂 جواز اللاعب</h2><Link className="btn btn-sm btn-light" href={`/print/passport/${id}`} target="_blank">🖨 طباعة / PDF</Link></div>
+            <p className="muted" style={{ fontSize: ".82rem", marginTop: 0 }}>الأندية التي سُجّل لها لاعبًا منذ سن 12{pass.from12 ? ` (${fmtDate(pass.from12)})` : ""}، وتُدمج المواسم المتتالية بنفس النادي والمستوى ونوع القيد — كما في FIFA Connect.</p>
+            {pass.rows.length === 0 ? <p className="muted">لا توجد سجلات.</p> : (
+              <table className="t no-num"><thead><tr><th>النادي</th><th>الدولة</th><th>المستوى</th><th>النوع</th><th>من</th><th>إلى</th><th></th></tr></thead>
+                <tbody>{pass.rows.map((r, i) => (
+                  <tr key={i} style={r.manual ? { fontStyle: "italic" } : undefined}><td>{r.club}</td><td>{r.country}</td><td>{r.level ? PRO_LEVEL[r.level] ?? r.level : "—"}</td><td>{r.loan ? "إعارة" : "دائم"}</td>
+                    <td>{fmtDate(r.from)}</td><td>{r.to ? fmtDate(r.to) : "حتى الآن"}</td>
+                    <td>{r.manual && u.can("reg.edit") && <form action={deletePassportRecord}><input type="hidden" name="playerId" value={id} /><input type="hidden" name="id" value={r.manualId} /><Submit className="btn btn-sm btn-ghost" confirm="حذف هذا السجل اليدوي؟">حذف</Submit></form>}</td></tr>))}</tbody></table>
+            )}
+            {u.can("reg.edit") && (
+              <details className="box mt"><summary>+ إضافة سجل تاريخي (نادٍ قبل المنظومة أو خارج ليبيا)</summary>
+                <form action={addPassportRecord} className="form f3 mt">
+                  <input type="hidden" name="playerId" value={id} />
+                  <Field label="النادي *"><input name="clubName" required /></Field>
+                  <Field label="الدولة"><input name="country" defaultValue="ليبيا" /></Field>
+                  <Field label="المستوى"><select name="level"><option value="">—</option>{Object.entries(PRO_LEVEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+                  <Field label="من *"><input type="date" name="startDate" required /></Field>
+                  <Field label="إلى *"><input type="date" name="endDate" required /></Field>
+                  <Field label=" "><label className="check"><input type="checkbox" name="isLoan" /> إعارة</label></Field>
+                  <Field label="ملاحظات" full><input name="notes" /></Field>
+                  <div className="full"><Submit>حفظ السجل</Submit></div>
+                </form>
+              </details>
+            )}
+          </div>
           <div className="card table-wrap">
             <h2>سجل القيد والانتقالات</h2>
             <table className="t"><thead><tr><th>الموسم</th><th>النادي</th><th>النوع</th><th>من</th><th>رقم القيد</th><th>رقم الغلالة</th><th>الحالة</th><th>البطاقة</th><th></th></tr></thead>

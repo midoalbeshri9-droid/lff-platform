@@ -21,6 +21,7 @@ import { Submit, CheckAll } from "@/components/Client";
 import { roundDecisions } from "@/db/schema";
 import { createDecision } from "../decisions/actions";
 import { fmtDate } from "@/lib/util";
+import { appUrl } from "@/lib/tokens";
 import {
   saveCompetition, setCompetitionStatus, setCompetitionPublic, addTeams, removeTeam, makeFixtures, clearFixtures, saveMatch, bulkSchedule,
   addStage, saveStage, deleteStage, stageAddTeams, stageRemoveTeam, stageDraw, stageRegionGroups, stageSaveGroups, stageQualify, stageNextRound, stageManualPairs, deleteCompetition,
@@ -62,6 +63,18 @@ export default async function Competition({ params, searchParams }: { params: Pr
           </form>
         )}</>} />
       <Flash sp={sp} />
+      {c.isPublic && manage && (
+        <details className="box card">
+          <summary>🧩 نوافذ للتضمين في موقع الاتحاد (Widgets)</summary>
+          <p className="muted" style={{ fontSize: ".85rem" }}>انسخ الكود والصقه في صفحة بموقع الاتحاد أو أي موقع إخباري؛ يتحدث تلقائيًا من المنظومة.</p>
+          {([["table", "الترتيب", 520], ["fixtures", "المباريات والنتائج", 600], ["scorers", "الهدافون", 420]] as const).map(([k, l, h]) => (
+            <div key={k} style={{ marginBottom: 10 }}>
+              <strong>{l}</strong> — <a href={`/league/widget/${id}?show=${k}`} target="_blank">معاينة</a>
+              <textarea readOnly dir="ltr" rows={2} style={{ width: "100%", fontSize: ".8rem" }} value={`<iframe src="${appUrl()}/league/widget/${id}?show=${k}" width="100%" height="${h}" style="border:0" loading="lazy" title="${l}"></iframe>`} />
+            </div>
+          ))}
+        </details>
+      )}
       <div className="tabs">{tabs.map(([k, l]) => <Link key={k} href={`?tab=${k}`} className={`tab ${tab === k ? "active" : ""}`}>{l}</Link>)}</div>
       {tab === "fixtures" && <Fixtures id={id} manage={manage} teams={teams} stages={stages} stage={stage} />}
       {tab === "table" && <Table id={id} stages={stages} stage={stage} />}

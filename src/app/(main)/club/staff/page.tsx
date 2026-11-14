@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { staff, sanctions } from "@/db/schema";
 import { requireClubUser } from "@/lib/auth";
 import { getCurrentSeason } from "@/lib/registration";
-import { REG_STATUS, STAFF_ROLE, STAFF_GROUP, staffGroup, COACH_LEVEL } from "@/lib/labels";
+import { REG_STATUS, STAFF_ROLE, STAFF_GROUP, STAFF_GROUPS, staffGroup, COACH_LEVEL, type StaffGroup } from "@/lib/labels";
 import { fileUrl } from "@/lib/storage";
 import { PageHead, Flash, Badge, Field, Empty, type SP } from "@/components/ui";
 import { Submit } from "@/components/Client";
@@ -17,11 +17,11 @@ export default async function ClubStaff({ searchParams }: { searchParams: SP }) 
   const season = await getCurrentSeason();
   const rows = await db.select().from(staff).where(and(eq(staff.clubId, u.clubId), eq(staff.seasonId, season?.id ?? 0))).orderBy(staff.role, staff.fullName);
   const bans = await db.select().from(sanctions).where(and(eq(sanctions.clubId, u.clubId), eq(sanctions.targetType, "STAFF"), eq(sanctions.status, "ACTIVE"))).orderBy(desc(sanctions.id));
-  const table = (g: "COACH" | "OFFICIAL") => {
+  const table = (g: StaffGroup) => {
     const list = rows.filter((s) => staffGroup(s.role) === g);
     return (
       <div className="card table-wrap" key={g}>
-        <h3>{g === "COACH" ? "🧢 الجهاز الفني" : "🗂 إداريو النادي"} ({list.length})</h3>
+        <h3>{STAFF_GROUP[g].icon} {STAFF_GROUP[g].label} ({list.length})</h3>
         {list.length === 0 ? <Empty>لا يوجد</Empty> : (
           <table className="t"><thead><tr><th></th><th>الاسم</th><th>الصفة</th>{g === "COACH" && <><th>المستوى</th><th>الرخصة</th></>}<th>الحالة</th><th></th></tr></thead>
             <tbody>{list.map((s) => (
@@ -48,7 +48,7 @@ export default async function ClubStaff({ searchParams }: { searchParams: SP }) 
           <form action={createStaff} className="form f3 mt">
             <Field label="الدور والصفة *"><select name="role" required defaultValue="">
               <option value="" disabled>اختر</option>
-              {(["COACH", "OFFICIAL"] as const).map((g) => <optgroup key={g} label={STAFF_GROUP[g].label}>{STAFF_GROUP[g].roles.map((r) => <option key={r} value={r}>{STAFF_ROLE[r]}</option>)}</optgroup>)}
+              {STAFF_GROUPS.map((g) => <optgroup key={g} label={STAFF_GROUP[g].label}>{STAFF_GROUP[g].roles.map((r) => <option key={r} value={r}>{STAFF_ROLE[r]}</option>)}</optgroup>)}
             </select></Field>
             <Field label="الرقم الوطني / رقم الجواز" hint="إن كان الشخص مسجّلًا مسبقًا (مدربًا أو لاعبًا) تُنقل بياناته تلقائيًا"><input name="nationalId" dir="ltr" /></Field>
             <Field label="الاسم الكامل"><input name="fullName" /></Field>
@@ -56,8 +56,7 @@ export default async function ClubStaff({ searchParams }: { searchParams: SP }) 
           </form>
         </details>
       )}
-      {table("COACH")}
-      {table("OFFICIAL")}
+      {STAFF_GROUPS.map((g) => table(g))}
     </>
   );
 }

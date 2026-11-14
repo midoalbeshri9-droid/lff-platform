@@ -5,7 +5,7 @@ import { scopeOf, clubIn, regIn, guardPage, inScopeReg, inScopePlayer } from "@/
 import { requireUser } from "@/lib/auth";
 import { getCurrentSeason } from "@/lib/registration";
 import Link from "next/link";
-import { REG_STATUS, STAFF_ROLE, STAFF_GROUP, staffGroup, COACH_LEVEL } from "@/lib/labels";
+import { REG_STATUS, STAFF_ROLE, STAFF_GROUP, STAFF_GROUPS, staffGroup, COACH_LEVEL } from "@/lib/labels";
 import { fileUrl } from "@/lib/storage";
 import { fmtDateTime } from "@/lib/util";
 import { PageHead, Flash, Badge, Empty, type SP } from "@/components/ui";
@@ -30,7 +30,7 @@ export default async function StaffReview({ searchParams }: { searchParams: SP }
         <div className="field"><label>الموسم</label><select name="season" defaultValue={String(seasonId)}>{ss.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
         <div className="field"><label>الحالة</label><select name="status" defaultValue={sp.status ?? "SUBMITTED"}>
           <option value="SUBMITTED">قيد المراجعة</option><option value="APPROVED">معتمد</option><option value="NEEDS_CORRECTION">مُعاد</option><option value="REJECTED">مرفوض</option><option value="ALL">الكل</option></select></div>
-        <div className="field"><label>الدور</label><select name="group" defaultValue={sp.group ?? ""}><option value="">الكل</option><option value="COACH">{STAFF_GROUP.COACH.label}</option><option value="OFFICIAL">{STAFF_GROUP.OFFICIAL.label}</option></select></div>
+        <div className="field"><label>الدور</label><select name="group" defaultValue={sp.group ?? ""}><option value="">الكل</option>{STAFF_GROUPS.map((g) => <option key={g} value={g}>{STAFF_GROUP[g].label}</option>)}</select></div>
         <button className="btn btn-light">عرض</button>
       </form>
       <div className="card table-wrap">

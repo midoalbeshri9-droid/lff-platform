@@ -11,7 +11,7 @@ import {
   saveSeason, setCurrentSeason, closeSeason, saveWindow, toggleWindow, deleteWindow, saveCategory, saveDocType, saveRegSettings,
 } from "../actions";
 
-const STAFF_REQ: Record<string, string> = { COACH: "الجهاز الفني", OFFICIAL: "إداريو النادي" };
+const STAFF_REQ: Record<string, string> = { COACH: "المدربون", TEAM: "إداريو الفريق", OFFICIAL: "إداريو النادي" };
 
 export default async function RegSettings({ searchParams }: { searchParams: SP }) {
   const u = await requireUser("reg.windows");

@@ -518,3 +518,9 @@ table.t:has(> thead):not(.no-num) > tfoot > tr::before { content: ""; display: t
 .wa-btn { background: #25d366; color: #fff !important; font-weight: 700; border-radius: 999px; padding: 6px 14px; text-decoration: none; font-size: .9rem; }
 .wa-btn:hover { background: #1ebe5a; }
 .wa-btn.wa-none { background: #fde68a; color: #7c2d12 !important; font-weight: 600; }
+
+/* نوافذ المسابقات القابلة للتضمين */
+.lg-embed { padding: 8px 10px; min-height: 0; background: #fff; }
+.lg-embed-h { display: flex; align-items: center; gap: 8px; padding-bottom: 6px; border-bottom: 2px solid var(--lff-green, #0b5d3b); margin-bottom: 8px; }
+.lg-embed-h img { width: 28px; height: 28px; } .lg-embed-h small { color: #666; margin-inline-start: auto; }
+.lg-embed-f { display: block; text-align: center; font-size: .8rem; color: #0b5d3b; margin-top: 8px; }

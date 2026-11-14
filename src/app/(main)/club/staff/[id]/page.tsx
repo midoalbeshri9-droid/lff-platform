@@ -3,7 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { staff, staffDocuments, documentTypes } from "@/db/schema";
 import { requireClubUser } from "@/lib/auth";
-import { REG_STATUS, DOC_STATUS, STAFF_ROLE, STAFF_GROUP, staffGroup, LICENSED_ROLES, COACH_LICENSE, COACH_LEVEL } from "@/lib/labels";
+import { REG_STATUS, DOC_STATUS, STAFF_ROLE, STAFF_GROUP, STAFF_GROUPS, staffGroup, LICENSED_ROLES, COACH_LICENSE, COACH_LEVEL } from "@/lib/labels";
 import { fileUrl } from "@/lib/storage";
 import { staffDocTypes, staffMissing, staffRequiredDocs } from "@/lib/staffreg";
 import { PageHead, Flash, Badge, Field, type SP } from "@/components/ui";
@@ -39,7 +39,7 @@ export default async function ClubStaffMember({ params, searchParams }: { params
             <fieldset className="form-sec"><legend>التسجيل</legend>
               <div className="form f3">
                 <Field label="الدور والصفة *"><select name="role" defaultValue={s.role}>
-                  {(["COACH", "OFFICIAL"] as const).map((k) => <optgroup key={k} label={STAFF_GROUP[k].label}>{STAFF_GROUP[k].roles.map((r) => <option key={r} value={r}>{STAFF_ROLE[r]}</option>)}</optgroup>)}
+                  {STAFF_GROUPS.map((k) => <optgroup key={k} label={STAFF_GROUP[k].label}>{STAFF_GROUP[k].roles.map((r) => <option key={r} value={r}>{STAFF_ROLE[r]}</option>)}</optgroup>)}
                 </select></Field>
                 {lic && <Field label="مستوى المدرب *"><select name="level" defaultValue={s.level ?? "AMATEUR"}>{Object.entries(COACH_LEVEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>}
               </div>

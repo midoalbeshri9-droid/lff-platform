@@ -154,6 +154,13 @@ export async function migrate() {
     await db.insert(s.settings).values({ key: "mig_fifa_player_docs", value: new Date().toISOString() }).onConflictDoNothing();
     console.log("✓ مستندات FIFA للاعبين");
   }
+  // 20) فئة «إداري الفريق»: المستندات المطلوبة من إداريي النادي تُطلب منهم أيضًا
+  const [st20] = await db.select().from(s.settings).where(eq(s.settings.key, "mig_team_officials"));
+  if (!st20) {
+    await db.execute(sql`update document_types set required_for = array_append(required_for, 'TEAM') where scope = 'STAFF' and 'OFFICIAL' = any(required_for) and not ('TEAM' = any(required_for))`);
+    await db.insert(s.settings).values({ key: "mig_team_officials", value: new Date().toISOString() }).onConflictDoNothing();
+    console.log("✓ فئة إداري الفريق");
+  }
   console.log("✓ اكتمل ترحيل البيانات");
 }
 
