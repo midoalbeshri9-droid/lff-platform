@@ -104,7 +104,7 @@ export default async function RegSettings({ searchParams }: { searchParams: SP }
               <tr key={s.id}><td><strong>{s.name}</strong></td><td>{fmtDate(s.startDate)}</td><td>{fmtDate(s.endDate)}</td>
                 <td>{s.isCurrent ? <span className="b b-green">الموسم الحالي</span> : ""}</td>
                 <td className="btn-row">
-                  {!s.isCurrent && <form action={setCurrentSeason}><input type="hidden" name="id" value={s.id} /><Submit className="btn btn-sm btn-light" confirm="تعيين كموسم حالي؟ ستُنشأ الطلبات الجديدة عليه.">تعيين كحالي</Submit></form>}
+                  {!s.isCurrent && <form action={setCurrentSeason} className="row" style={{ gap: 4, flexWrap: "nowrap" }}><input type="hidden" name="id" value={s.id} /><label className="check" style={{ fontSize: ".75rem" }}><input type="checkbox" name="notify" defaultChecked /> إبلاغ الأندية بالتجديد</label><Submit className="btn btn-sm btn-light" confirm="تعيين كموسم حالي؟ ستُنشأ الطلبات الجديدة عليه.">تعيين كحالي</Submit></form>}
                   {!s.isCurrent && <form action={closeSeason}><input type="hidden" name="id" value={s.id} /><Submit className="btn btn-sm btn-ghost" confirm="إغلاق الموسم؟ ستصبح كل قيوده المعتمدة منتهية.">إغلاق الموسم</Submit></form>}
                 </td></tr>
             ))}</tbody></table>

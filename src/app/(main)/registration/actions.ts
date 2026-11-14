@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/db";
 import {
   registrations, registrationDocuments, players, suspensions, seasons, registrationWindows, ageCategories, documentTypes,
-  listTemplates, cardTemplates, cardPrints, settings, staff, contracts, staffDocuments, type CardElement,
+  listTemplates, cardTemplates, cardPrints, settings, staff, contracts, staffDocuments, clubs, type CardElement,
 } from "@/db/schema";
 import { guard, scopeOf, inScopeReg, inScopePlayer, inScopeComp, inScopeStaff } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
@@ -290,6 +290,13 @@ export async function setCurrentSeason(f: FormData) {
       await tx.update(seasons).set({ isCurrent: true }).where(eq(seasons.id, id));
     });
     await audit(u, "تعيين الموسم الحالي", "Season", id);
+    // التدوير (Rollover): إبلاغ الأندية بتجديد قيود لاعبيها للموسم الجديد
+    if (f.get("notify") === "on") {
+      const [s] = await db.select({ name: seasons.name }).from(seasons).where(eq(seasons.id, id));
+      const cl = await db.select({ id: clubs.id }).from(clubs).where(eq(clubs.isActive, true));
+      for (const c of cl) await notifyClub(c.id, `بدأ الموسم ${s.name}`, "جدّدوا قيود لاعبيكم ومدربيكم للموسم الجديد — يمكنكم استخدام «التجديد الجماعي»", "/club/renew");
+      return `تم تعيين الموسم الحالي وإبلاغ ${cl.length} نادٍ بالتجديد`;
+    }
     return "تم تعيين الموسم الحالي";
   });
 }
