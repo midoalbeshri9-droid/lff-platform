@@ -12,6 +12,7 @@ import { feeAmount } from "@/lib/finance";
 import { PageHead, Flash, Badge, type SP } from "@/components/ui";
 import { Submit } from "@/components/Client";
 import { decideStaff, reviewStaffDoc, approveAllStaffDocs } from "../../actions";
+import { setFifaId } from "../../fifa-ids/actions";
 
 const Row = ({ k, v }: { k: string; v?: React.ReactNode }) => <div className="kv"><span className="muted">{k}</span><strong>{v || "—"}</strong></div>;
 
@@ -55,6 +56,11 @@ export default async function StaffMemberReview({ params, searchParams }: { para
         </div>
         <div className="card">
           <h3>{lic ? "المستوى والرخصة" : "التسجيل"}</h3>
+          <Row k="FIFA ID" v={u.can("reg.edit") ? (
+            <form action={setFifaId} className="row" style={{ flexWrap: "nowrap", gap: 4 }}>
+              <input type="hidden" name="target" value="staff" /><input type="hidden" name="id" value={s.id} /><input type="hidden" name="back" value={`/registration/staff/${s.id}`} />
+              <input name="fifaId" dir="ltr" defaultValue={s.fifaId ?? ""} style={{ width: 120 }} /><Submit className="btn btn-sm btn-light">حفظ</Submit>
+            </form>) : s.fifaId} />
           <Row k="الدور" v={STAFF_GROUP[staffGroup(s.role)].label} />
           <Row k="الصفة" v={STAFF_ROLE[s.role]} />
           {lic && <>

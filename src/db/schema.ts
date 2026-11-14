@@ -120,6 +120,7 @@ export const clubs = pgTable("clubs", {
   divisionId: integer("division_id").references(() => divisions.id, { onDelete: "set null" }),
   code: text("code").unique(),
   name: text("name").notNull().unique(),
+  fifaId: text("fifa_id"), // المعرّف الدولي في FIFA Connect
   nameEn: text("name_en"),
   shortName: text("short_name"),
   city: text("city"),
@@ -147,6 +148,7 @@ export const players = pgTable("players", {
   motherName: text("mother_name"),
   nationalId: text("national_id").unique(),
   cardNo: text("card_no"), // رقم بطاقة اللاعب لدى الاتحاد (مثل 000146M03) — ثابت للاعب
+  fifaId: text("fifa_id"), // المعرّف الدولي في FIFA Connect (FIFA ID) — التفرد يُفحص في الإدخال والاستيراد
   passportNo: text("passport_no"),
   dateOfBirth: d("date_of_birth").notNull(),
   placeOfBirth: text("place_of_birth"),
@@ -461,6 +463,7 @@ export const officials = pgTable("officials", {
   fullName: text("full_name").notNull(),
   type: officialTypeEnum("type").notNull(),
   grade: officialGradeEnum("grade").notNull().default("THIRD"),
+  fifaId: text("fifa_id"), // المعرّف الدولي في FIFA Connect
   city: text("city"),
   phone: text("phone"),
   email: text("email"),
@@ -711,6 +714,7 @@ export const staff = pgTable("staff", {
   fullName: text("full_name").notNull(),
   role: staffRoleEnum("role").notNull(),
   nationalId: text("national_id"),
+  fifaId: text("fifa_id"), // المعرّف الدولي في FIFA Connect
   nationality: text("nationality").notNull().default("ليبي"),
   dateOfBirth: d("date_of_birth"),
   phone: text("phone"),

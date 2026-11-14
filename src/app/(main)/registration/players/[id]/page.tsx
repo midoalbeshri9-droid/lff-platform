@@ -13,6 +13,7 @@ import { PageHead, Flash, Badge, Field, type SP } from "@/components/ui";
 import { Submit } from "@/components/Client";
 import { PlayerFields } from "@/components/PlayerForm";
 import { PlayerFilesUploader } from "@/components/PlayerFilesUploader";
+import { setFifaId } from "../../fifa-ids/actions";
 import { setShirtNumber, editPlayer, setPlayerStatus, addSuspension, liftSuspension, uploadPlayerDocs, deletePlayerDoc } from "../../actions";
 
 export default async function PlayerFile({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
@@ -44,7 +45,7 @@ export default async function PlayerFile({ params, searchParams }: { params: Pro
   const back = `/registration/players/${id}`;
   return (
     <>
-      <PageHead title={p.fullName} sub={<>{p.cardNo && <>رقم البطاقة <span className="kbd">{p.cardNo}</span> — </>}الرقم الوطني <span className="kbd">{p.nationalId ?? "—"}</span> — مواليد {fmtDate(p.dateOfBirth)}</>} crumbs={[["سجل اللاعبين", "/registration/players"], [p.fullName]]}
+      <PageHead title={p.fullName} sub={<>{p.fifaId && <>FIFA ID <span className="kbd">{p.fifaId}</span> — </>}{p.cardNo && <>رقم البطاقة <span className="kbd">{p.cardNo}</span> — </>}الرقم الوطني <span className="kbd">{p.nationalId ?? "—"}</span> — مواليد {fmtDate(p.dateOfBirth)}</>} crumbs={[["سجل اللاعبين", "/registration/players"], [p.fullName]]}
         actions={u.can("archive.view") ? <Link className="btn btn-light" href={`/archive?player=${p.id}`}>🗄 وثائق اللاعب في الأرشيف</Link> : undefined} />
       <Flash sp={sp} />
       <div className="grid g-side">
@@ -132,6 +133,16 @@ export default async function PlayerFile({ params, searchParams }: { params: Pro
                 <Field label="من"><input type="date" name="startDate" defaultValue={t} /></Field>
                 <Field label="إلى (فارغ = حتى إشعار آخر)"><input type="date" name="endDate" /></Field>
                 <Submit className="btn btn-danger">تسجيل الإيقاف</Submit>
+              </form>
+            </details>
+          )}
+          {u.can("reg.edit") && (
+            <details className="box card">
+              <summary>🌐 رقم FIFA ID {p.fifaId ? <span className="kbd">{p.fifaId}</span> : <span className="muted">— غير مسجّل</span>}</summary>
+              <form action={setFifaId} className="row mt">
+                <input type="hidden" name="target" value="players" /><input type="hidden" name="id" value={id} /><input type="hidden" name="back" value={back} />
+                <input name="fifaId" dir="ltr" defaultValue={p.fifaId ?? ""} placeholder="مثل 105C408" style={{ flex: 1 }} />
+                <Submit className="btn btn-sm">حفظ</Submit>
               </form>
             </details>
           )}

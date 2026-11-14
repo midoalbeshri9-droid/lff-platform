@@ -24,7 +24,7 @@ export default async function PlayersList({ searchParams }: { searchParams: SP }
     .from(players)
     .where(and(
       sc ? or(inArray(players.id, db.select({ id: registrations.playerId }).from(registrations).where(regIn(sc))), clubIn(sc, players.createdByClubId)) : undefined,
-      q ? or(ilike(players.fullName, `%${q}%`), ilike(players.nationalId, `%${q}%`), ilike(players.cardNo, `%${q}%`), ilike(players.passportNo, `%${q}%`), ilike(players.fullNameEn, `%${q}%`)) : undefined,
+      q ? or(ilike(players.fullName, `%${q}%`), ilike(players.nationalId, `%${q}%`), ilike(players.cardNo, `%${q}%`), ilike(players.passportNo, `%${q}%`), ilike(players.fullNameEn, `%${q}%`), ilike(players.fifaId, `%${q}%`)) : undefined,
       sp.status ? eq(players.status, sp.status as "ACTIVE") : undefined,
       sp.foreign === "1" ? eq(players.isForeign, true) : undefined,
       sp.approx === "1" ? ilike(players.notes, "%تاريخ الميلاد تقريبي%") : undefined,
