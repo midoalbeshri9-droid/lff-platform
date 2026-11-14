@@ -1126,3 +1126,16 @@ export const archiveVersions = pgTable("archive_versions", {
   replacedAt: ts("replaced_at").notNull().defaultNow(),
   note: text("note"),
 });
+
+// رسائل واتساب الناتجة عن أزرار التأكيد: تظهر لمن ضغط الزر ليرسلها بضغطة (wa.me)، أو تُرسل تلقائيًا إن ضُبط WhatsApp Cloud API
+export const waOutbox = pgTable("wa_outbox", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }), // من ضغط الزر
+  toName: text("to_name").notNull(),
+  phone: text("phone"), // فارغ = لا يوجد رقم مسجّل
+  body: text("body").notNull(),
+  status: text("status").notNull().default("PENDING"), // PENDING | DONE | DISMISSED | SENT | FAILED | NO_PHONE
+  error: text("error"),
+  createdAt: ts("created_at").notNull().defaultNow(),
+  doneAt: ts("done_at"),
+});

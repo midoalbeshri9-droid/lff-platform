@@ -3,6 +3,7 @@ import { inArray, eq, and, isNull, or } from "drizzle-orm";
 import { db, type Tx } from "@/db";
 import { auditLogs, notifications, users, clubs, matches, competitions, type Role } from "@/db/schema";
 import type { CurrentUser } from "./auth";
+import { queueWa, waText, clubTargets, officialTargets } from "./waoutbox";
 
 export async function audit(
   u: Pick<CurrentUser, "id" | "fullName"> | null,
@@ -33,13 +34,16 @@ export async function notifyRoles(roles: Role[], title: string, body: string | n
 }
 
 export async function notifyClub(clubId: number, title: string, body: string | null, link: string | null, tx?: Tx) {
-  return notifyRoles(["CLUB_MANAGER", "CLUB_EMPLOYEE", "CLUB_VIEWER"], title, body, link, clubId, tx);
+  await notifyRoles(["CLUB_MANAGER", "CLUB_EMPLOYEE", "CLUB_VIEWER"], title, body, link, clubId, tx);
+  // نفس الإشعار جاهزًا على واتساب لمن ضغط الزر (أو يُرسل تلقائيًا إن فُعّل الربط الرسمي)
+  await queueWa(await clubTargets(clubId, tx ?? db), waText(title, body, link), tx ?? db);
 }
 
 export async function notifyOfficial(officialId: number, title: string, body: string | null, link: string | null, tx?: Tx) {
   const q = tx ?? db;
   const rows = await q.select({ id: users.id }).from(users).where(eq(users.officialId, officialId));
   if (rows.length) await q.insert(notifications).values(rows.map((r) => ({ userId: r.id, title, body, link })));
+  await queueWa(await officialTargets(officialId, q), waText(title, body, link), q);
 }
 
 /**

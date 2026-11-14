@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { WaOutbox } from "@/components/WaOutbox";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { and, eq, sql, lt, notInArray, inArray } from "drizzle-orm";
+import { and, eq, sql, lt, notInArray, inArray, gte, desc } from "drizzle-orm";
 import { db } from "@/db";
-import { notifications, registrations, matches, assignments, staff, appeals, matchRequests, users, decisions, contracts } from "@/db/schema";
+import { notifications, registrations, matches, assignments, staff, appeals, matchRequests, users, decisions, contracts, waOutbox } from "@/db/schema";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth";
 import { scopeOf, regIn, clubIn, compIn } from "@/lib/scope";
 import { ROLE_LABEL, ROLE_COMMITTEE } from "@/lib/labels";
@@ -175,6 +176,9 @@ export default async function MainLayout({ children }: { children: React.ReactNo
   const missingContact = (!me?.email && u.role !== "OBSERVER") || !me?.phone; // البريد اختياري لمراقبي المباريات
   const sub = u.isClub ? `بوابة الأندية — ${u.clubName}` : u.isOfficial ? (u.role === "OBSERVER" ? "بوابة مراقبي المباريات" : "بوابة الحكام") : "منظومة القيد والمسابقات والحكام";
 
+  // رسائل واتساب الجاهزة من آخر 24 ساعة لهذا المستخدم
+  const wa = (await db.select().from(waOutbox).where(and(eq(waOutbox.userId, u.id), inArray(waOutbox.status, ["PENDING", "NO_PHONE", "FAILED"]), gte(waOutbox.createdAt, new Date(Date.now() - 864e5)))).orderBy(desc(waOutbox.id)).limit(30))
+    .map((w) => ({ id: w.id, toName: w.toName, status: w.status, preview: w.body, link: w.status === "PENDING" && w.phone ? `https://wa.me/${w.phone}?text=${encodeURIComponent(w.body)}` : null }));
   return (
     <>
       <header className="lff-header" style={{ position: "relative" }}>
@@ -208,6 +212,7 @@ export default async function MainLayout({ children }: { children: React.ReactNo
       <NavMenu items={items} />
       <main className="lff-container content">
         {missingContact && !path.startsWith("/profile") && <div className="alert warn">أكمل بيانات حسابك: البريد الإلكتروني ورقم الهاتف مطلوبان. <Link href="/profile">تحديث الآن</Link></div>}
+        <WaOutbox items={wa} />
         {children}
       </main>
       <footer className="lff-footer no-print">

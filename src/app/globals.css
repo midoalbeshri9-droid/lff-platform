@@ -509,3 +509,12 @@ table.t:has(> thead):not(.no-num) > tfoot > tr::before { content: ""; display: t
 .ltr { direction: ltr; text-align: left; }
 .form-sec { border: 1px solid var(--line, #e5e7eb); border-radius: 10px; padding: 12px 14px; margin: 0 0 14px; }
 .form-sec > legend { font-weight: 700; padding: 0 6px; color: var(--primary, #0b5d3b); }
+
+/* إشعارات واتساب الجاهزة */
+.wa-box { background: #effaf2; border: 1px solid #b7e4c7; border-radius: 12px; padding: 10px 14px; margin: 0 0 14px; }
+.wa-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 8px; }
+.wa-head .btn { margin-inline-start: auto; }
+.wa-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.wa-btn { background: #25d366; color: #fff !important; font-weight: 700; border-radius: 999px; padding: 6px 14px; text-decoration: none; font-size: .9rem; }
+.wa-btn:hover { background: #1ebe5a; }
+.wa-btn.wa-none { background: #fde68a; color: #7c2d12 !important; font-weight: 600; }
