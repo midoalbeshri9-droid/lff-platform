@@ -76,9 +76,8 @@ export function consumeBackupCode(hashes: string[] | null, code: string) {
   return hashes.filter((x) => x !== h);
 }
 
-/** الأدوار الملزمة بالتحقق بخطوتين (قابلة للتعديل من إعدادات النظام) */
-export const DEFAULT_2FA_ROLES: Role[] = ["ADMIN", "PRESIDENT", "SECRETARY_GENERAL", "REG_HEAD", "COMP_HEAD", "REF_HEAD", "FIN_HEAD", "FIN_STAFF"];
+/** الأدوار الملزمة بالتحقق بخطوتين — افتراضيًا لا أحد (اختياري للجميع)، ويمكن للمدير إلزام أدوار من الإعدادات العامة */
 export async function required2faRoles(): Promise<Role[]> {
-  const v = await getSetting("require_2fa_roles", DEFAULT_2FA_ROLES.join(","));
+  const v = await getSetting("require_2fa_roles", "");
   return v.split(",").map((x) => x.trim()).filter(Boolean) as Role[];
 }

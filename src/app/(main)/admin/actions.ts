@@ -272,7 +272,6 @@ export async function save2faRoles(f: FormData) {
   await attempt("/admin/settings", async () => {
     const valid = new Set<string>(roleEnum.enumValues);
     const roles = f.getAll("r2fa").map(String).filter((r) => valid.has(r));
-    if (!roles.includes("ADMIN")) roles.push("ADMIN"); // مدير المنظومة ملزم دائمًا
     const v = roles.join(",");
     await db.insert(settings).values({ key: "require_2fa_roles", value: v }).onConflictDoUpdate({ target: settings.key, set: { value: v } });
     await audit(u, "تعديل الأدوار الملزمة بالتحقق بخطوتين", "Setting", null, { roles });

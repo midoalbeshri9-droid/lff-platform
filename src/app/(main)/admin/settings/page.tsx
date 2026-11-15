@@ -23,9 +23,9 @@ export default async function Settings({ searchParams }: { searchParams: SP }) {
       </form>
       <form action={save2faRoles} className="card" style={{ maxWidth: 760 }}>
         <h2>🔐 الأدوار الملزمة بالتحقق بخطوتين</h2>
-        <p className="muted">أصحاب هذه الأدوار لا يستطيعون استخدام المنظومة قبل ربط هواتفهم بتطبيق المصادقة. مدير المنظومة ملزم دائمًا. يمكن لأي مستخدم آخر تفعيله اختياريًا من «حسابي».</p>
+        <p className="muted">التحقق بخطوتين اختياري لكل المستخدمين (يفعّله كل شخص من «حسابي»). إن اخترت أدوارًا هنا يصبح إلزاميًا لأصحابها: لا يستخدمون المنظومة قبل ربط هواتفهم. اتركها كلها فارغة ليبقى اختياريًا للجميع.</p>
         <div className="grid g3" style={{ gap: ".3rem" }}>{Object.entries(ROLE_LABEL).map(([k, l]) => (
-          <label key={k} className="check"><input type="checkbox" name="r2fa" value={k} defaultChecked={r2.includes(k as never)} disabled={k === "ADMIN"} /> {l}</label>))}</div>
+          <label key={k} className="check"><input type="checkbox" name="r2fa" value={k} defaultChecked={r2.includes(k as never)} /> {l}</label>))}</div>
         <div className="mt"><Submit>حفظ</Submit></div>
       </form>
     </>
