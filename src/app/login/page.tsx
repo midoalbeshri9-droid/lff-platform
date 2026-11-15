@@ -46,7 +46,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             </div>
             <Submit>دخول</Submit>
           </form>
-          <p style={{ textAlign: "center", marginTop: ".8rem" }}><a href="/forgot">نسيت كلمة المرور؟</a></p>
+          <p style={{ textAlign: "center", marginTop: ".8rem" }}><a href="/forgot">نسيت كلمة المرور؟</a> · <a href="/apply">التسجيل الذاتي للاعبين والحكام</a></p>
           <hr />
           <p className="muted" style={{ fontSize: ".82rem", textAlign: "center", margin: 0 }}>
             يُقفل الحساب 15 دقيقة بعد 5 محاولات فاشلة.

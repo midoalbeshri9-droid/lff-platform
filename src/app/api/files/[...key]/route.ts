@@ -1,6 +1,6 @@
 import { eq, and, or } from "drizzle-orm";
 import { db } from "@/db";
-import { registrationDocuments, registrations, players, correspondence, decisions, archiveDocs, archiveVersions, staff, reportFiles } from "@/db/schema";
+import { registrationDocuments, registrations, players, correspondence, decisions, archiveDocs, archiveVersions, staff, reportFiles, selfApplications } from "@/db/schema";
 import { inScopeMatch } from "@/lib/scope";
 import { ROLE_COMMITTEE } from "@/lib/labels";
 import { canSeeDoc } from "@/lib/archive";
@@ -52,14 +52,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ key: st
     } else if (key.startsWith(`docs/${u.clubId}/`)) {
       // مجلد مستندات النادي: كل ما فيه رُفع للنادي نفسه (طلبات القيد، الإداريون، طلبات التأجيل، ملف اللاعب)
       allowed = true;
-    } else if (key.startsWith("photos/")) {
+    } else if (key.startsWith("photos/") || key.startsWith("self-apply/")) {
       const [p] = await db.select({ id: players.id }).from(players)
         .leftJoin(registrations, eq(registrations.playerId, players.id))
         .where(and(eq(players.photoKey, key), or(eq(registrations.clubId, u.clubId!), eq(registrations.fromClubId, u.clubId!), eq(players.createdByClubId, u.clubId!))))
         .limit(1);
       // صور الإداريين والجهاز الفني للنادي نفسه
       const [s] = p ? [p] : await db.select({ id: staff.id }).from(staff).where(and(eq(staff.photoKey, key), eq(staff.clubId, u.clubId!))).limit(1);
-      allowed = !!s;
+      // طلبات التسجيل الذاتي المقدّمة لهذا النادي (الصورة وإثبات الهوية)
+      const [a] = s ? [s] : key.startsWith("self-apply/") ? await db.select({ id: selfApplications.id }).from(selfApplications)
+        .where(and(eq(selfApplications.clubId, u.clubId!), or(eq(selfApplications.photoKey, key), eq(selfApplications.idDocKey, key)))).limit(1) : [];
+      allowed = !!a;
     }
   }
   if (!allowed) return new Response("forbidden", { status: 403 });

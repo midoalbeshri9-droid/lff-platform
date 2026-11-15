@@ -414,7 +414,7 @@ export async function saveDocType(f: FormData) {
 export async function saveRegSettings(f: FormData) {
   const u = await requireFedUser("reg.windows");
   await attempt("/registration/settings", async () => {
-    for (const k of ["require_origin_consent"]) {
+    for (const k of ["require_origin_consent", "self_apply"]) {
       const v = bool(f, k) ? "1" : "0";
       await db.insert(settings).values({ key: k, value: v }).onConflictDoUpdate({ target: settings.key, set: { value: v } });
     }

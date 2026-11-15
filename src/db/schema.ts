@@ -1206,3 +1206,40 @@ export const clubCategories = pgTable("club_categories", {
   createdBy: text("created_by").notNull(),
   createdAt: ts("created_at").notNull().defaultNow(),
 });
+
+// التسجيل الذاتي (Self-Registration): طلب يقدّمه اللاعب أو الحكم بنفسه من صفحة عامة،
+// فيعتمده النادي المختار (للاعب) أو لجنة الحكام (للحكم/المراقب) ليتحول إلى سجل ثم طلب قيد
+export const selfApplications = pgTable("self_applications", {
+  id: serial("id").primaryKey(),
+  kind: text("kind").notNull(), // PLAYER | OFFICIAL
+  fullName: text("full_name").notNull(),
+  fullNameEn: text("full_name_en"),
+  motherName: text("mother_name"),
+  dateOfBirth: d("date_of_birth").notNull(),
+  placeOfBirth: text("place_of_birth"),
+  gender: text("gender").notNull().default("MALE"),
+  nationality: text("nationality").notNull().default("ليبي"),
+  nationalId: text("national_id"),
+  passportNo: text("passport_no"),
+  phone: text("phone").notNull(),
+  email: text("email"),
+  city: text("city"),
+  address: text("address"),
+  clubId: integer("club_id").references(() => clubs.id, { onDelete: "set null" }),
+  position: text("position"),
+  officialType: text("official_type"),
+  experience: text("experience"),
+  photoKey: text("photo_key"),
+  photoHash: text("photo_hash"),
+  idDocKey: text("id_doc_key"),
+  status: text("status").notNull().default("NEW"), // NEW | ACCEPTED | REJECTED
+  reviewNote: text("review_note"),
+  handledBy: text("handled_by"),
+  handledAt: ts("handled_at"),
+  playerId: integer("player_id"),
+  officialId: integer("official_id"),
+  registrationId: integer("registration_id"),
+  refNo: text("ref_no").notNull(),
+  ip: text("ip"),
+  createdAt: ts("created_at").notNull().defaultNow(),
+}, (t) => [index("self_app_status_idx").on(t.status, t.kind)]);

@@ -262,4 +262,7 @@ export const CONTRACT_STATUS: Record<string, [string, string]> = {
 };
 export const EXPENSE_KIND: Record<string, string> = { TRAVEL: "تنقل", ACCOMMODATION: "إقامة", MEALS: "إعاشة", OTHER: "أخرى" };
 export const EXPENSE_STATUS: Record<string, [string, string]> = { SUBMITTED: ["بانتظار الاعتماد", "b-amber"], APPROVED: ["معتمد", "b-green"], REJECTED: ["مرفوض", "b-red"] };
+export const SELF_APP_STATUS: Record<string, [string, string]> = { NEW: ["جديد", "b-amber"], ACCEPTED: ["مقبول", "b-green"], REJECTED: ["مرفوض", "b-red"] };
+/** أنواع الطواقم المسموح لها بالتسجيل الذاتي */
+export const SELF_OFFICIAL_TYPES = ["REFEREE", "ASSISTANT"] as const;
 export const CLUB_CATEGORY: Record<string, string> = { "1": "الفئة 1", "2": "الفئة 2", "3": "الفئة 3", "4": "الفئة 4", NA: "غير منطبق (لا يسجّل لاعبين نظاميين)" };

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { and, eq, sql, lt, notInArray, inArray, gte, desc } from "drizzle-orm";
 import { db } from "@/db";
-import { notifications, registrations, matches, assignments, staff, appeals, matchRequests, users, decisions, contracts, waOutbox, officialExpenses } from "@/db/schema";
+import { notifications, registrations, matches, assignments, staff, appeals, matchRequests, users, decisions, contracts, waOutbox, officialExpenses, selfApplications } from "@/db/schema";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth";
 import { scopeOf, regIn, clubIn, compIn } from "@/lib/scope";
 import { ROLE_LABEL, ROLE_COMMITTEE } from "@/lib/labels";
@@ -28,6 +28,7 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
       { label: "لاعبو النادي", href: "/club/players" },
       { label: "الطلبات", href: "/club/requests", badge: corr },
       { label: "التجديد الجماعي", href: "/club/renew" },
+      { label: "📝 طلبات التسجيل الذاتي", href: "/club/applications", badge: await count(db.select({ n }).from(selfApplications).where(and(eq(selfApplications.kind, "PLAYER"), eq(selfApplications.clubId, u.clubId!), eq(selfApplications.status, "NEW")))) },
       { label: "عقود المحترفين", href: "/club/contracts" },
       ...(u.can("club.origin") ? [{ label: "طلبات انتقال لاعبينا", href: "/club/origin", badge: origin }] : []),
       { label: "المدربون والإداريون", href: "/club/staff" },
@@ -104,6 +105,7 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
         { label: "🟨 الحكام", href: "/referees" },
         { label: "📋 تعيين الطواقم", href: "/referees/assignments", badge: drafts },
         ...(u.can("ref.evals") ? [{ label: "★ تقييمات الحكام", href: "/referees/evaluations" }] : []),
+        { label: "📝 طلبات انضمام الحكام", href: "/referees/applications", badge: await count(db.select({ n }).from(selfApplications).where(and(eq(selfApplications.kind, "OFFICIAL"), eq(selfApplications.status, "NEW")))) },
         { label: "💼 مصاريف الحكام", href: "/referees/expenses", badge: await count(db.select({ n }).from(officialExpenses).where(eq(officialExpenses.status, "SUBMITTED"))) },
       ],
     });
