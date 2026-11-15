@@ -4,11 +4,11 @@ import { POSITION, PRO_LEVEL, GENDER } from "@/lib/labels";
 type P = Partial<{
   fullName: string; fullNameEn: string | null; cardNo: string | null; motherName: string | null; nationalId: string | null; passportNo: string | null;
   dateOfBirth: string; placeOfBirth: string | null; gender: string; nationality: string; isForeign: boolean; position: string;
-  professionalLevel: string; phone: string | null; address: string | null; city: string | null;
+  professionalLevel: string; phone: string | null; address: string | null; city: string | null; medicalExamDate: string | null;
 }>;
 
 /** حقول بيانات اللاعب — limited: النادي يعدّل بيانات الاتصال والمركز فقط بعد أول اعتماد */
-export function PlayerFields({ p = {}, limited = false, photoRequired = false, federation = false }: { p?: P; limited?: boolean; photoRequired?: boolean; federation?: boolean }) {
+export function PlayerFields({ p = {}, limited = false, photoRequired = false, federation = false, medical }: { p?: P; limited?: boolean; photoRequired?: boolean; federation?: boolean; medical?: { months: number; expiry: string | null; expired: boolean } }) {
   const dis = limited ? { disabled: true } : {};
   return (
     <>
@@ -31,6 +31,9 @@ export function PlayerFields({ p = {}, limited = false, photoRequired = false, f
       <Field label="صفة اللاعب"><select name="professionalLevel" defaultValue={p.professionalLevel ?? "AMATEUR"}><Options map={PRO_LEVEL} /></select></Field>
       <Field label="الهاتف"><input type="text" name="phone" dir="ltr" defaultValue={p.phone ?? ""} /></Field>
       <Field label="المدينة"><input type="text" name="city" defaultValue={p.city ?? ""} /></Field>
+      {medical && <Field label="تاريخ آخر كشف طبي" hint={p.medicalExamDate ? `صالح ${medical.months} شهرًا — ${medical.expired ? "⛔ منتهٍ منذ" : "ينتهي في"} ${medical.expiry}` : `صلاحيته ${medical.months} شهرًا من تاريخه`}>
+        <input type="date" name="medicalExamDate" defaultValue={p.medicalExamDate ?? ""} />
+      </Field>}
       <Field label="العنوان" full><input type="text" name="address" defaultValue={p.address ?? ""} /></Field>
       <Field label={`الصورة الشخصية${photoRequired ? " *" : ""}`} hint="صورة حديثة بخلفية فاتحة — JPG أو PNG">
         <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" required={photoRequired} />

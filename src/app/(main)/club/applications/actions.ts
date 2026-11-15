@@ -7,6 +7,7 @@ import { requireClubUser, requireUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { getCurrentSeason, categoryFor, findDuplicates, photoDuplicates, logEvent } from "@/lib/registration";
 import { attempt, int, str, UserError } from "@/lib/util";
+import { nidMismatch } from "@/lib/regchecks";
 
 async function loadApp(id: number, kind: "PLAYER" | "OFFICIAL", clubId?: number) {
   const [a] = await db.select().from(selfApplications).where(and(eq(selfApplications.id, id), eq(selfApplications.kind, kind), clubId ? eq(selfApplications.clubId, clubId) : undefined));
@@ -42,7 +43,7 @@ export async function acceptPlayerApp(f: FormData) {
       }).returning();
       const [r] = await tx.insert(registrations).values({
         playerId: pl.id, clubId: u.clubId, seasonId: season.id, type: "NEW", status: "DRAFT", categoryId: cat?.id,
-        possibleDuplicates: dups.length ? dups.join("، ") : null,
+        possibleDuplicates: [dups.length ? dups.join("، ") : null, nidMismatch(a.nationalId, a.dateOfBirth, a.gender) ? `⚠ ${nidMismatch(a.nationalId, a.dateOfBirth, a.gender)}` : null].filter(Boolean).join(" — ") || null,
       }).returning();
       await logEvent(tx, r.id, u.fullName, "إنشاء طلب قيد من تسجيل ذاتي", a.refNo);
       await tx.update(selfApplications).set({ status: "ACCEPTED", playerId: pl.id, registrationId: r.id, handledBy: u.fullName, handledAt: new Date() }).where(eq(selfApplications.id, id));

@@ -11,7 +11,9 @@ import { RegSummary, Timeline, DocStatusBadge, docMissing } from "@/components/R
 import { updateDraft, uploadDocument, deleteDocument, submitRequest, cancelRequest } from "../../actions";
 import { ContractBrief } from "@/components/EContract";
 import { createContract } from "../../contracts/actions";
-import { needsContract } from "@/lib/registration";
+import { needsContract, getSetting } from "@/lib/registration";
+import { medicalMonths, medicalExpiry, freeShirt } from "@/lib/regchecks";
+import { today } from "@/lib/util";
 import { missingForSubmit, runningContract } from "@/lib/contracts";
 
 export default async function ClubReg({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SP }) {
@@ -27,6 +29,12 @@ export default async function ClubReg({ params, searchParams }: { params: Promis
   const win = await openWindow(r.seasonId, u.clubId);
   const running = !x.contract || x.contract.status === "TERMINATED" ? await runningContract(p.id, u.clubId) : null;
   const cMiss = running ? [] : x.contract ? missingForSubmit(x.contract) : ["العقد لم يُكتب بعد"];
+  const months = await medicalMonths();
+  const mexp = medicalExpiry(p.medicalExamDate, months);
+  const medical = { months, expiry: mexp, expired: !!mexp && mexp < today() };
+  const free = editable && !r.shirtNumber ? await freeShirt(u.clubId, r.seasonId, r.categoryId, r.id) : null;
+  const oDays = Number(await getSetting("origin_deadline_days", "7"));
+  const oLeft = r.originResponse === "PENDING" && r.submittedAt && oDays > 0 ? Math.max(0, Math.ceil((new Date(r.submittedAt).getTime() + oDays * 864e5 - Date.now()) / 864e5)) : null;
 
   return (
     <>
@@ -35,6 +43,8 @@ export default async function ClubReg({ params, searchParams }: { params: Promis
       <div className="grid g-side">
         <div>
           <RegSummary x={x} />
+          {oLeft != null && <div className="alert info">⏳ بانتظار رد النادي السابق — إن لم يرد خلال {oLeft} يوم يُعتبر عدم اعتراض تلقائيًا</div>}
+          {medical.expired && <div className="alert warn">🩺 الكشف الطبي للاعب منتهٍ منذ {mexp} — حدّث تاريخ الكشف بعد إجرائه</div>}
 
           {(needsContract(p.professionalLevel) || x.contract) && (
             <div className="card" id="contract">
@@ -94,8 +104,8 @@ export default async function ClubReg({ params, searchParams }: { params: Promis
               {limited && <p className="muted">بيانات الهوية تعدّلها لجنة القيد فقط لأن اللاعب سبق اعتماده. يمكنك تعديل الاتصال والمركز والصورة.</p>}
               <form action={updateDraft} className="form mt">
                 <input type="hidden" name="id" value={r.id} />
-                <PlayerFields p={p} limited={limited} />
-                <Field label="رقم القميص"><input type="number" name="shirtNumber" min={1} max={99} defaultValue={r.shirtNumber ?? ""} /></Field>
+                <PlayerFields p={p} limited={limited} medical={medical} />
+                <Field label="رقم القميص" hint={free ? `أول رقم شاغر: ${free}` : undefined}><input type="number" name="shirtNumber" min={1} max={99} defaultValue={r.shirtNumber ?? ""} /></Field>
                 {r.type === "LOAN" && <Field label="نهاية الإعارة"><input type="date" name="loanEndDate" defaultValue={r.loanEndDate ?? ""} /></Field>}
                 <Field label="موافقة ولي الأمر (للقاصر)"><label className="check"><input type="checkbox" name="parentalConsent" defaultChecked={r.parentalConsent} /> تم الحصول على الموافقة</label></Field>
                 <Field label="ملاحظات للجنة" full><textarea name="notes" defaultValue={r.notes ?? ""} /></Field>

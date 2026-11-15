@@ -42,7 +42,7 @@ export function Empty({ children }: { children: ReactNode }) {
   return <div className="empty">{children}</div>;
 }
 
-export function Field({ label, children, full, hint }: { label: string; children: ReactNode; full?: boolean; hint?: string }) {
+export function Field({ label, children, full, hint }: { label: string; children: ReactNode; full?: boolean; hint?: ReactNode }) {
   return (
     <div className={`field${full ? " full" : ""}`}>
       <label>{label}</label>

@@ -9,6 +9,7 @@ import { getCurrentUser, type CurrentUser } from "@/lib/auth";
 import { scopeOf, regIn, clubIn, compIn } from "@/lib/scope";
 import { ROLE_LABEL, ROLE_COMMITTEE } from "@/lib/labels";
 import { today } from "@/lib/util";
+import { maybeRunRegJobs } from "@/lib/regjobs";
 import { NavMenu, type NavItem } from "@/components/Client";
 
 async function count(q: Promise<{ n: number }[]>) {
@@ -66,6 +67,7 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
         ...(u.can("reg.lists") ? [{ label: "📋 قوائم الفرق", href: "/registration/lists" }] : []),
         ...(u.can("reg.edit") ? [{ label: "🌐 أرقام FIFA ID", href: "/registration/fifa-ids" }] : []),
         ...(u.can("reg.edit") ? [{ label: "🔀 السجلات المكررة", href: "/registration/duplicates" }] : []),
+        { label: "🪪 فحص الأرقام الوطنية", href: "/registration/nid-check" },
         { label: "🏷 تصنيف الأندية للتدريب", href: "/registration/club-categories" },
         ...(u.can("cards.print") ? [{ label: "🪪 طباعة البطاقات", href: "/registration/cards" }] : []),
         ...(u.can("cards.design") ? [{ label: "🎨 تصميم البطاقات", href: "/registration/cards/templates" }] : []),
@@ -171,6 +173,8 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
 
 export default async function MainLayout({ children }: { children: React.ReactNode }) {
   const u = await getCurrentUser();
+  // المهام الدورية للجنة القيد (المهل، الإعارات، التذكيرات، الكشف الطبي) — مرة كل ساعة عند دخول موظف اللجنة
+  if (u && (u.role === "REG_HEAD" || u.role === "REG_STAFF" || u.role === "ADMIN")) await maybeRunRegJobs();
   if (!u) redirect("/login");
   const path = (await headers()).get("x-path") ?? "";
   if (u.mustChangePassword && !path.startsWith("/profile")) redirect("/profile?mustchange=1");

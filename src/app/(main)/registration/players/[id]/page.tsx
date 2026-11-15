@@ -12,6 +12,7 @@ import { fileUrl } from "@/lib/storage";
 import { PageHead, Flash, Badge, Field, type SP } from "@/components/ui";
 import { Submit } from "@/components/Client";
 import { PlayerFields } from "@/components/PlayerForm";
+import { medicalMonths, medicalExpiry, nidMismatch } from "@/lib/regchecks";
 import { PlayerFilesUploader } from "@/components/PlayerFilesUploader";
 import { setFifaId } from "../../fifa-ids/actions";
 import { addPassportRecord, deletePassportRecord } from "../../passport-actions";
@@ -26,6 +27,10 @@ export default async function PlayerFile({ params, searchParams }: { params: Pro
   const [p] = await db.select().from(players).where(eq(players.id, id));
   if (!p) notFound();
   guardPage(await inScopePlayer(u, id));
+  const months = await medicalMonths();
+  const mexp = medicalExpiry(p.medicalExamDate, months);
+  const medical = { months, expiry: mexp, expired: !!mexp && mexp < today() };
+  const nidBad = nidMismatch(p.nationalId, p.dateOfBirth, p.gender);
   const fc = alias(clubs, "fc");
   const [regs, susp, evs] = await Promise.all([
     db.select({ r: registrations, club: clubs.name, from: fc.name, season: seasons.name }).from(registrations)
@@ -52,6 +57,8 @@ export default async function PlayerFile({ params, searchParams }: { params: Pro
       <PageHead title={p.fullName} sub={<>{p.fifaId && <>FIFA ID <span className="kbd">{p.fifaId}</span> — </>}{p.cardNo && <>رقم البطاقة (MA ID) <span className="kbd">{p.cardNo}</span> — </>}الرقم الوطني <span className="kbd">{p.nationalId ?? "—"}</span> — مواليد {fmtDate(p.dateOfBirth)}</>} crumbs={[["سجل اللاعبين", "/registration/players"], [p.fullName]]}
         actions={u.can("archive.view") ? <Link className="btn btn-light" href={`/archive?player=${p.id}`}>🗄 وثائق اللاعب في الأرشيف</Link> : undefined} />
       <Flash sp={sp} />
+      {nidBad && <div className="alert warn">🪪 {nidBad}</div>}
+      {medical.expired && <div className="alert warn">🩺 الكشف الطبي منتهٍ منذ {mexp}</div>}
       <div className="grid g-side">
         <div>
           <div className="card row" style={{ alignItems: "flex-start", gap: "1.2rem" }}>
@@ -192,7 +199,7 @@ export default async function PlayerFile({ params, searchParams }: { params: Pro
               <summary>✎ تعديل بيانات اللاعب</summary>
               <form action={editPlayer} className="form f1 mt">
                 <input type="hidden" name="playerId" value={id} />
-                <PlayerFields p={p} federation />
+                <PlayerFields p={p} federation medical={medical} />
                 <Submit>حفظ التعديلات</Submit>
               </form>
             </details>

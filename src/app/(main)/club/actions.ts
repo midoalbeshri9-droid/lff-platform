@@ -5,6 +5,7 @@ import { db } from "@/db";
 import {
   players, registrations, registrationDocuments, documentTypes, matches, users, seasons, contracts, staff, matchRequests,
 } from "@/db/schema";
+import { checkNid, assertShirtFree } from "@/lib/regchecks";
 import { requireClubUser } from "@/lib/auth";
 import { audit, notifyRoles, notifyClub, notifyStaff } from "@/lib/audit";
 import {
@@ -15,7 +16,7 @@ import { clubBlockReason } from "@/lib/finance";
 import { missingForSubmit, runningContract } from "@/lib/contracts";
 import { saveLineup } from "@/lib/lineup";
 import { saveUpload, deleteObject, ALLOWED_IMG } from "@/lib/storage";
-import { attempt, str, req, int, bool, UserError, back, reqEmail, reqPhone, num } from "@/lib/util";
+import { attempt, str, req, int, bool, UserError, back, reqEmail, reqPhone, num, today } from "@/lib/util";
 import { ensureUniqueContact } from "@/lib/users";
 import { sendActivation, unusableHash } from "@/lib/tokens";
 
@@ -67,6 +68,8 @@ export async function createPlayerAndRequest(f: FormData) {
     const photo = f.get("photo") as File | null;
     const dups: { id: number; fullName: string; nationalId: string | null; byPhoto?: boolean }[] = await findDuplicates(p.fullName, p.dateOfBirth);
     const cat = await categoryFor(p.dateOfBirth, season.startDate);
+    const nidWarn = await checkNid(p.nationalId, p.dateOfBirth, p.gender);
+    await assertShirtFree({ clubId: u.clubId, seasonId: season.id, categoryId: cat?.id ?? null, shirt: int(f, "shirtNumber") });
     let photoKey: string | null = null, photoHash: string | null = null;
     if (photo && photo.size) {
       const sv = await saveUpload(photo, "photos", ALLOWED_IMG);
@@ -79,7 +82,7 @@ export async function createPlayerAndRequest(f: FormData) {
       const [r] = await tx.insert(registrations).values({
         playerId: pl.id, clubId: u.clubId, seasonId: season.id, type: "NEW", status: "DRAFT", categoryId: cat?.id,
         shirtNumber: int(f, "shirtNumber"),
-        possibleDuplicates: dups.length ? dups.map((d) => `#${d.id} ${d.fullName}${"byPhoto" in d ? " (نفس الصورة)" : ""}`).join("، ") : null,
+        possibleDuplicates: [dups.length ? dups.map((d) => `#${d.id} ${d.fullName}${"byPhoto" in d ? " (نفس الصورة)" : ""}`).join("، ") : null, nidWarn].filter(Boolean).join(" — ") || null,
       }).returning();
       regId = r.id;
       await logEvent(tx, r.id, u.fullName, "إنشاء طلب قيد جديد");
@@ -148,13 +151,18 @@ export async function updateDraft(f: FormData) {
     const pf = p.createdByClubId === u.clubId && !everApproved ? playerFields(f) : null;
     const [sea] = await db.select().from(seasons).where(eq(seasons.id, r.seasonId));
     const cat = pf ? await categoryFor(pf.dateOfBirth, sea.startDate) : null;
+    const nidWarn = pf ? await checkNid(pf.nationalId, pf.dateOfBirth, pf.gender) : null;
+    await assertShirtFree({ clubId: u.clubId, seasonId: r.seasonId, categoryId: cat?.id ?? r.categoryId, shirt: int(f, "shirtNumber"), exceptRegId: id });
+    const med = str(f, "medicalExamDate");
+    if (med && med > today()) throw new UserError("تاريخ الكشف الطبي لا يكون في المستقبل");
     const photo = f.get("photo") as File | null;
     const saved = photo && photo.size ? await saveUpload(photo, "photos", ALLOWED_IMG) : null;
     const pd = saved ? await photoDuplicates(saved.hash, p.id) : [];
     await db.transaction(async (tx) => {
       if (pf) {
         await tx.update(players).set(pf).where(eq(players.id, p.id));
-        await tx.update(registrations).set({ categoryId: cat?.id }).where(eq(registrations.id, id));
+        await tx.update(registrations).set({ categoryId: cat?.id,
+          possibleDuplicates: [(r.possibleDuplicates ?? "").replace(/\s*—?\s*⚠ الرقم الوطني لا يطابق[^—]*/g, "").trim() || null, nidWarn].filter(Boolean).join(" — ") || null }).where(eq(registrations.id, id));
       } else {
         await tx.update(players).set({
           phone: str(f, "phone"), address: str(f, "address"), city: str(f, "city"),
@@ -166,6 +174,7 @@ export async function updateDraft(f: FormData) {
         await tx.update(players).set({ photoKey: saved.key, photoHash: saved.hash }).where(eq(players.id, p.id));
         if (pd.length) await tx.update(registrations).set({ possibleDuplicates: [r.possibleDuplicates, ...pd.map((x) => `#${x.id} ${x.fullName} (نفس الصورة)`)].filter(Boolean).join("، ") }).where(eq(registrations.id, id));
       }
+      if (f.has("medicalExamDate") && (med ?? null) !== (p.medicalExamDate ?? null)) await tx.update(players).set({ medicalExamDate: med }).where(eq(players.id, p.id));
       await tx.update(registrations).set({
         shirtNumber: int(f, "shirtNumber"),
         loanEndDate: str(f, "loanEndDate"), parentalConsent: bool(f, "parentalConsent"), notes: str(f, "notes"), updatedAt: new Date(),
@@ -373,15 +382,19 @@ export async function importPlayers(f: FormData) {
         const isForeign = ["نعم", "yes", "1"].includes(cell(r, 8).toLowerCase());
         const cat = await categoryFor(dob, season.startDate);
         const dups = await findDuplicates(fullName, dob);
+        const nidWarn = await checkNid(nid, dob);
+        const shirt = Number(cell(r, 12)) || null;
+        await assertShirtFree({ clubId: u.clubId, seasonId: season.id, categoryId: cat?.id ?? null, shirt });
         await db.transaction(async (tx) => {
           const [pl] = await tx.insert(players).values({
+            gender: nid?.[0] === "2" ? "FEMALE" : "MALE",
             fullName, fullNameEn: cell(r, 2) || null, nationalId: nid, passportNo: passport, dateOfBirth: dob, placeOfBirth: cell(r, 6) || null,
             nationality: cell(r, 7) || (isForeign ? "" : "ليبي"), isForeign, position: (POS_MAP[cell(r, 9)] ?? "UNKNOWN") as "UNKNOWN",
             professionalLevel: (LEVEL_MAP[cell(r, 10)] ?? "AMATEUR") as "AMATEUR", phone: cell(r, 11) || null, createdByClubId: u.clubId,
           }).returning();
           const [reg] = await tx.insert(registrations).values({
             playerId: pl.id, clubId: u.clubId, seasonId: season.id, type: "NEW", status: "DRAFT", categoryId: cat?.id,
-            shirtNumber: Number(cell(r, 12)) || null, possibleDuplicates: dups.length ? dups.map((d) => `#${d.id} ${d.fullName}`).join("، ") : null,
+            shirtNumber: shirt, possibleDuplicates: [dups.length ? dups.map((d) => `#${d.id} ${d.fullName}`).join("، ") : null, nidWarn].filter(Boolean).join(" — ") || null,
           }).returning();
           await logEvent(tx, reg.id, u.fullName, "استيراد من Excel");
         });

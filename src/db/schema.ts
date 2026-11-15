@@ -163,6 +163,8 @@ export const players = pgTable("players", {
   city: text("city"),
   photoKey: text("photo_key"),
   photoHash: text("photo_hash"),
+  medicalExamDate: d("medical_exam_date"), // تاريخ آخر كشف طبي دوري
+  medicalNotifiedFor: d("medical_notified_for"), // آخر تاريخ كشف أُرسل عنه تنبيه قرب الانتهاء
   status: playerStatusEnum("status").notNull().default("ACTIVE"),
   notes: text("notes"),
   createdAt: ts("created_at").notNull().defaultNow(),
@@ -203,6 +205,7 @@ export const registrations = pgTable("registrations", {
   decidedBy: text("decided_by"),
   decisionReason: text("decision_reason"),
   verifyToken: uuid("verify_token").notNull().unique().default(sql`gen_random_uuid()`),
+  correctionReminders: integer("correction_reminders").notNull().default(0), // تذكيرات النادي بالطلب المعاد للتصحيح
   cardPrintCount: integer("card_print_count").notNull().default(0),
   lastCardPrintedAt: ts("last_card_printed_at"),
   createdAt: ts("created_at").notNull().defaultNow(),

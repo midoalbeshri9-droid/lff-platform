@@ -11,6 +11,7 @@ import {
 import { guard, scopeOf, inScopeReg, inScopePlayer, inScopeComp, inScopeStaff } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { audit, notifyClub } from "@/lib/audit";
+import { assertShirtFree } from "@/lib/regchecks";
 import { approveRegistration, logEvent, missingDocs, categoryFor, assertForeignQuota, assertPlayerCap, assertNotSuspended, needsContract } from "@/lib/registration";
 import { approveInTx, runningContract } from "@/lib/contracts";
 import { staffRequiredDocs } from "@/lib/staffreg";
@@ -99,7 +100,7 @@ export async function decide(f: FormData) {
     if (!["SUBMITTED", "NEEDS_CORRECTION"].includes(r.status)) throw new UserError("لا يمكن اتخاذ قرار في هذه الحالة");
     const status = decision === "return" ? "NEEDS_CORRECTION" : "REJECTED";
     await db.transaction(async (tx) => {
-      await tx.update(registrations).set({ status, decisionReason: reason, decidedAt: new Date(), decidedBy: u.fullName, updatedAt: new Date() }).where(eq(registrations.id, id));
+      await tx.update(registrations).set({ status, decisionReason: reason, decidedAt: new Date(), decidedBy: u.fullName, correctionReminders: 0, updatedAt: new Date() }).where(eq(registrations.id, id));
       await logEvent(tx, id, u.fullName, status === "REJECTED" ? "رفض الطلب" : "إعادة للنادي للاستكمال", reason);
       await tx.update(contracts).set(status === "REJECTED"
         ? { status: "TERMINATED", terminatedAt: new Date(), terminationReason: "رُفض طلب القيد", updatedAt: new Date() }
@@ -133,6 +134,7 @@ export async function editPlayer(f: FormData) {
       placeOfBirth: str(f, "placeOfBirth"), gender: (str(f, "gender") ?? "MALE") as "MALE", nationality: str(f, "nationality") ?? "ليبي",
       isForeign: bool(f, "isForeign"), position: (str(f, "position") ?? "UNKNOWN") as "UNKNOWN",
       professionalLevel: (str(f, "professionalLevel") ?? "AMATEUR") as "AMATEUR", phone: str(f, "phone"), address: str(f, "address"), city: str(f, "city"),
+      ...(f.has("medicalExamDate") ? { medicalExamDate: str(f, "medicalExamDate") } : {}),
     };
     // تصحيح تاريخ الميلاد التقريبي يزيل علامة «يُستكمل»
     const fixedApprox = before.dateOfBirth !== data.dateOfBirth && before.notes?.includes("تاريخ الميلاد تقريبي")
@@ -171,13 +173,9 @@ export async function setPlayerStatus(f: FormData) {
 /** رقم الغلالة: 1–99 ولا يتكرر بين القيود السارية للنادي نفسه في الموسم نفسه */
 async function checkShirt(regId: number, shirt: number | null) {
   if (shirt == null) return;
-  if (!(shirt >= 1 && shirt <= 99)) throw new UserError("رقم الغلالة من 1 إلى 99");
   const [r] = await db.select().from(registrations).where(eq(registrations.id, regId));
   if (!r) throw new UserError("القيد غير موجود");
-  const [dup] = await db.select({ name: players.fullName }).from(registrations).innerJoin(players, eq(players.id, registrations.playerId))
-    .where(and(eq(registrations.clubId, r.clubId), eq(registrations.seasonId, r.seasonId), eq(registrations.status, "APPROVED"), eq(registrations.shirtNumber, shirt), ne(registrations.id, regId),
-      r.categoryId ? eq(registrations.categoryId, r.categoryId) : undefined));
-  if (dup) throw new UserError(`رقم الغلالة (${shirt}) مستخدم للاعب ${dup.name} في النادي نفسه`);
+  await assertShirtFree({ clubId: r.clubId, seasonId: r.seasonId, categoryId: r.categoryId, shirt, exceptRegId: regId });
 }
 
 /** تعديل رقم الغلالة من ملف اللاعب (لجنة القيد) */
@@ -418,6 +416,17 @@ export async function saveRegSettings(f: FormData) {
     for (const k of ["require_origin_consent", "self_apply"]) {
       const v = bool(f, k) ? "1" : "0";
       await db.insert(settings).values({ key: k, value: v }).onConflictDoUpdate({ target: settings.key, set: { value: v } });
+    }
+    // المهل والتحققات: 0 يعني إيقاف الميزة
+    for (const [k, max] of [["origin_deadline_days", 60], ["review_sla_days", 60], ["medical_valid_months", 60]] as const) {
+      if (!f.has(k)) continue;
+      const n = int(f, k) ?? 0;
+      if (n < 0 || n > max) throw new UserError("قيمة غير صحيحة في المهل");
+      await db.insert(settings).values({ key: k, value: String(n) }).onConflictDoUpdate({ target: settings.key, set: { value: String(n) } });
+    }
+    if (f.has("nid_check")) {
+      const v = str(f, "nid_check") === "BLOCK" ? "BLOCK" : "WARN";
+      await db.insert(settings).values({ key: "nid_check", value: v }).onConflictDoUpdate({ target: settings.key, set: { value: v } });
     }
     await audit(u, "تعديل إعدادات القيد", "Setting", null);
     return "تم الحفظ";

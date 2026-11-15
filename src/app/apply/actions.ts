@@ -10,6 +10,7 @@ import { notifyClub, notifyRoles } from "@/lib/audit";
 import { str, req, reqPhone, UserError } from "@/lib/util";
 import { SELF_OFFICIAL_TYPES } from "@/lib/labels";
 import { getSetting } from "@/lib/registration";
+import { checkNid } from "@/lib/regchecks";
 
 /** تقديم طلب تسجيل ذاتي من الصفحة العامة (بدون حساب) — محمي بحقل مخفي وحدّ لعدد الطلبات من نفس الجهاز */
 export async function submitSelfApplication(f: FormData) {
@@ -32,6 +33,7 @@ export async function submitSelfApplication(f: FormData) {
     const dob = req(f, "dateOfBirth", "تاريخ الميلاد");
     const age = (Date.now() - new Date(dob).getTime()) / (365.25 * 864e5);
     if (!(age >= 5 && age <= 70)) throw new UserError("تاريخ الميلاد غير صحيح");
+    await checkNid(nid, dob, str(f, "gender") === "FEMALE" ? "FEMALE" : "MALE");
     let clubId: number | null = null, officialType: string | null = null;
     if (kind === "PLAYER") {
       clubId = Number(str(f, "clubId")) || null;

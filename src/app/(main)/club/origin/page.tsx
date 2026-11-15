@@ -7,6 +7,7 @@ import { fmtDateTime, fmtDate } from "@/lib/util";
 import { PageHead, Flash, Badge, Empty, type SP } from "@/components/ui";
 import { Submit } from "@/components/Client";
 import { respondOrigin } from "../actions";
+import { getSetting } from "@/lib/registration";
 
 export default async function Origin({ searchParams }: { searchParams: SP }) {
   const u = await requireClubUser("club.origin");
@@ -17,6 +18,8 @@ export default async function Origin({ searchParams }: { searchParams: SP }) {
     .where(and(eq(registrations.fromClubId, u.clubId)))
     .orderBy(desc(registrations.id)).limit(200);
   const pending = rows.filter((x) => x.r.originResponse === "PENDING" && x.r.status === "SUBMITTED");
+  const days = Number(await getSetting("origin_deadline_days", "7"));
+  const left = (d: Date | null) => (d && days > 0 ? Math.max(0, Math.ceil((new Date(d).getTime() + days * 864e5 - Date.now()) / 864e5)) : null);
   return (
     <>
       <PageHead title="طلبات انتقال لاعبي النادي" sub="أندية أخرى طلبت انتقال أو إعارة لاعبين مقيدين لديكم — الرد يصل للجنة القيد مباشرة" />
@@ -26,6 +29,7 @@ export default async function Origin({ searchParams }: { searchParams: SP }) {
         <div className="card" key={r.id}>
           <div className="card-head"><h2>{name}</h2><span className="b b-indigo">{REG_TYPE[r.type]}</span></div>
           <p>إلى نادي <strong>{to}</strong> — تاريخ الميلاد {fmtDate(dob)} — أُرسل {fmtDateTime(r.submittedAt)}</p>
+          {left(r.submittedAt) != null && <div className={`alert ${left(r.submittedAt)! <= 2 ? "warn" : "info"}`}>⏳ متبقٍ {left(r.submittedAt)} يوم للرد — بعدها يُعتبر عدم الرد «عدم اعتراض» تلقائيًا</div>}
           <form action={respondOrigin} className="form">
             <input type="hidden" name="id" value={r.id} />
             <div className="field full"><label>ملاحظة / سبب الاعتراض</label><textarea name="reason" placeholder="مثال: اللاعب مرتبط بعقد ساري حتى ..." /></div>

@@ -2,6 +2,7 @@ import "server-only";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { registrations, players, ageCategories, competitions, suspensions, competitionSquads } from "@/db/schema";
+import { medicalMonths, medicalExpiry } from "./regchecks";
 
 export type EligibilityRow = {
   playerId: number;
@@ -15,6 +16,7 @@ export type EligibilityRow = {
   position: string;
   ok: boolean;
   reasons: string[];
+  warnings: string[]; // لا تمنع المشاركة لكن تُنبّه (مثل انتهاء الكشف الطبي)
 };
 
 /**
@@ -44,9 +46,13 @@ export async function clubEligibility(clubId: number, competitionId: number, on:
     ? await db.select().from(suspensions).where(and(inArray(suspensions.playerId, ids), eq(suspensions.isLifted, false)))
     : [];
 
+  const months = await medicalMonths();
   return regs
     .map(({ r, p, catName, catMax }) => {
       const reasons: string[] = [];
+      const warnings: string[] = [];
+      const mexp = medicalExpiry(p.medicalExamDate, months);
+      if (mexp && mexp < on) warnings.push(`الكشف الطبي منتهٍ منذ ${mexp}`);
       if (p.status === "BLOCKED") reasons.push("موقوف إداريًا");
       if (p.status === "RETIRED") reasons.push("معتزل");
       for (const s of susp.filter((s) => s.playerId === p.id && s.startDate <= on)) {
@@ -73,6 +79,7 @@ export async function clubEligibility(clubId: number, competitionId: number, on:
         position: p.position,
         ok: reasons.length === 0,
         reasons,
+        warnings,
       };
     })
     .sort((a, b) => (a.shirtNumber ?? 999) - (b.shirtNumber ?? 999) || a.fullName.localeCompare(b.fullName, "ar"));
