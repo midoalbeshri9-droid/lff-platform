@@ -4,7 +4,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { registrations, matches, clubs, competitions } from "@/db/schema";
 import { requireClubUser } from "@/lib/auth";
-import { getCurrentSeason, openWindow, foreignQuota } from "@/lib/registration";
+import { getCurrentSeason, openWindow, foreignQuota, playerCap } from "@/lib/registration";
 import { clubBlockReason, clubBalance } from "@/lib/finance";
 import { contracts, players } from "@/db/schema";
 import { lte as lteD } from "drizzle-orm";
@@ -25,6 +25,7 @@ export default async function ClubHome() {
     : [];
   const c = (s: string) => counts.find((x) => x.status === s)?.n ?? 0;
   const w = season ? await openWindow(season.id, u.clubId) : null;
+  const cap = season ? await playerCap(u.clubId, season.id) : null;
   const quota = season ? (await foreignQuota(u.clubId, season.id)).filter((q) => q.max != null || q.used > 0) : [];
   const block = await clubBlockReason(u.clubId);
   const bal = u.can("club.finance") ? await clubBalance(u.clubId) : null;
@@ -65,6 +66,11 @@ export default async function ClubHome() {
         <Kpi v={c("NEEDS_CORRECTION")} l="طلبات تحتاج استكمال" color="red" href="/club/requests?status=NEEDS_CORRECTION" />
         <Kpi v={c("DRAFT")} l="مسودات لم تُرسل" color="gold" href="/club/requests?status=DRAFT" />
       </div>
+      {cap?.max != null && (
+        <div className={`alert ${cap.used >= cap.max ? "err" : cap.used >= cap.max * 0.9 ? "warn" : "info"} mt`}>
+          👥 اللاعبون المقيدون هذا الموسم (معتمد + مُرسَل): <strong>{cap.used} / {cap.max}</strong>{cap.used >= cap.max ? " — اكتمل الحد، لا يمكن إرسال طلبات قيد جديدة" : ` — متبقٍ ${cap.max - cap.used}`}
+        </div>
+      )}
       <div className="grid g2 mt">
         {quota.length > 0 && (
           <div className="card">

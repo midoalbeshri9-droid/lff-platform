@@ -5,7 +5,7 @@ import { registrations, players, registrationDocuments, seasons } from "@/db/sch
 import { requireClubUser } from "@/lib/auth";
 import { audit, notifyStaff } from "@/lib/audit";
 import { attempt, UserError } from "@/lib/util";
-import { getCurrentSeason, categoryFor, logEvent, missingDocs, openWindow, needsContract, assertForeignQuota } from "@/lib/registration";
+import { getCurrentSeason, categoryFor, logEvent, missingDocs, openWindow, needsContract, assertForeignQuota, assertPlayerCap, assertNotSuspended } from "@/lib/registration";
 import { clubBlockReason } from "@/lib/finance";
 import { runningContract } from "@/lib/contracts";
 
@@ -54,7 +54,7 @@ export async function bulkRenew(f: FormData) {
         const miss = await missingDocs(regId);
         if (miss.length) reason = miss.map((m) => m.name).join("، ");
         else if (needsContract(p.professionalLevel) && !(await runningContract(pid, u.clubId))) reason = "عقد ساري";
-        else { try { await assertForeignQuota(regId); } catch (e) { reason = (e as Error).message; } }
+        else { try { await assertNotSuspended(pid); await assertForeignQuota(regId); await assertPlayerCap(regId); } catch (e) { reason = (e as Error).message; } }
       }
       if (!reason) {
         await db.transaction(async (tx) => {

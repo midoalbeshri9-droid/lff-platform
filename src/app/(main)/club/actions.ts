@@ -9,7 +9,7 @@ import { requireClubUser } from "@/lib/auth";
 import { audit, notifyRoles, notifyClub, notifyStaff } from "@/lib/audit";
 import {
   getCurrentSeason, openWindow, categoryFor, findDuplicates, activeRegistration, lastApproved, logEvent, missingDocs, getSetting,
-  assertForeignQuota, needsContract, photoDuplicates,
+  assertForeignQuota, assertPlayerCap, assertNotSuspended, needsContract, photoDuplicates,
 } from "@/lib/registration";
 import { clubBlockReason } from "@/lib/finance";
 import { missingForSubmit, runningContract } from "@/lib/contracts";
@@ -104,6 +104,7 @@ export async function requestExisting(f: FormData) {
     const [p] = await db.select().from(players).where(eq(players.id, playerId));
     if (!p) throw new UserError("اللاعب غير موجود");
     if (p.status !== "ACTIVE") throw new UserError("اللاعب غير نشط (معتزل أو موقوف إداريًا)");
+    await assertNotSuspended(playerId);
     const open = await db
       .select({ id: registrations.id })
       .from(registrations)
@@ -218,6 +219,8 @@ export async function submitRequest(f: FormData) {
     if (block) throw new UserError(block);
     const w = await openWindow(r.seasonId, u.clubId);
     if (!w) throw new UserError("فترة القيد مغلقة حاليًا — لا يمكن إرسال الطلبات");
+    await assertNotSuspended(r.playerId);
+    await assertPlayerCap(id);
     const miss = await missingDocs(id);
     if (miss.length) throw new UserError("مستندات إلزامية ناقصة: " + miss.map((m) => m.name).join("، "));
     const [p] = await db.select().from(players).where(eq(players.id, r.playerId));

@@ -82,6 +82,7 @@ export const seasons = pgTable("seasons", {
   startDate: d("start_date").notNull(),
   endDate: d("end_date").notNull(),
   isCurrent: boolean("is_current").notNull().default(false),
+  maxPlayersPerClub: integer("max_players_per_club"), // الحد الأقصى للاعبين المقيدين لكل نادٍ في الموسم (null = بلا حد)
   notes: text("notes"),
 });
 

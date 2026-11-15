@@ -72,7 +72,7 @@ export default async function RegSettings({ searchParams }: { searchParams: SP }
         <h2>فترات القيد والانتقالات</h2>
         <p className="muted">لا تستطيع الأندية إرسال الطلبات إلا خلال فترة مفتوحة لدرجتها (أو فترة عامة لكل الدرجات). يمكن فتح فترة استثنائية لنادٍ واحد.</p>
         <div className="table-wrap">
-          <table className="t"><thead><tr><th>الفترة</th><th>الموسم</th><th>من</th><th>إلى</th><th>تشمل</th><th>الحالة</th><th></th></tr></thead>
+          <table className="t"><thead><tr><th>الفترة</th><th>الموسم</th><th>من</th><th>إلى</th><th>تشمل</th><th>الحالة</th><th>حد اللاعبين لكل نادٍ</th><th></th></tr></thead>
             <tbody>{ws.map(({ w, club }) => (
               <tr key={w.id}><td><strong>{w.label}</strong>{w.isException && <span className="b b-purple" style={{ marginInlineStart: 6 }}>استثنائية</span>}</td>
                 <td>{ss.find((s) => s.id === w.seasonId)?.name}</td><td>{fmtDate(w.startDate)}</td><td>{fmtDate(w.endDate)}</td><td>{club ? `نادي: ${club}` : w.divisionId ? <span className="b b-indigo">{dv.find((x) => x.id === w.divisionId)?.name}</span> : <span className="b b-gray">كل الدرجات</span>}</td><td>{status(w)}</td>
@@ -104,6 +104,9 @@ export default async function RegSettings({ searchParams }: { searchParams: SP }
             <tbody>{ss.map((s) => (
               <tr key={s.id}><td><strong>{s.name}</strong></td><td>{fmtDate(s.startDate)}</td><td>{fmtDate(s.endDate)}</td>
                 <td>{s.isCurrent ? <span className="b b-green">الموسم الحالي</span> : ""}</td>
+                <td><form action={saveSeason} className="row" style={{ gap: 4, flexWrap: "nowrap" }}>
+                  <input type="hidden" name="id" value={s.id} /><input type="hidden" name="name" value={s.name} /><input type="hidden" name="startDate" value={s.startDate} /><input type="hidden" name="endDate" value={s.endDate} /><input type="hidden" name="notes" value={s.notes ?? ""} />
+                  <input type="number" name="maxPlayersPerClub" min={1} defaultValue={s.maxPlayersPerClub ?? ""} placeholder="بلا حد" style={{ width: 80 }} /><Submit className="btn btn-sm btn-light">حفظ</Submit></form></td>
                 <td className="btn-row">
                   {!s.isCurrent && <form action={setCurrentSeason} className="row" style={{ gap: 4, flexWrap: "nowrap" }}><input type="hidden" name="id" value={s.id} /><label className="check" style={{ fontSize: ".75rem" }}><input type="checkbox" name="notify" defaultChecked /> إبلاغ الأندية بالتجديد</label><Submit className="btn btn-sm btn-light" confirm="تعيين كموسم حالي؟ ستُنشأ الطلبات الجديدة عليه.">تعيين كحالي</Submit></form>}
                   {!s.isCurrent && <form action={closeSeason}><input type="hidden" name="id" value={s.id} /><Submit className="btn btn-sm btn-ghost" confirm="إغلاق الموسم؟ ستصبح كل قيوده المعتمدة منتهية.">إغلاق الموسم</Submit></form>}
@@ -115,6 +118,7 @@ export default async function RegSettings({ searchParams }: { searchParams: SP }
             <Field label="الاسم"><input type="text" name="name" required placeholder="2027-2028" dir="ltr" /></Field>
             <Field label="البداية"><input type="date" name="startDate" required /></Field>
             <Field label="النهاية"><input type="date" name="endDate" required /></Field>
+            <Field label="حد اللاعبين لكل نادٍ (اختياري)"><input type="number" name="maxPlayersPerClub" min={1} placeholder="بلا حد" /></Field>
             <div className="full"><Submit>إضافة</Submit></div>
           </form>
         </details>

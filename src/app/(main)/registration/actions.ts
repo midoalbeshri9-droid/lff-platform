@@ -11,7 +11,7 @@ import {
 import { guard, scopeOf, inScopeReg, inScopePlayer, inScopeComp, inScopeStaff } from "@/lib/scope";
 import { requireUser } from "@/lib/auth";
 import { audit, notifyClub } from "@/lib/audit";
-import { approveRegistration, logEvent, missingDocs, categoryFor, assertForeignQuota, needsContract } from "@/lib/registration";
+import { approveRegistration, logEvent, missingDocs, categoryFor, assertForeignQuota, assertPlayerCap, assertNotSuspended, needsContract } from "@/lib/registration";
 import { approveInTx, runningContract } from "@/lib/contracts";
 import { staffRequiredDocs } from "@/lib/staffreg";
 import { addCharge, feeAmount } from "@/lib/finance";
@@ -74,7 +74,8 @@ export async function decide(f: FormData) {
         if (r.originResponse === "PENDING") throw new UserError("بانتظار رد النادي السابق — أو فعّل خيار تجاوز الشروط");
         if (r.originResponse === "OBJECTED") throw new UserError("النادي السابق معترض — اعتماد الطلب يحتاج تجاوز الشروط بقرار اللجنة");
       }
-      if (!override) await assertForeignQuota(id);
+      await assertNotSuspended(r.playerId); // الإيقاف الإداري لا يتجاوزه أي خيار — يُرفع الإيقاف أولًا
+      if (!override) { await assertForeignQuota(id); await assertPlayerCap(id); }
       // العقد جزء من طلب القيد (كما في FIFA Connect): يُعتمد معه
       const [ct] = await db.select().from(contracts).where(eq(contracts.registrationId, id));
       if (!override && needsContract(p.professionalLevel) && r.type !== "LOAN" && ct?.status !== "SUBMITTED" && ct?.status !== "ACTIVE" && !(await runningContract(r.playerId, r.clubId)))
@@ -272,7 +273,7 @@ export async function saveSeason(f: FormData) {
   const u = await requireFedUser("reg.windows");
   await attempt("/registration/settings", async () => {
     const id = int(f, "id");
-    const data = { name: req(f, "name", "اسم الموسم"), startDate: req(f, "startDate", "البداية"), endDate: req(f, "endDate", "النهاية"), notes: str(f, "notes") };
+    const data = { name: req(f, "name", "اسم الموسم"), startDate: req(f, "startDate", "البداية"), endDate: req(f, "endDate", "النهاية"), notes: str(f, "notes"), maxPlayersPerClub: int(f, "maxPlayersPerClub") || null };
     if (data.endDate <= data.startDate) throw new UserError("نهاية الموسم يجب أن تكون بعد بدايته");
     if (id) await db.update(seasons).set(data).where(eq(seasons.id, id));
     else await db.insert(seasons).values(data);

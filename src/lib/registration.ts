@@ -207,3 +207,30 @@ export async function photoDuplicates(hash: string | null, exceptPlayerId?: numb
   return db.select({ id: players.id, fullName: players.fullName }).from(players)
     .where(and(eq(players.photoHash, hash), exceptPlayerId ? ne(players.id, exceptPlayerId) : undefined)).limit(5);
 }
+
+/** عدد اللاعبين المقيدين (معتمد + مُرسَل) لنادٍ في موسم، والحد المسموح */
+export async function playerCap(clubId: number, seasonId: number) {
+  const [s] = await db.select({ max: seasons.maxPlayersPerClub }).from(seasons).where(eq(seasons.id, seasonId));
+  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(registrations)
+    .where(and(eq(registrations.clubId, clubId), eq(registrations.seasonId, seasonId), inArray(registrations.status, ["APPROVED", "SUBMITTED"])));
+  return { used: n, max: s?.max ?? null };
+}
+
+/** يمنع تجاوز الحد الأقصى للاعبين المقيدين في النادي خلال الموسم (عند الإرسال والاعتماد) */
+export async function assertPlayerCap(regId: number) {
+  const [r] = await db.select({ r: registrations, max: seasons.maxPlayersPerClub }).from(registrations)
+    .innerJoin(seasons, eq(seasons.id, registrations.seasonId)).where(eq(registrations.id, regId));
+  if (!r || r.max == null) return;
+  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(registrations)
+    .where(and(eq(registrations.clubId, r.r.clubId), eq(registrations.seasonId, r.r.seasonId), inArray(registrations.status, ["APPROVED", "SUBMITTED"]), ne(registrations.id, regId)));
+  if (n >= r.max) throw new UserError(`اكتمل الحد الأقصى للاعبين المقيدين في النادي لهذا الموسم (${r.max}) — لا يمكن إضافة لاعب قبل إنهاء قيد آخر`);
+}
+
+/** يمنع أي طلب قيد أو انتقال أو إعارة للاعب عليه إيقاف إداري ساري (عقوبة لجنة) */
+export async function assertNotSuspended(playerId: number) {
+  const s = (await activeSuspensions(playerId)).filter((x) => x.kind === "ADMIN");
+  if (s.length) {
+    const x = s[0];
+    throw new UserError(`اللاعب موقوف بعقوبة سارية${x.endDate ? ` حتى ${x.endDate}` : " (مفتوحة المدة)"}: ${x.reason} — لا يُقبل له قيد أو انتقال حتى انتهاء العقوبة أو رفعها`);
+  }
+}
