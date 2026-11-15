@@ -2,7 +2,7 @@
 import { useState, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 export function Submit({ children, className = "btn btn-primary", confirm, name, value }: { children: ReactNode; className?: string; confirm?: string; name?: string; value?: string }) {
   const { pending } = useFormStatus();
@@ -39,7 +39,19 @@ export function NavMenu({ items }: { items: NavItem[] }) {
   const [open, setOpen] = useState<number | null>(null);
   const [mobile, setMobile] = useState(false);
   const path = usePathname();
-  const isActive = (h?: string) => !!h && (h === "/" ? path === "/" : path === h || path.startsWith(h + "/"));
+  const sp = useSearchParams();
+  // يطابق المسار ومعاملات الرابط (مثل ?kind=new)، ويُبرز أدق رابط فقط حتى لا تُضاء عدة عناصر معًا
+  const score = (h?: string) => {
+    if (!h) return -1;
+    const [hp, hq] = h.split("?");
+    if (!(hp === "/" ? path === "/" : path === hp || path.startsWith(hp + "/"))) return -1;
+    const q = new URLSearchParams(hq ?? "");
+    for (const [k, v] of q) if (sp.get(k) !== v) return -1;
+    return hp.length * 10 + [...q].length;
+  };
+  const all = items.flatMap((it) => [it.href, ...(it.children ?? []).map((c) => (c === "sep" ? undefined : c.href))]);
+  const best = Math.max(-1, ...all.map(score));
+  const isActive = (h?: string) => best >= 0 && score(h) === best;
   return (
     <>
       <button className="hdr-icon menu-toggle" onClick={() => setMobile(!mobile)} title="القائمة" style={{ position: "absolute", top: 18, left: 16 }}>

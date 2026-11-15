@@ -101,7 +101,8 @@ export async function requestExisting(f: FormData) {
   const playerId = int(f, "playerId")!;
   const type = (str(f, "type") ?? "RENEWAL") as "RENEWAL" | "TRANSFER" | "LOAN" | "LOAN_RETURN" | "NEW";
   let regId = 0;
-  await attempt(`/club/players/new?q=${playerId}`, async () => {
+  const mode = ["new", "transfer", "return"].includes(str(f, "mode") ?? "") ? `&mode=${str(f, "mode")}` : "";
+  await attempt(`/club/players/new?q=${playerId}${mode}`, async () => {
     const season = await getCurrentSeason();
     if (!season) throw new UserError("لا يوجد موسم حالي");
     const [p] = await db.select().from(players).where(eq(players.id, playerId));

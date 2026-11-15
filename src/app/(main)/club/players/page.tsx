@@ -33,7 +33,7 @@ export default async function ClubPlayers({ searchParams }: { searchParams: SP }
   const shown = sp.medical ? rows.filter(({ p }) => { const e = medicalExpiry(p.medicalExamDate, months); return e && e <= soon; }) : rows;
   return (
     <>
-      <PageHead title="لاعبو النادي" sub={sp.medical ? `${shown.length} لاعب كشفهم الطبي منتهٍ أو ينتهي خلال 30 يومًا` : `${rows.length} لاعب`} actions={u.can("club.edit") && <><Link className="btn btn-light" href="/club/import">⬆ استيراد من Excel</Link><Link className="btn btn-primary" href="/club/players/new">+ إضافة لاعب</Link></>} />
+      <PageHead title="لاعبو النادي" sub={sp.medical ? `${shown.length} لاعب كشفهم الطبي منتهٍ أو ينتهي خلال 30 يومًا` : `${rows.length} لاعب`} actions={u.can("club.edit") && <><Link className="btn btn-primary" href="/club/players/new?mode=new">➕ لاعب جديد</Link><Link className="btn btn-light" href="/club/renew">🔄 تجديد</Link><Link className="btn btn-light" href="/club/players/new?mode=transfer">⇄ انتقال / إعارة</Link></>} />
       <form className="filters card">
         <div className="field"><label>الموسم</label>
           <select name="season" defaultValue={String(seasonId)}>{allSeasons.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>

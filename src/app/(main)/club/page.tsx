@@ -46,7 +46,7 @@ export default async function ClubHome() {
   const susp = season ? await clubSuspended(u.clubId, season.id) : [];
   return (
     <>
-      <PageHead title={`مرحبًا، ${u.clubName}`} sub={season ? `الموسم ${season.name}` : "لا يوجد موسم حالي"} actions={u.can("club.edit") && <Link className="btn btn-primary" href="/club/players/new">+ إضافة لاعب / طلب قيد</Link>} />
+      <PageHead title={`مرحبًا، ${u.clubName}`} sub={season ? `الموسم ${season.name}` : "لا يوجد موسم حالي"} actions={u.can("club.edit") && <><Link className="btn btn-primary" href="/club/players/new?mode=new">➕ لاعب جديد</Link><Link className="btn btn-light" href="/club/renew">🔄 تجديد</Link><Link className="btn btn-light" href="/club/players/new?mode=transfer">⇄ انتقال / إعارة</Link></>} />
       {w ? (
         <div className="alert ok">فترة القيد مفتوحة: <strong>{w.label}</strong> حتى {fmtDate(w.endDate)}</div>
       ) : (

@@ -20,26 +20,70 @@ async function count(q: Promise<{ n: number }[]>) {
 async function buildNav(u: CurrentUser): Promise<NavItem[]> {
   const n = sql<number>`count(*)::int`;
   if (u.isClub) {
-    const corr = await count(db.select({ n }).from(registrations).where(and(eq(registrations.clubId, u.clubId!), eq(registrations.status, "NEEDS_CORRECTION"))));
+    const open = await db.select({ t: registrations.type, st: registrations.status, n }).from(registrations)
+      .where(and(eq(registrations.clubId, u.clubId!), inArray(registrations.status, ["DRAFT", "SUBMITTED", "NEEDS_CORRECTION"])))
+      .groupBy(registrations.type, registrations.status);
+    // شارة كل قسم: الطلبات المعادة للتصحيح + المسودات غير المرسلة (ما يحتاج عملًا من النادي)
+    const todo = (types: string[]) => open.filter((x) => types.includes(x.t) && x.st !== "SUBMITTED").reduce((a, x) => a + x.n, 0);
     const origin = u.can("club.origin")
       ? await count(db.select({ n }).from(registrations).where(and(eq(registrations.fromClubId, u.clubId!), eq(registrations.originResponse, "PENDING"))))
       : 0;
+    const selfApps = await count(db.select({ n }).from(selfApplications).where(and(eq(selfApplications.kind, "PLAYER"), eq(selfApplications.clubId, u.clubId!), eq(selfApplications.status, "NEW"))));
+    const edit = u.can("club.edit");
+    const tNew = todo(["NEW"]), tRen = todo(["RENEWAL"]), tTr = todo(["TRANSFER", "LOAN", "LOAN_RETURN"]);
     return [
       { label: "الرئيسية", href: "/club" },
       { label: "لاعبو النادي", href: "/club/players" },
-      { label: "الطلبات", href: "/club/requests", badge: corr },
-      { label: "التجديد الجماعي", href: "/club/renew" },
-      { label: "📝 طلبات التسجيل الذاتي", href: "/club/applications", badge: await count(db.select({ n }).from(selfApplications).where(and(eq(selfApplications.kind, "PLAYER"), eq(selfApplications.clubId, u.clubId!), eq(selfApplications.status, "NEW")))) },
-      { label: "عقود المحترفين", href: "/club/contracts" },
-      ...(u.can("club.origin") ? [{ label: "طلبات انتقال لاعبينا", href: "/club/origin", badge: origin }] : []),
+      {
+        label: "➕ تسجيل جديد", badge: tNew + selfApps,
+        children: [
+          ...(edit ? [{ label: "➕ تسجيل لاعب جديد", href: "/club/players/new?mode=new" }] : []),
+          { label: "طلبات التسجيل الجديد", href: "/club/requests?kind=new", badge: tNew },
+          { label: "📝 طلبات التسجيل الذاتي", href: "/club/applications", badge: selfApps },
+          ...(edit ? ["sep" as const, { label: "⬆ استيراد لاعبين جدد من Excel", href: "/club/import" }] : []),
+        ],
+      },
+      {
+        label: "🔄 التجديد", badge: tRen,
+        children: [
+          ...(edit ? [{ label: "🔄 تجديد قيد لاعبي النادي", href: "/club/renew" }] : []),
+          { label: "طلبات التجديد", href: "/club/requests?kind=renew", badge: tRen },
+        ],
+      },
+      {
+        label: "⇄ الانتقالات والإعارات", badge: tTr + origin,
+        children: [
+          ...(edit ? [{ label: "⇄ ضم لاعب من نادٍ آخر (انتقال / إعارة)", href: "/club/players/new?mode=transfer" },
+            { label: "↩ عودة لاعب من إعارة", href: "/club/players/new?mode=return" }] : []),
+          { label: "طلبات الانتقال والإعارة الواردة", href: "/club/requests?kind=transfer", badge: tTr },
+          ...(u.can("club.origin") ? ["sep" as const, { label: "📤 طلبات انتقال لاعبينا لأندية أخرى", href: "/club/origin", badge: origin }] : []),
+        ],
+      },
+      {
+        label: "الطلبات والعقود",
+        children: [
+          { label: "كل طلبات القيد", href: "/club/requests" },
+          { label: "عقود المحترفين", href: "/club/contracts" },
+        ],
+      },
       { label: "المدربون والإداريون", href: "/club/staff" },
-      { label: "المباريات والقوائم", href: "/club/matches" },
-      { label: "العقوبات", href: "/club/sanctions" },
+      {
+        label: "المباريات",
+        children: [
+          { label: "المباريات والقوائم", href: "/club/matches" },
+          { label: "قائمة الفريق المعتمدة", href: "/club/roster" },
+          { label: "العقوبات", href: "/club/sanctions" },
+          { label: "ملاعب النادي", href: "/club/stadiums" },
+        ],
+      },
       ...(u.can("club.finance") ? [{ label: "الحساب المالي", href: "/club/finance" }] : []),
-      { label: "قائمة الفريق المعتمدة", href: "/club/roster" },
-      { label: "مراسلات الاتحاد", href: "/club/mail" },
-      { label: "ملاعب النادي", href: "/club/stadiums" },
-      ...(u.role === "CLUB_MANAGER" ? [{ label: "مستخدمو النادي", href: "/club/users" }] : []),
+      {
+        label: "النادي",
+        children: [
+          { label: "مراسلات الاتحاد", href: "/club/mail" },
+          ...(u.role === "CLUB_MANAGER" ? [{ label: "مستخدمو النادي", href: "/club/users" }] : []),
+        ],
+      },
     ];
   }
   if (u.isOfficial) {
