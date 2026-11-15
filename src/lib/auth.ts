@@ -6,6 +6,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { users, rolePermissions, clubs, officials, type Role } from "@/db/schema";
+import { required2faRoles } from "./totp";
 import { DEFAULT_PERMISSIONS, isClubRole, isOfficialRole, SCOPEABLE, DIVISION_ROLES } from "./permissions";
 
 export const SESSION_COOKIE = "lff_session";
@@ -32,6 +33,25 @@ export async function createSession(userId: number, version: number) {
   });
 }
 
+/** مرحلة الدخول الوسطى: كلمة المرور صحيحة وبانتظار رمز التحقق بخطوتين (5 دقائق) */
+const PENDING_COOKIE = "lff_2fa";
+export async function createPending2fa(userId: number, version: number, next: string) {
+  const token = await new SignJWT({ uid: userId, v: version, p: "2fa", n: next }).setProtectedHeader({ alg: "HS256" }).setIssuedAt().setExpirationTime("5m").sign(secret());
+  (await cookies()).set(PENDING_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/login", maxAge: 300 });
+}
+export async function readPending2fa(): Promise<{ uid: number; v: number; next: string } | null> {
+  const t = (await cookies()).get(PENDING_COOKIE)?.value;
+  if (!t) return null;
+  try {
+    const { payload } = await jwtVerify(t, secret());
+    if (payload.p !== "2fa") return null;
+    return { uid: Number(payload.uid), v: Number(payload.v), next: String(payload.n ?? "") };
+  } catch { return null; }
+}
+export async function clearPending2fa() {
+  (await cookies()).set(PENDING_COOKIE, "", { path: "/login", maxAge: 0 });
+}
+
 export async function destroySession() {
   (await cookies()).delete(SESSION_COOKIE);
 }
@@ -48,6 +68,9 @@ export type CurrentUser = {
   /** مستخدم محصور في درجة (مدير/موظف درجة): لا يرى ولا يدير إلا ما يخصها */
   divisionId: number | null;
   mustChangePassword: boolean;
+  /** دوره ملزم بالتحقق بخطوتين ولم يفعّله بعد */
+  needs2fa: boolean;
+  totpEnabled: boolean;
   perms: Set<string>;
   isClub: boolean;
   isOfficial: boolean;
@@ -107,6 +130,8 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     officialType: row.officialType,
     divisionId: scoped ? u.divisionId : null,
     mustChangePassword: u.mustChangePassword,
+    needs2fa: !u.totpEnabled && (await required2faRoles()).includes(u.role),
+    totpEnabled: u.totpEnabled,
     perms,
     isClub: isClubRole(u.role),
     isOfficial: isOfficialRole(u.role),

@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { users } from "@/db/schema";
 import { requireUser, createSession, homeFor } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-import { attempt, UserError, reqEmail, reqPhone } from "@/lib/util";
+import { attempt, UserError, reqEmail, reqPhone, passwordProblem } from "@/lib/util";
 import { ensureUniqueContact } from "@/lib/users";
 import { createToken, appUrl } from "@/lib/tokens";
 import { sendMail } from "@/lib/mail";
@@ -21,7 +21,8 @@ async function changePassword(f: FormData) {
   await attempt("/profile", async () => {
     const [row] = await db.select().from(users).where(eq(users.id, u.id));
     if (!(await bcrypt.compare(cur, row.passwordHash))) throw new UserError("كلمة المرور الحالية غير صحيحة");
-    if (nw.length < 8 || !/[0-9]/.test(nw) || !/[A-Za-z؀-ۿ]/.test(nw)) throw new UserError("كلمة المرور الجديدة: 8 أحرف على الأقل وتحتوي حروفًا وأرقامًا");
+    const weak = passwordProblem(nw, u.username);
+    if (weak) throw new UserError(weak);
     if (nw !== cf) throw new UserError("تأكيد كلمة المرور غير مطابق");
     const ver = row.sessionVersion + 1;
     await db.update(users).set({ passwordHash: await bcrypt.hash(nw, 10), mustChangePassword: false, sessionVersion: ver }).where(eq(users.id, u.id));
@@ -73,6 +74,7 @@ export default async function Profile({ searchParams }: { searchParams: SP }) {
       {u.mustChangePassword && <div className="alert warn">يجب تغيير كلمة المرور المؤقتة قبل استخدام المنظومة.</div>}
       <div className="card" style={{ maxWidth: 560 }}>
         <h2>تغيير كلمة المرور</h2>
+        <p style={{ marginTop: 0 }}><a className="btn btn-sm btn-light" href="/profile/2fa">🔐 التحقق بخطوتين: {u.totpEnabled ? "مفعّل ✓" : "غير مفعّل — فعّله"}</a></p>
         <form action={changePassword} className="form f1">
           <Field label="كلمة المرور الحالية"><input type="password" name="current" dir="ltr" required /></Field>
           <Field label="كلمة المرور الجديدة" hint="8 أحرف على الأقل، حروف وأرقام"><input type="password" name="new" dir="ltr" required /></Field>

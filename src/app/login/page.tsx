@@ -31,6 +31,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             <div className="alert warn">الحساب غير مفعّل بعد — افتح رسالة التفعيل التي وصلت إلى بريدك، أو تواصل مع مدير المنظومة لإعادة إرسالها.</div>
           ) : sp.error === "locked" ? (
             <div className="alert err">تم قفل الحساب مؤقتًا بسبب محاولات دخول فاشلة متكررة. حاول بعد {sp.m} دقيقة.</div>
+          ) : sp.error === "2fa-expired" ? (
+            <div className="alert warn">انتهت مهلة إدخال رمز التحقق (5 دقائق) — سجّل الدخول من جديد.</div>
           ) : sp.error ? (
             <div className="alert err">اسم المستخدم أو كلمة المرور غير صحيحة، أو الحساب معطّل.</div>
           ) : null}
@@ -46,7 +48,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             </div>
             <Submit>دخول</Submit>
           </form>
-          <p style={{ textAlign: "center", marginTop: ".8rem" }}><a href="/forgot">نسيت كلمة المرور؟</a> · <a href="/apply">التسجيل الذاتي للاعبين والحكام</a></p>
+          <p style={{ textAlign: "center", marginTop: ".8rem" }}><a href="/forgot">نسيت كلمة المرور؟</a></p>
           <hr />
           <p className="muted" style={{ fontSize: ".82rem", textAlign: "center", margin: 0 }}>
             يُقفل الحساب 15 دقيقة بعد 5 محاولات فاشلة.

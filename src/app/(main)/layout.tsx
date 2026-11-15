@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { and, eq, sql, lt, notInArray, inArray, gte, desc } from "drizzle-orm";
 import { db } from "@/db";
-import { notifications, registrations, matches, assignments, staff, appeals, matchRequests, users, decisions, contracts, waOutbox, officialExpenses, selfApplications } from "@/db/schema";
+import { notifications, registrations, matches, assignments, staff, appeals, matchRequests, users, decisions, contracts, waOutbox, officialExpenses } from "@/db/schema";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth";
 import { scopeOf, regIn, clubIn, compIn } from "@/lib/scope";
 import { ROLE_LABEL, ROLE_COMMITTEE } from "@/lib/labels";
@@ -28,18 +28,16 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
     const origin = u.can("club.origin")
       ? await count(db.select({ n }).from(registrations).where(and(eq(registrations.fromClubId, u.clubId!), eq(registrations.originResponse, "PENDING"))))
       : 0;
-    const selfApps = await count(db.select({ n }).from(selfApplications).where(and(eq(selfApplications.kind, "PLAYER"), eq(selfApplications.clubId, u.clubId!), eq(selfApplications.status, "NEW"))));
     const edit = u.can("club.edit");
     const tNew = todo(["NEW"]), tRen = todo(["RENEWAL"]), tTr = todo(["TRANSFER", "LOAN", "LOAN_RETURN"]);
     return [
       { label: "الرئيسية", href: "/club" },
       { label: "لاعبو النادي", href: "/club/players" },
       {
-        label: "➕ تسجيل جديد", badge: tNew + selfApps,
+        label: "➕ تسجيل جديد", badge: tNew,
         children: [
           ...(edit ? [{ label: "➕ تسجيل لاعب جديد", href: "/club/players/new?mode=new" }] : []),
           { label: "طلبات التسجيل الجديد", href: "/club/requests?kind=new", badge: tNew },
-          { label: "📝 طلبات التسجيل الذاتي", href: "/club/applications", badge: selfApps },
           ...(edit ? ["sep" as const, { label: "⬆ استيراد لاعبين جدد من Excel", href: "/club/import" }] : []),
         ],
       },
@@ -151,7 +149,6 @@ async function buildNav(u: CurrentUser): Promise<NavItem[]> {
         { label: "🟨 الحكام", href: "/referees" },
         { label: "📋 تعيين الطواقم", href: "/referees/assignments", badge: drafts },
         ...(u.can("ref.evals") ? [{ label: "★ تقييمات الحكام", href: "/referees/evaluations" }] : []),
-        { label: "📝 طلبات انضمام الحكام", href: "/referees/applications", badge: await count(db.select({ n }).from(selfApplications).where(and(eq(selfApplications.kind, "OFFICIAL"), eq(selfApplications.status, "NEW")))) },
         { label: "💼 مصاريف الحكام", href: "/referees/expenses", badge: await count(db.select({ n }).from(officialExpenses).where(eq(officialExpenses.status, "SUBMITTED"))) },
       ],
     });
@@ -222,6 +219,7 @@ export default async function MainLayout({ children }: { children: React.ReactNo
   if (!u) redirect("/login");
   const path = (await headers()).get("x-path") ?? "";
   if (u.mustChangePassword && !path.startsWith("/profile")) redirect("/profile?mustchange=1");
+  if (u.needs2fa && !path.startsWith("/profile")) redirect("/profile/2fa");
 
   const [items, unread] = await Promise.all([
     buildNav(u),

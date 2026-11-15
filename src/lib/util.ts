@@ -109,8 +109,19 @@ export function reqEmail(f: FormData, k = "email") {
   if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/.test(v)) throw new UserError("البريد الإلكتروني غير صحيح");
   return v;
 }
-export function checkPassword(nw: string, cf: string) {
-  if (nw.length < 8 || !/[0-9]/.test(nw) || !/[A-Za-z؀-ۿ]/.test(nw)) throw new UserError("كلمة المرور: 8 أحرف على الأقل وتحتوي حروفًا وأرقامًا");
+// كلمات مرور شائعة تُخمَّن أولًا في أي هجوم
+const WEAK = ["password", "passw0rd", "qwerty", "123456", "12345678", "123456789", "1234567890", "111111", "000000", "abc123", "admin", "lff", "libya", "ليبيا", "football", "welcome", "iloveyou", "aaaaaa"];
+export function passwordProblem(nw: string, username?: string | null) {
+  if (nw.length < 8 || !/[0-9]/.test(nw) || !/[A-Za-z؀-ۿ]/.test(nw)) return "كلمة المرور: 8 أحرف على الأقل وتحتوي حروفًا وأرقامًا";
+  const low = nw.toLowerCase();
+  if (WEAK.some((w) => low.replace(/[^a-z0-9؀-ۿ]/g, "").startsWith(w) && low.length - w.length <= 4)) return "كلمة المرور سهلة التخمين — اختر كلمة أقل شيوعًا";
+  if (/^(.)\1+$/.test(nw) || /(0123|1234|2345|3456|4567|5678|6789|abcd)/i.test(nw) && nw.length <= 10) return "كلمة المرور متسلسلة أو مكررة — اختر كلمة أقوى";
+  if (username && username.length >= 3 && low.includes(username.toLowerCase())) return "لا تضع اسم المستخدم داخل كلمة المرور";
+  return null;
+}
+export function checkPassword(nw: string, cf: string, username?: string | null) {
+  const p = passwordProblem(nw, username);
+  if (p) throw new UserError(p);
   if (nw !== cf) throw new UserError("تأكيد كلمة المرور غير مطابق");
 }
 export const money = (v: string | number | null | undefined) =>

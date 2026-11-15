@@ -25,7 +25,7 @@ export default async function Activate({ params, searchParams }: { params: Promi
     let target = "";
     try {
       const pw = String(f.get("password") ?? ""), cf = String(f.get("confirm") ?? "");
-      checkPassword(pw, cf);
+      checkPassword(pw, cf, tk.u.username);
       const ver = tk.u.sessionVersion + 1;
       await db.update(users).set({ passwordHash: await bcrypt.hash(pw, 10), isVerified: true, verifiedAt: new Date(), mustChangePassword: false, sessionVersion: ver, failedLogins: 0, lockedUntil: null }).where(eq(users.id, tk.u.id));
       await consumeToken(tk.t.id);

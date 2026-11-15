@@ -22,7 +22,7 @@ export default async function Reset({ params, searchParams }: { params: Promise<
     if (!tk) redirect(`/reset/${token}`);
     try {
       const pw = String(f.get("password") ?? ""), cf = String(f.get("confirm") ?? "");
-      checkPassword(pw, cf);
+      checkPassword(pw, cf, tk.u.username);
       await db.update(users).set({ passwordHash: await bcrypt.hash(pw, 10), sessionVersion: tk.u.sessionVersion + 1, failedLogins: 0, lockedUntil: null, mustChangePassword: false }).where(eq(users.id, tk.u.id));
       await consumeToken(tk.t.id);
       await audit({ id: tk.u.id, fullName: tk.u.fullName }, "استعادة كلمة المرور", "User", tk.u.id);

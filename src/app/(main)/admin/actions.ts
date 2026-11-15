@@ -1,5 +1,5 @@
 "use server";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, ne, or } from "drizzle-orm";
 import { db } from "@/db";
 import { users, rolePermissions, clubs, settings, roleEnum, divisions, type Role } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
@@ -233,5 +233,49 @@ export async function saveClubDivisions(f: FormData) {
     }
     await audit(u, "توزيع الأندية على الدرجات", "Division", null, moves);
     return n || nr ? [n && `نُقل ${n} نادٍ بين الدرجات`, nr && `عُدّلت منطقة ${nr} نادٍ`].filter(Boolean).join(" — ") : "لا تغييرات";
+  });
+}
+
+/** إلغاء التحقق بخطوتين لمستخدم فقد هاتفه (يعيد التفعيل عند دخوله التالي إن كان دوره ملزمًا) */
+export async function reset2fa(f: FormData) {
+  const u = await requireUser("admin.users");
+  const id = int(f, "id")!;
+  await attempt("/admin/users", async () => {
+    const [t] = await db.select().from(users).where(eq(users.id, id));
+    if (!t) throw new UserError("الحساب غير موجود");
+    await db.update(users).set({ totpEnabled: false, totpSecret: null, totpBackup: null, totpLastStep: null, sessionVersion: t.sessionVersion + 1 }).where(eq(users.id, id));
+    await audit(u, "إلغاء التحقق بخطوتين لمستخدم", "User", id, { user: t.username });
+    return `أُلغي التحقق بخطوتين لـ ${t.fullName} — سيُطلب منه ربط هاتفه من جديد`;
+  });
+}
+
+/** تعطيل الحسابات الخاملة (لم تدخل منذ مدة) دفعة واحدة */
+export async function disableInactive(f: FormData) {
+  const u = await requireUser("admin.users");
+  const days = Math.max(30, int(f, "days") ?? 90);
+  await attempt(`/admin/users?inactive=${days}`, async () => {
+    const before = new Date(Date.now() - days * 864e5);
+    const rows = await db.select({ id: users.id, username: users.username, v: users.sessionVersion }).from(users)
+      .where(and(eq(users.isActive, true), eq(users.isVerified, true), ne(users.id, u.id), ne(users.role, "ADMIN"),
+        or(lt(users.lastLoginAt, before), and(isNull(users.lastLoginAt), lt(users.createdAt, before)))));
+    if (!rows.length) throw new UserError("لا توجد حسابات خاملة");
+    await db.update(users).set({ isActive: false }).where(inArray(users.id, rows.map((r) => r.id)));
+    for (const r of rows) await db.update(users).set({ sessionVersion: r.v + 1 }).where(eq(users.id, r.id));
+    await audit(u, "تعطيل الحسابات الخاملة", "User", null, { days, users: rows.map((r) => r.username) });
+    return `تم تعطيل ${rows.length} حسابًا لم يدخل منذ ${days} يومًا`;
+  });
+}
+
+/** الأدوار الملزمة بالتحقق بخطوتين */
+export async function save2faRoles(f: FormData) {
+  const u = await requireUser("admin.settings");
+  await attempt("/admin/settings", async () => {
+    const valid = new Set<string>(roleEnum.enumValues);
+    const roles = f.getAll("r2fa").map(String).filter((r) => valid.has(r));
+    if (!roles.includes("ADMIN")) roles.push("ADMIN"); // مدير المنظومة ملزم دائمًا
+    const v = roles.join(",");
+    await db.insert(settings).values({ key: "require_2fa_roles", value: v }).onConflictDoUpdate({ target: settings.key, set: { value: v } });
+    await audit(u, "تعديل الأدوار الملزمة بالتحقق بخطوتين", "Setting", null, { roles });
+    return "تم الحفظ";
   });
 }

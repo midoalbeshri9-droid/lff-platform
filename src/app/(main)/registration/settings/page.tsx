@@ -21,14 +21,13 @@ export default async function RegSettings({ searchParams }: { searchParams: SP }
   // مدير الدرجة: فترات درجته وأنديتها، مع عرض الفترات العامة للاطلاع
   const wWhere = sc ? or(eq(registrationWindows.divisionId, sc.divisionId), inArray(registrationWindows.clubId, ids), and(isNull(registrationWindows.divisionId), isNull(registrationWindows.clubId))) : undefined;
   const dv = await db.select({ id: divisions.id, name: divisions.name }).from(divisions).orderBy(divisions.level);
-  const [ss, ws, cats, dts, cl, origin, selfApply, extra] = await Promise.all([
+  const [ss, ws, cats, dts, cl, origin, extra] = await Promise.all([
     db.select().from(seasons).orderBy(desc(seasons.startDate)),
     db.select({ w: registrationWindows, club: clubs.name }).from(registrationWindows).leftJoin(clubs, eq(clubs.id, registrationWindows.clubId)).where(wWhere).orderBy(desc(registrationWindows.startDate)),
     db.select().from(ageCategories).orderBy(ageCategories.sortOrder),
     db.select().from(documentTypes).orderBy(documentTypes.sortOrder),
     db.select({ id: clubs.id, name: clubs.name }).from(clubs).where(sc ? inArray(clubs.id, ids) : undefined).orderBy(clubs.name),
     db.select().from(settings).where(eq(settings.key, "require_origin_consent")),
-    db.select().from(settings).where(eq(settings.key, "self_apply")),
     db.select().from(settings).where(inArray(settings.key, ["origin_deadline_days", "review_sla_days", "medical_valid_months", "nid_check"])),
   ]);
   const xs = (k: string, d: string) => extra.find((e) => e.key === k)?.value ?? d;
@@ -153,7 +152,6 @@ export default async function RegSettings({ searchParams }: { searchParams: SP }
           <h2>إعدادات القيد</h2>
           <form action={saveRegSettings} className="stack">
             <label className="check"><input type="checkbox" name="require_origin_consent" defaultChecked={(origin[0]?.value ?? "1") === "1"} /> طلب رأي النادي السابق في الانتقال والإعارة</label>
-            <label className="check"><input type="checkbox" name="self_apply" defaultChecked={(selfApply[0]?.value ?? "1") === "1"} /> تفعيل التسجيل الذاتي للاعبين والحكام (صفحة <code dir="ltr">/apply</code>)</label>
             <div className="form f3" style={{ marginTop: ".4rem" }}>
               <Field label="مهلة رد النادي السابق (أيام)" hint="بعدها يُعتبر عدم الرد «عدم اعتراض» — 0 للإيقاف"><input type="number" name="origin_deadline_days" min={0} max={60} defaultValue={xs("origin_deadline_days", "7")} /></Field>
               <Field label="تنبيه الطلبات المتأخرة لدى اللجنة (أيام)" hint="0 للإيقاف"><input type="number" name="review_sla_days" min={0} max={60} defaultValue={xs("review_sla_days", "3")} /></Field>

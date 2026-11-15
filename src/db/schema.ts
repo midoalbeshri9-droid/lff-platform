@@ -36,6 +36,11 @@ export const users = pgTable("users", {
   lockedUntil: ts("locked_until"),
   lastLoginAt: ts("last_login_at"),
   sessionVersion: integer("session_version").notNull().default(0),
+  // التحقق بخطوتين (تطبيق المصادقة): السر مشفّر، ورموز الاسترداد مخزّنة كبصمات
+  totpSecret: text("totp_secret"),
+  totpEnabled: boolean("totp_enabled").notNull().default(false),
+  totpBackup: text("totp_backup").array(),
+  totpLastStep: integer("totp_last_step"),
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 
@@ -1211,7 +1216,7 @@ export const clubCategories = pgTable("club_categories", {
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 
-// التسجيل الذاتي (Self-Registration): طلب يقدّمه اللاعب أو الحكم بنفسه من صفحة عامة،
+// [ميزة ملغاة — الجدول باقٍ لحفظ أي بيانات سابقة] التسجيل الذاتي (Self-Registration): طلب يقدّمه اللاعب أو الحكم بنفسه من صفحة عامة،
 // فيعتمده النادي المختار (للاعب) أو لجنة الحكام (للحكم/المراقب) ليتحول إلى سجل ثم طلب قيد
 export const selfApplications = pgTable("self_applications", {
   id: serial("id").primaryKey(),
